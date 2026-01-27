@@ -75,6 +75,20 @@ export function SettingsProvider(props) {
     // Segmentation
     segmentationPreset: 'medium',
     
+    // Merger mode: 'complex' (TranscriptionMerger) or 'fast' (FastMerger)
+    mergerMode: 'complex',
+    
+    // VAD (Voice Activity Detection) settings
+    vadEnabled: true,
+    vadModel: 'silero',  // 'silero' or 'ten' (TEN VAD is lighter: 277KB vs 2MB)
+    vadThreshold: 0.6,   // Increased from 0.48 - higher = stricter speech detection
+    vadMinSpeechMs: 240,
+    vadMinSilenceMs: 480,
+    vadPadMs: 20,
+    vadMergeGapMs: 560,
+    vadMinSpeechRatio: 0.3,  // Increased from 0.1 - require 30% speech to transcribe
+    vadHopSize: 256,  // For TEN VAD: 160 (10ms) or 256 (16ms)
+    
     // Prompts - initialize with the actual prompt templates
     prompts: promptTemplates,
     selectedPromptKey: defaultPromptKey,

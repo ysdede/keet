@@ -40,7 +40,7 @@ class ParakeetService {
         quantization = 'fp32',
         decoderInt8 = true,
         preprocessor = 'nemo128',
-        modelRepoId = 'ysdede/parakeet-tdt-0.6b-v2-onnx',
+        modelRepoId = 'istupakov/parakeet-tdt-0.6b-v2-onnx',
         cpuThreads = 6,
         verbose = false
       } = this.config;

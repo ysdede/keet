@@ -254,7 +254,7 @@ function SettingsWidget(props) {
                     Max Segment Duration (s)
                     <span class="range-value">{settings.maxSegmentDuration.toFixed(1)}</span>
                 </label>
-                <input id="maxSegmentDuration" type="range" min="0.4" max="12.0" step="0.4" value={settings.maxSegmentDuration} onInput={(e) => handleNumberChange('maxSegmentDuration', e.target.value)} class="form-range" />
+                <input id="maxSegmentDuration" type="range" min="0.16" max="12.0" step="0.08" value={settings.maxSegmentDuration} onInput={(e) => handleNumberChange('maxSegmentDuration', e.target.value)} class="form-range" />
             </div>
           </div>
         </Show>

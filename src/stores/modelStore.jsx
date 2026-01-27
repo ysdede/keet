@@ -11,7 +11,19 @@ const defaultModelSettings = {
   verbose: false,
   // Use a sensible default for threads, can be overridden by user
   cpuThreads: navigator.hardwareConcurrency ? Math.max(1, navigator.hardwareConcurrency - 2) : 4,
-  modelRepoId: 'ysdede/parakeet-tdt-0.6b-v2-onnx'
+  modelRepoId: 'istupakov/parakeet-tdt-0.6b-v2-onnx',
+  
+  // VAD (Voice Activity Detection) settings
+  vadEnabled: true,
+  vadModel: 'silero',  // 'silero' (ONNX, ~2MB) or 'ten' (WASM, ~277KB, lower latency)
+  vadModelPath: '/models/silero/model.onnx',      // Path to Silero VAD ONNX model
+  vadTenWasmPath: '/models/ten-vad/ten_vad.wasm', // Path to TEN VAD WASM
+  vadTenJsPath: '/models/ten-vad/ten_vad.js',     // Path to TEN VAD JS loader
+  vadThreshold: 0.6,  // Increased from 0.5 to better filter music/noise
+  vadHopSize: 256,  // For TEN VAD: 160 (10ms) or 256 (16ms)
+  
+  // Merger mode: 'complex' (word-level alignment) or 'fast' (sentence-based)
+  mergerMode: 'complex'
 };
 
 export const ModelSettingsContext = createContext();

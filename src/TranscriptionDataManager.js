@@ -176,6 +176,29 @@ export class TranscriptionDataManager {
                 this.queuedConfig = null;
             }
         }
+        else if (type === 'segment_vad_status') {
+            // VAD classification result for a segment
+            // Emit event so AudioManager and UI can update segment visualization
+            this.emit('segmentVadStatus', {
+                segmentId: data.segmentId,
+                startTime: data.startTime,
+                endTime: data.endTime,
+                isSpeech: data.isSpeech,
+                speechRatio: data.speechRatio,
+                vadModel: data.vadModel,
+                timestamp: data.timestamp
+            });
+        }
+        else if (type === 'vad_segments') {
+            // VAD segments for transcription window visualization
+            this.emit('vadSegments', {
+                segments: data.segments,
+                speechRatio: data.speechRatio,
+                windowStart: data.windowStart,
+                windowEnd: data.windowEnd,
+                timestamp: data.timestamp
+            });
+        }
     }
     
     /**

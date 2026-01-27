@@ -96,6 +96,44 @@ function SetupOverlay(props) {
           </label>
         </div>
 
+        {/* VAD Settings Section */}
+        <h3 style="margin-top: 1.5rem; margin-bottom: 0.5rem;">Voice Activity Detection (VAD)</h3>
+        <div class="form-grid">
+          <label class="checkbox-label">
+            <input type="checkbox" checked={settings.vadEnabled} onChange={(e) => updateSetting('vadEnabled', e.target.checked)} />
+            <span>Enable VAD (filter silence/noise)</span>
+          </label>
+
+          <label for="setup-vad-model">VAD Model</label>
+          <select 
+            id="setup-vad-model" 
+            value={settings.vadModel} 
+            onChange={(e) => updateSetting('vadModel', e.target.value)}
+            disabled={!settings.vadEnabled}
+          >
+            <option value="silero">Silero VAD (ONNX, ~2MB)</option>
+            <option value="ten">TEN VAD (WASM, 277KB, lower latency)</option>
+          </select>
+
+          <label for="setup-vad-threshold">VAD Threshold</label>
+          <input 
+            id="setup-vad-threshold" 
+            type="number" 
+            min="0.1" 
+            max="0.9" 
+            step="0.05" 
+            value={settings.vadThreshold} 
+            onInput={(e) => updateSetting('vadThreshold', parseFloat(e.target.value))}
+            disabled={!settings.vadEnabled}
+          />
+
+          <label for="setup-merger-mode">Merger Mode</label>
+          <select id="setup-merger-mode" value={settings.mergerMode} onChange={(e) => updateSetting('mergerMode', e.target.value)}>
+            <option value="complex">Complex (word-level alignment)</option>
+            <option value="fast">Fast (sentence-based, NLP)</option>
+          </select>
+        </div>
+
         <button class="btn btn-primary btn-lg" onClick={handleLoad} disabled={status() === 'loading'}>
           {status() === 'loading' ? 'Loading...' : 'Load Model & Start'}
         </button>

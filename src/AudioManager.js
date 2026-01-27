@@ -547,6 +547,7 @@ export class AudioManager {
                     start: segment.startTime,
                     end: segment.endTime,
                     seqId: segment.id,
+                    segmentId: segment.id,  // Also send as segmentId for VAD status tracking
                     rate: this.inputSampleRate
                 }
             }, [audioBuffer]); // Transfer ownership for performance
@@ -563,12 +564,13 @@ export class AudioManager {
 
         // The AudioVisualizer expects the segments list from AudioManager.
         // We will push a simplified object here for that purpose.
+        // vadStatus starts as 'pending' - will be updated by worker VAD result
         this.segments.push({
             id: segment.id,
             startTime: segment.startTime,
             endTime: segment.endTime,
             duration: segment.duration,
-            vadStatus: 'speech' // Mark as speech for visualization
+            vadStatus: 'pending' // Will be updated to 'speech' or 'non-speech' by worker VAD
         });
 
         // Limit the number of segments stored for visualization

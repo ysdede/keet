@@ -171,6 +171,19 @@ function AppContent() {
       }
     });
     
+    // Subscribe to VAD segment status updates from worker
+    const unsubVadStatus = transcriptionDataManager.subscribe('segmentVadStatus', (data) => {
+      // Update AudioManager with VAD classification for visualization
+      audioManager.updateSegmentVadClassification(
+        data.segmentId, 
+        data.isSpeech, 
+        `VAD: ${data.isSpeech ? 'speech' : 'non-speech'} (ratio=${data.speechRatio?.toFixed(2) || 'N/A'})`
+      );
+      if (!data.isSpeech) {
+        addLog(`VAD: Segment skipped (non-speech, ratio=${data.speechRatio?.toFixed(3)})`, 'debug');
+      }
+    });
+    
     // Set up periodic audio metrics updates
     const metricsInterval = setInterval(() => {
       if (audio.recording) {
@@ -210,6 +223,7 @@ function AppContent() {
       unsubDataUpdate();
       unsubMatureCursor();
       unsubAudioSegments();
+      unsubVadStatus();
       clearInterval(metricsInterval);
       navigator.mediaDevices.removeEventListener('devicechange', enumerateAudioDevices);
       worker()?.terminate();
