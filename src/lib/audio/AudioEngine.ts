@@ -110,8 +110,8 @@ export class AudioEngine implements IAudioEngine {
     }
 
     isSpeechActive(): boolean {
-        return this.energyVad.getConfig().energyThreshold > 0; // Simplified for interface match
-    }
+    return this.currentEnergy > this.config.energyThreshold;
+  }
 
     getRingBuffer(): IRingBuffer {
         return this.ringBuffer;

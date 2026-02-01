@@ -34,7 +34,9 @@ const Header: Component = () => {
       // Finalize transcription
       if (transcriptionService) {
         const final = transcriptionService.finalize();
-        appStore.setTranscript(final.text);
+        if (final.text) {
+          appStore.appendTranscript(final.text + ' ');
+        }
       }
 
       appStore.setAudioLevel(0);
@@ -47,7 +49,7 @@ const Header: Component = () => {
           audioEngine = new AudioEngine({
             sampleRate: 16000,
             bufferDuration: 30,
-            energyThreshold: 0.02,
+            energyThreshold: 0.01, // Lower threshold for better sensitivity
             minSpeechDuration: 100,
             minSilenceDuration: 300,
           });
@@ -58,11 +60,15 @@ const Header: Component = () => {
           transcriptionService = new TranscriptionService(modelManager, {
             sampleRate: 16000,
             returnTimestamps: true,
-            debug: false,
+            debug: true,
           }, {
             onResult: (result) => {
-              appStore.setTranscript(result.text);
-              appStore.setPendingText(result.chunkText);
+              if (result.chunkText) {
+                appStore.setPendingText(result.chunkText);
+              }
+              if (result.isFinal && result.text) {
+                appStore.appendTranscript(result.text + ' ');
+              }
             },
           });
           transcriptionService.initialize();
@@ -86,8 +92,9 @@ const Header: Component = () => {
         // Poll energy for visualization
         energyPollInterval = window.setInterval(() => {
           if (audioEngine) {
-            appStore.setAudioLevel(audioEngine.getCurrentEnergy());
-            appStore.setIsSpeechDetected(audioEngine.isSpeechActive());
+            const energy = audioEngine.getCurrentEnergy();
+            appStore.setAudioLevel(energy);
+            appStore.setIsSpeechDetected(energy > 0.01);
           }
         }, 50);
 
@@ -119,12 +126,12 @@ const Header: Component = () => {
               when={isRecording()}
               fallback={<div class="w-4 h-4 bg-white rounded-full group-hover:scale-110 transition-transform"></div>}
             >
-              <span class="material-icons-round text-white text-xl">stop</span>
+              <div class="w-4 h-4 bg-white rounded-sm group-hover:scale-110 transition-transform"></div>
             </Show>
           </button>
-
+          
           <Show when={isRecording()}>
-            <button
+            <button 
               onClick={toggleRecording}
               class="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center transition-colors"
             >
@@ -294,7 +301,7 @@ const PrivacyBadge: Component = () => {
   const [showDetails, setShowDetails] = createSignal(false);
 
   return (
-    <div class="fixed bottom-4 right-4">
+    <div class="fixed bottom-4 right-4 z-50">
       {/* Privacy tooltip */}
       <Show when={showDetails()}>
         <div class="absolute bottom-full right-0 mb-2 w-72 p-4 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 text-sm">
@@ -379,6 +386,19 @@ const App: Component = () => {
     }
   };
 
+  // Function to load model from local files
+  const handleLocalLoad = async (files: FileList) => {
+    if (!modelManager) return;
+
+    try {
+      await modelManager.loadLocalModel(files);
+      appStore.setBackend(modelManager.getBackend());
+      appStore.setIsOfflineReady(modelManager.isOfflineReady());
+    } catch (e) {
+      console.error('Failed to side-load local model:', e);
+    }
+  };
+
   // Initialize model manager on mount (but don't load yet)
   onMount(() => {
     modelManager = new ModelManager({
@@ -416,6 +436,7 @@ const App: Component = () => {
         selectedModelId={appStore.selectedModelId()}
         onModelSelect={appStore.setSelectedModelId}
         onStart={loadSelectedModel}
+        onLocalLoad={handleLocalLoad}
       />
 
 

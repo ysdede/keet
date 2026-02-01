@@ -9,6 +9,7 @@ interface ModelLoadingOverlayProps {
     selectedModelId: string;
     onModelSelect: (id: string) => void;
     onStart: () => void;
+    onLocalLoad: (files: FileList) => void;
 }
 
 const MODELS = [
@@ -18,10 +19,27 @@ const MODELS = [
 
 export const ModelLoadingOverlay: Component<ModelLoadingOverlayProps> = (props) => {
     const progressWidth = () => `${Math.max(0, Math.min(100, props.progress))}%`;
+    let fileInput: HTMLInputElement | undefined;
+
+    const handleFileChange = (e: Event) => {
+        const files = (e.target as HTMLInputElement).files;
+        if (files && files.length > 0) {
+            props.onLocalLoad(files);
+        }
+    };
 
     return (
         <Show when={props.isVisible}>
             <div class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 backdrop-blur-[2px]">
+                {/* Hidden File Input */}
+                <input
+                    type="file"
+                    multiple
+                    ref={fileInput}
+                    class="hidden"
+                    onChange={handleFileChange}
+                />
+
                 <div class="w-full max-w-md mx-4">
 
                     {/* Card */}
@@ -75,6 +93,20 @@ export const ModelLoadingOverlay: Component<ModelLoadingOverlayProps> = (props) 
                                             </button>
                                         )}
                                     </For>
+
+                                    {/* Local Disk Option */}
+                                    <button
+                                        onClick={() => fileInput?.click()}
+                                        class="flex items-center text-left p-4 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all group"
+                                    >
+                                        <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mr-4 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30">
+                                            <span class="material-icons-round text-gray-400 group-hover:text-blue-500 text-lg">folder_open</span>
+                                        </div>
+                                        <div>
+                                            <div class="font-semibold text-gray-900 dark:text-white">Load from Disk</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400">Select model files from your drive</div>
+                                        </div>
+                                    </button>
                                 </div>
 
                                 <button

@@ -25,12 +25,13 @@ export const Waveform: Component<WaveformProps> = (props) => {
       const level = props.audioLevel;
       setBarHeights(prev => 
         prev.map(() => {
-          const base = level * 0.7 + Math.random() * 0.3;
+          // Increase sensitivity for visualization
+          const base = level * 5.0 + Math.random() * 0.1;
           return Math.min(1, Math.max(0.1, base));
         })
       );
     } else {
-      setBarHeights(prev => prev.map(() => 0.1 + Math.random() * 0.1));
+      setBarHeights(prev => prev.map(() => 0.05 + Math.random() * 0.05));
     }
     animationId = requestAnimationFrame(animate);
   };

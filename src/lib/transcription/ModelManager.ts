@@ -133,6 +133,84 @@ export class ModelManager {
     }
   }
 
+  /**
+   * Side-load model from local files
+   */
+  async loadLocalModel(files: FileList): Promise<void> {
+    this._setState('loading');
+    this._setProgress({
+      stage: 'init',
+      progress: 0,
+      message: 'Processing local files...'
+    });
+
+    try {
+      const fileArray = Array.from(files);
+      const findFile = (pattern: RegExp) => fileArray.find(f => pattern.test(f.name));
+
+      // Map files to assets
+      const assets = {
+        encoder: findFile(/encoder.*\.onnx$/i),
+        decoder: findFile(/decoder.*\.onnx$/i),
+        tokenizer: findFile(/vocab.*\.txt$/i),
+        preprocessor: findFile(/nemo.*\.onnx$/i),
+        encoderData: findFile(/encoder.*\.onnx\.data$/i),
+        decoderData: findFile(/decoder.*\.onnx\.data$/i),
+      };
+
+      // Validation
+      if (!assets.encoder || !assets.decoder || !assets.tokenizer || !assets.preprocessor) {
+        const missing = [];
+        if (!assets.encoder) missing.push('encoder-model.onnx');
+        if (!assets.decoder) missing.push('decoder_joint-model.onnx');
+        if (!assets.tokenizer) missing.push('vocab.txt');
+        if (!assets.preprocessor) missing.push('preprocessor (nemo128.onnx)');
+        throw new Error(`Missing required files: ${missing.join(', ')}`);
+      }
+
+      const hasWebGPU = await this._detectWebGPU();
+      this._backend = hasWebGPU ? 'webgpu' : 'wasm';
+
+      this._setProgress({ stage: 'import', progress: 20, message: 'Initialising parakeet.js...' });
+      const { ParakeetModel } = await import('parakeet.js');
+
+      this._setProgress({ stage: 'compile', progress: 40, message: 'Compiling local model...' });
+
+      const urls = {
+        encoderUrl: URL.createObjectURL(assets.encoder),
+        decoderUrl: URL.createObjectURL(assets.decoder),
+        tokenizerUrl: URL.createObjectURL(assets.tokenizer),
+        preprocessorUrl: URL.createObjectURL(assets.preprocessor),
+        encoderDataUrl: assets.encoderData ? URL.createObjectURL(assets.encoderData) : undefined,
+        decoderDataUrl: assets.decoderData ? URL.createObjectURL(assets.decoderData) : undefined,
+      };
+
+      this._model = await ParakeetModel.fromUrls({
+        ...urls,
+        filenames: {
+          encoder: assets.encoder.name,
+          decoder: assets.decoder.name
+        },
+        backend: this._backend === 'webgpu' ? 'webgpu-hybrid' : 'wasm',
+        verbose: false,
+      });
+
+      this._setProgress({ stage: 'complete', progress: 100, message: 'Local model ready' });
+      this._setState('ready');
+      this._isOfflineReady = true;
+
+    } catch (error) {
+      console.error('Local model loading failed:', error);
+      this._setState('error');
+      this._setProgress({
+        stage: 'error',
+        progress: 0,
+        message: error instanceof Error ? error.message : 'Failed to load local model'
+      });
+      this._callbacks.onError?.(error as Error);
+      throw error;
+    }
+  }
 
   /**
    * Detect WebGPU availability
@@ -162,7 +240,6 @@ export class ModelManager {
       return false;
     }
   }
-
 
   /**
    * Update state and notify callbacks
