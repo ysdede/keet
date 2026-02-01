@@ -1,9 +1,0 @@
-.timestamp-wrapper {
-    display: inline-block;
-    white-space: nowrap;
-}
-.milliseconds {
-    font-size: 0.8em;
-    vertical-align: baseline;
-    opacity: 0.8;
-} 
