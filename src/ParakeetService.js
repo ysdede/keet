@@ -1,4 +1,4 @@
-import { getParakeetModel, ParakeetModel } from 'parakeet.js';
+import { getParakeetModel, ParakeetModel, MODELS } from 'parakeet.js';
 
 // Tiny utility for event subscription
 function createEmitter() {
@@ -37,19 +37,22 @@ class ParakeetService {
       // NOTE: you can change repoId or backend settings here if desired
       const {
         backend = 'webgpu-hybrid',
-        quantization = 'fp32',
-        decoderInt8 = true,
+        encoderQuant = 'fp32',
+        decoderQuant = 'int8',
         preprocessor = 'nemo128',
-        modelRepoId = 'istupakov/parakeet-tdt-0.6b-v2-onnx',
+        modelKey = 'parakeet-tdt-0.6b-v2', // Use model key instead of repo ID
         cpuThreads = 6,
         verbose = false
       } = this.config;
 
+      // Resolve model key to repo ID if needed (supports both formats)
+      const repoId = MODELS[modelKey]?.repoId || modelKey;
+
       // Download (or retrieve from IndexedDB cache) all asset URLs
-      const { urls, filenames } = await getParakeetModel(modelRepoId, {
+      const { urls, filenames } = await getParakeetModel(repoId, {
         backend: backend,
-        quantization: quantization,
-        decoderInt8: decoderInt8,
+        encoderQuant: encoderQuant,
+        decoderQuant: decoderQuant,
         preprocessor: preprocessor,
         progress: ({ file, loaded, total }) => {
           if (total) {
@@ -64,8 +67,6 @@ class ParakeetService {
         ...urls,
         filenames,
         backend: backend,
-        decoderOnWasm: decoderInt8,
-        decoderInt8: decoderInt8,
         cpuThreads: cpuThreads,
         verbose: verbose
       });

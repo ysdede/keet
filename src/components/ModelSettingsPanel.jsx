@@ -25,8 +25,12 @@ function ModelSettingsPanel(props) {
       <h3>Model Settings</h3>
 
       <div class="form-grid">
-        <label for="model-repo-id">Model Repo</label>
-        <input id="model-repo-id" type="text" value={settings.modelRepoId} onInput={(e) => updateSetting('modelRepoId', e.target.value)} />
+        <label for="model-key">Model</label>
+        <select id="model-key" value={settings.modelKey} onChange={(e) => updateSetting('modelKey', e.target.value)}>
+          <option value="parakeet-tdt-0.6b-v2">Parakeet TDT 0.6B v2 (English)</option>
+          <option value="parakeet-tdt-0.6b-v3">Parakeet TDT 0.6B v3 (Multilingual)</option>
+          <option value="parakeet-tdt-1.1b-v2">Parakeet TDT 1.1B v2 (English)</option>
+        </select>
 
         <label for="backend-select">Backend</label>
         <select id="backend-select" value={settings.backend} onChange={(e) => updateSetting('backend', e.target.value)}>
@@ -34,10 +38,16 @@ function ModelSettingsPanel(props) {
           <option value="wasm">WASM</option>
         </select>
 
-        <label for="quant-select">Quantization</label>
-        <select id="quant-select" value={settings.quantization} onChange={(e) => updateSetting('quantization', e.target.value)}>
+        <label for="encoder-quant-select">Encoder Quantization</label>
+        <select id="encoder-quant-select" value={settings.encoderQuant} onChange={(e) => updateSetting('encoderQuant', e.target.value)}>
           <option value="fp32">FP32 (Higher Quality)</option>
-          <option value="int8">INT8 (Faster)</option>
+          <option value="int8">INT8 (Faster, Lower Memory)</option>
+        </select>
+        
+        <label for="decoder-quant-select">Decoder Quantization</label>
+        <select id="decoder-quant-select" value={settings.decoderQuant} onChange={(e) => updateSetting('decoderQuant', e.target.value)}>
+          <option value="int8">INT8 (Recommended)</option>
+          <option value="fp32">FP32</option>
         </select>
         
         <label for="preprocessor-select">Preprocessor</label>
@@ -56,11 +66,6 @@ function ModelSettingsPanel(props) {
 
         <label for="threads-input">Threads</label>
         <input id="threads-input" type="number" min="1" value={settings.cpuThreads} onInput={(e) => updateSetting('cpuThreads', e.target.value)} />
-
-        <label class="checkbox-label">
-          <input type="checkbox" checked={settings.decoderInt8} onChange={(e) => updateSetting('decoderInt8', e.target.checked)} />
-          <span>Decoder INT8 on CPU</span>
-        </label>
         
         <label class="checkbox-label">
           <input type="checkbox" checked={settings.verbose} onChange={(e) => updateSetting('verbose', e.target.checked)} />

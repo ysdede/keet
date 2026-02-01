@@ -1,17 +1,19 @@
 import { createStore } from "solid-js/store";
 import { createContext, useContext } from "solid-js";
 
-// Default settings based on Parakeet.js README and demo UI
+// Default settings based on Parakeet.js v1.0.1 API
 const defaultModelSettings = {
   backend: 'webgpu-hybrid',
-  quantization: 'fp32',
-  decoderInt8: true,
+  encoderQuant: 'fp32',      // v1.0.1: renamed from 'quantization'
+  decoderQuant: 'int8',      // v1.0.1: renamed from 'decoderInt8'
   preprocessor: 'nemo128',
   stride: 1,
   verbose: false,
   // Use a sensible default for threads, can be overridden by user
   cpuThreads: navigator.hardwareConcurrency ? Math.max(1, navigator.hardwareConcurrency - 2) : 4,
-  modelRepoId: 'istupakov/parakeet-tdt-0.6b-v2-onnx',
+  // v1.0.1: Use model key instead of repo ID (supports both)
+  // Available: 'parakeet-tdt-0.6b-v2' (English), 'parakeet-tdt-0.6b-v3' (Multilingual)
+  modelKey: 'parakeet-tdt-0.6b-v2',
   
   // VAD (Voice Activity Detection) settings
   vadEnabled: true,
