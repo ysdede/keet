@@ -15,6 +15,7 @@ export interface ModelProgress {
   stage: string;
   progress: number; // 0-100
   message?: string;
+  file?: string;
 }
 
 export interface TranscriptionWord {

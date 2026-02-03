@@ -4,6 +4,7 @@ interface ModelLoadingOverlayProps {
     isVisible: boolean;
     progress: number;
     message: string;
+    file?: string;
     backend: 'webgpu' | 'wasm';
     state: 'unloaded' | 'loading' | 'ready' | 'error';
     selectedModelId: string;
@@ -13,8 +14,8 @@ interface ModelLoadingOverlayProps {
 }
 
 const MODELS = [
-    { id: 'parakeet-tdt-0.6b-v2', name: 'Parakeet v2', desc: 'English optimized (Smallest)' },
-    { id: 'parakeet-tdt-0.6b-v3', name: 'Parakeet v3', desc: 'Multilingual (Higher accuracy)' },
+    { id: 'parakeet-tdt-0.6b-v2', name: 'Parakeet v2', desc: 'English Only' },
+    { id: 'parakeet-tdt-0.6b-v3', name: 'Parakeet v3', desc: 'Multilingual' },
 ];
 
 export const ModelLoadingOverlay: Component<ModelLoadingOverlayProps> = (props) => {
@@ -133,7 +134,7 @@ export const ModelLoadingOverlay: Component<ModelLoadingOverlayProps> = (props) 
                                         {props.progress}%
                                     </span>
                                     <span class="text-gray-400 dark:text-gray-500 uppercase tracking-tighter text-xs">
-                                        ~300 MB model
+                                        {props.file || `${MODELS.find(m => m.id === props.selectedModelId)?.name || 'Model'} assets`}
                                     </span>
                                 </div>
                             </div>

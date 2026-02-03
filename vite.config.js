@@ -34,7 +34,7 @@ let httpsConfig = false;
 try {
   const keyPath = path.resolve('./localhost-key.pem');
   const certPath = path.resolve('./localhost.pem');
-  
+
   if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     httpsConfig = {
       key: fs.readFileSync(keyPath),
@@ -53,7 +53,7 @@ try {
 export default defineConfig({
   plugins: [solidPlugin()],
   server: {
-    port: 3003,
+    port: 3100,
     host: '0.0.0.0',
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
@@ -65,9 +65,6 @@ export default defineConfig({
     postcss: {
       plugins: [tailwindcss, autoprefixer],
     },
-  },
-  define: {
-    'process.env': process.env ?? {},
   },
   build: {
     target: 'esnext',

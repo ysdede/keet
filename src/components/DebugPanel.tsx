@@ -1,9 +1,12 @@
 import { Component, For, Show } from 'solid-js';
 import { appStore } from '../stores/appStore';
+import { EnergyMeter } from './EnergyMeter';
+import { AudioEngine } from '../lib/audio/types';
 
 interface DebugPanelProps {
   isVisible: boolean;
   onClose: () => void;
+  audioEngine?: AudioEngine;
 }
 
 export const DebugPanel: Component<DebugPanelProps> = (props) => {
@@ -47,16 +50,20 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
         </div>
 
         {/* Inference State */}
-        <div class="w-1/3 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto bg-gray-100 dark:bg-[#0d1117]">
-          <h3 class="text-gray-400 uppercase tracking-wider mb-2 font-bold">Parakeet State</h3>
-          <pre class="text-green-600 dark:text-green-400 text-[10px]">{JSON.stringify({
-            "backend": appStore.backend(),
-            "model_ready": appStore.isOfflineReady(),
-            "selected_id": appStore.selectedModelId(),
-            "audio_level": appStore.audioLevel().toFixed(4),
-            "speech_active": appStore.isSpeechDetected(),
-            "last_latency": appStore.inferenceLatency() + "ms"
-          }, null, 2)}</pre>
+        <div class="w-1/3 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto bg-gray-100 dark:bg-[#0d1117] flex flex-col gap-4">
+          <div>
+            <h3 class="text-gray-400 uppercase tracking-wider mb-2 font-bold">Parakeet State</h3>
+            <pre class="text-green-600 dark:text-green-400 text-[10px]">{JSON.stringify({
+              "backend": appStore.backend(),
+              "model_ready": appStore.isOfflineReady(),
+              "selected_id": appStore.selectedModelId(),
+              "audio_level": appStore.audioLevel().toFixed(4),
+              "speech_active": appStore.isSpeechDetected(),
+              "last_latency": appStore.inferenceLatency() + "ms"
+            }, null, 2)}</pre>
+          </div>
+
+          <EnergyMeter audioEngine={props.audioEngine} />
         </div>
 
         {/* System Metrics */}

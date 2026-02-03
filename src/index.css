@@ -26,18 +26,38 @@
 
 /* Waveform animation */
 @keyframes wave {
-  0%, 100% { height: 10%; opacity: 0.5; }
-  50% { height: 100%; opacity: 1; }
+
+  0%,
+  100% {
+    height: 10%;
+    opacity: 0.5;
+  }
+
+  50% {
+    height: 100%;
+    opacity: 1;
+  }
 }
 
 .waveform-bar {
   animation: wave 1.2s ease-in-out infinite;
 }
 
-.waveform-bar:nth-child(odd) { animation-duration: 0.8s; }
-.waveform-bar:nth-child(2n) { animation-duration: 1.1s; }
-.waveform-bar:nth-child(3n) { animation-duration: 1.3s; }
-.waveform-bar:nth-child(4n) { animation-duration: 0.9s; }
+.waveform-bar:nth-child(odd) {
+  animation-duration: 0.8s;
+}
+
+.waveform-bar:nth-child(2n) {
+  animation-duration: 1.1s;
+}
+
+.waveform-bar:nth-child(3n) {
+  animation-duration: 1.3s;
+}
+
+.waveform-bar:nth-child(4n) {
+  animation-duration: 0.9s;
+}
 
 /* Text selection */
 ::selection {
@@ -49,7 +69,33 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
-code, pre, .font-mono {
+code,
+pre,
+.font-mono {
   font-family: 'JetBrains Mono', monospace;
 }
 
+/* Animation delay utilities for staggered animations */
+.animation-delay-100 {
+  animation-delay: 100ms;
+}
+
+.animation-delay-200 {
+  animation-delay: 200ms;
+}
+
+.animation-delay-300 {
+  animation-delay: 300ms;
+}
+
+/* Pending text fade transition */
+.pending-text-enter {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.pending-text-enter-active {
+  opacity: 0.7;
+  transform: translateY(0);
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+}

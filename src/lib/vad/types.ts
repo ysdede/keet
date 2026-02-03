@@ -26,4 +26,8 @@ export interface VADResult {
     speechStart?: boolean;
     /** If speech just ended on this chunk */
     speechEnd?: boolean;
+    /** Current estimated noise floor */
+    noiseFloor?: number;
+    /** Current Signal-to-Noise Ratio in dB */
+    snr?: number;
 }

@@ -1,6 +1,31 @@
 import { AudioEngine as IAudioEngine, AudioEngineConfig, AudioSegment, IRingBuffer } from './types';
 import { RingBuffer } from './RingBuffer';
 import { EnergyVAD } from '../vad/EnergyVAD';
+import { VADResult } from '../vad/types';
+
+/**
+ * Simple linear interpolation resampler for downsampling audio.
+ * Good enough for speech recognition where we're going 48kHz -> 16kHz.
+ */
+function resampleLinear(input: Float32Array, fromRate: number, toRate: number): Float32Array {
+    if (fromRate === toRate) return input;
+    
+    const ratio = fromRate / toRate;
+    const outputLength = Math.floor(input.length / ratio);
+    const output = new Float32Array(outputLength);
+    
+    for (let i = 0; i < outputLength; i++) {
+        const srcIndex = i * ratio;
+        const srcIndexFloor = Math.floor(srcIndex);
+        const srcIndexCeil = Math.min(srcIndexFloor + 1, input.length - 1);
+        const t = srcIndex - srcIndexFloor;
+        
+        // Linear interpolation
+        output[i] = input[srcIndexFloor] * (1 - t) + input[srcIndexCeil] * t;
+    }
+    
+    return output;
+}
 
 /**
  * AudioEngine implementation for capturing audio, buffering it, and performing basic VAD.
@@ -10,11 +35,16 @@ export class AudioEngine implements IAudioEngine {
     private ringBuffer: IRingBuffer;
     private energyVad: EnergyVAD;
     private deviceId: string | null = null;
+    private lastVadResult: VADResult | null = null;
 
     private audioContext: AudioContext | null = null;
     private mediaStream: MediaStream | null = null;
     private workletNode: AudioWorkletNode | null = null;
     private sourceNode: MediaStreamAudioSourceNode | null = null;
+
+    // Track device vs target sample rates
+    private deviceSampleRate: number = 48000;
+    private targetSampleRate: number = 16000;
 
     private currentEnergy: number = 0;
     private speechStartFrame: number = 0;
@@ -29,17 +59,21 @@ export class AudioEngine implements IAudioEngine {
             bufferDuration: 120,
             energyThreshold: 0.02,
             minSpeechDuration: 100,
-            minSilenceDuration: 300,
+            minSilenceDuration: 100, // Fast triggering (100ms silence = end of segment)
+            maxSegmentDuration: 3.0, // Split long utterances after 3s for faster streaming
             ...config,
         };
 
         this.deviceId = this.config.deviceId || null;
-        this.ringBuffer = new RingBuffer(this.config.sampleRate, this.config.bufferDuration);
+        this.targetSampleRate = this.config.sampleRate; // 16000 for Parakeet
+        
+        // RingBuffer and VAD operate at TARGET sample rate (16kHz)
+        this.ringBuffer = new RingBuffer(this.targetSampleRate, this.config.bufferDuration);
         this.energyVad = new EnergyVAD({
             energyThreshold: this.config.energyThreshold,
             minSpeechDuration: this.config.minSpeechDuration,
             minSilenceDuration: this.config.minSilenceDuration,
-            sampleRate: this.config.sampleRate,
+            sampleRate: this.targetSampleRate,
         });
     }
 
@@ -56,10 +90,9 @@ export class AudioEngine implements IAudioEngine {
                 audio: {
                     deviceId: this.deviceId ? { exact: this.deviceId } : undefined,
                     channelCount: 1,
-                    sampleRate: this.config.sampleRate,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
                 },
             };
 
@@ -71,22 +104,41 @@ export class AudioEngine implements IAudioEngine {
             throw err;
         }
 
+        const track = this.mediaStream!.getAudioTracks()[0];
+        const trackSettings = track?.getSettings?.();
+        // Device sample rate (what the mic gives us)
+        this.deviceSampleRate = trackSettings?.sampleRate ?? 48000;
+        console.log('[AudioEngine] Device sample rate:', this.deviceSampleRate, '-> Target:', this.targetSampleRate);
+
+        if (this.audioContext && this.audioContext.sampleRate !== this.deviceSampleRate) {
+            await this.audioContext.close();
+            this.audioContext = null;
+        }
         if (!this.audioContext) {
             this.audioContext = new AudioContext({
-                sampleRate: this.config.sampleRate,
+                sampleRate: this.deviceSampleRate,
                 latencyHint: 'interactive',
             });
-            console.log('[AudioEngine] Created AudioContext:', this.audioContext.state);
+            console.log('[AudioEngine] Created AudioContext:', this.audioContext.state, 'sampleRate:', this.audioContext.sampleRate);
         }
 
+        // RingBuffer and VAD operate at TARGET rate (16kHz) - audio will be resampled
+        this.ringBuffer = new RingBuffer(this.targetSampleRate, this.config.bufferDuration);
+        this.energyVad = new EnergyVAD({
+            energyThreshold: this.config.energyThreshold,
+            minSpeechDuration: this.config.minSpeechDuration,
+            minSilenceDuration: this.config.minSilenceDuration,
+            sampleRate: this.targetSampleRate,
+        });
+
         if (!this.isWorkletInitialized) {
-            // Buffered processor: 4096 samples @ 16kHz = ~256ms.
-            // This is safer for the main thread than 128 samples.
+            const windowDuration = 0.080;
             const processorCode = `
                 class CaptureProcessor extends AudioWorkletProcessor {
-                    constructor() {
-                        super();
-                        this.bufferSize = 1024; // 64ms @ 16kHz
+                    constructor(options) {
+                        super(options);
+                        const sr = (options?.processorOptions?.sampleRate) || 16000;
+                        this.bufferSize = Math.round(${windowDuration} * sr);
                         this.buffer = new Float32Array(this.bufferSize);
                         this.index = 0;
                         this._lastLog = 0;
@@ -139,7 +191,9 @@ export class AudioEngine implements IAudioEngine {
         // Re-create worklet node if needed (it might handle dispose differently, but safe to new)
         if (this.workletNode) this.workletNode.disconnect();
 
-        this.workletNode = new AudioWorkletNode(this.audioContext, 'capture-processor');
+        this.workletNode = new AudioWorkletNode(this.audioContext, 'capture-processor', {
+            processorOptions: { sampleRate: this.deviceSampleRate },
+        });
         this.workletNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
             this.handleAudioChunk(event.data);
         };
@@ -175,6 +229,16 @@ export class AudioEngine implements IAudioEngine {
 
     getCurrentEnergy(): number {
         return this.currentEnergy;
+    }
+
+    getSignalMetrics(): { noiseFloor: number; snr: number; threshold: number; snrThreshold: number } {
+        // We cache these from the last processed chunk
+        return {
+            noiseFloor: this.lastVadResult?.noiseFloor ?? 0.0001,
+            snr: this.lastVadResult?.snr ?? 0,
+            threshold: this.config.energyThreshold,
+            snrThreshold: 3.0 // SNR threshold in dB for speech detection
+        };
     }
 
     isSpeechActive(): boolean {
@@ -223,12 +287,16 @@ export class AudioEngine implements IAudioEngine {
         this.sourceNode = null;
     }
 
-    private handleAudioChunk(chunk: Float32Array): void {
-        // 1. Process VAD
+    private handleAudioChunk(rawChunk: Float32Array): void {
+        // 0. Resample from device rate to target rate (e.g., 48kHz -> 16kHz)
+        const chunk = resampleLinear(rawChunk, this.deviceSampleRate, this.targetSampleRate);
+        
+        // 1. Process VAD on resampled audio
         const vadResult = this.energyVad.process(chunk);
         this.currentEnergy = vadResult.energy;
+        this.lastVadResult = vadResult;
 
-        // 2. Write to ring buffer
+        // 2. Write resampled audio to ring buffer
         const endFrame = this.ringBuffer.getCurrentFrame() + chunk.length;
         this.ringBuffer.write(chunk);
 
@@ -242,19 +310,45 @@ export class AudioEngine implements IAudioEngine {
             this.segmentSampleCount += chunk.length;
         }
 
+        // 4. Proactive segment splitting for long utterances (from parakeet-ui)
+        // This ensures transcription happens without waiting for silence
+        if (vadResult.isSpeech && this.speechStartFrame > 0) {
+            const currentSpeechDuration = (endFrame - this.speechStartFrame) / this.targetSampleRate;
+            
+            if (currentSpeechDuration >= this.config.maxSegmentDuration) {
+                console.log(`[AudioEngine] Splitting long segment at ${currentSpeechDuration.toFixed(2)}s`);
+                
+                const segment: AudioSegment = {
+                    startFrame: this.speechStartFrame,
+                    endFrame: endFrame,
+                    duration: currentSpeechDuration,
+                    averageEnergy: this.segmentEnergySum / this.segmentSampleCount,
+                    timestamp: Date.now(),
+                };
+                
+                this.notifySegment(segment);
+                
+                // Start new segment immediately (continues speech)
+                this.speechStartFrame = endFrame;
+                this.segmentEnergySum = vadResult.energy * chunk.length;
+                this.segmentSampleCount = chunk.length;
+            }
+        }
+
+        // 5. Handle natural speech end (silence detected)
         if (vadResult.speechEnd) {
             const segment: AudioSegment = {
                 startFrame: this.speechStartFrame,
-                endFrame: endFrame - Math.ceil((this.energyVad.getConfig().minSilenceDuration / 1000) * this.config.sampleRate),
-                duration: (endFrame - this.speechStartFrame) / this.config.sampleRate,
+                endFrame: endFrame - Math.ceil((this.energyVad.getConfig().minSilenceDuration / 1000) * this.targetSampleRate),
+                duration: (endFrame - this.speechStartFrame) / this.targetSampleRate,
                 averageEnergy: this.segmentEnergySum / this.segmentSampleCount,
                 timestamp: Date.now(),
             };
 
             // Adjust endFrame to be more accurate (excluding the silence that triggered the end)
-            const silenceFrames = Math.ceil((this.energyVad.getConfig().minSilenceDuration / 1000) * this.config.sampleRate);
+            const silenceFrames = Math.ceil((this.energyVad.getConfig().minSilenceDuration / 1000) * this.targetSampleRate);
             segment.endFrame = endFrame - silenceFrames;
-            segment.duration = (segment.endFrame - segment.startFrame) / this.config.sampleRate;
+            segment.duration = (segment.endFrame - segment.startFrame) / this.targetSampleRate;
 
             if (segment.duration > 0) {
                 this.notifySegment(segment);

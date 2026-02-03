@@ -1,7 +1,9 @@
 /**
- * BoncukJS v2.0 - Transcription Module
+ * BoncukJS v3.0 - Transcription Module
  */
 
 export * from './types';
 export { ModelManager } from './ModelManager';
 export { TranscriptionService } from './TranscriptionService';
+export { TokenStreamTranscriber } from './TokenStreamTranscriber';
+export type { TokenStreamConfig, TokenStreamCallbacks, TokenStreamResult } from './TokenStreamTranscriber';

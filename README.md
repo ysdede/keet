@@ -6,6 +6,8 @@ BoncukJS is a real-time speech-to-text transcription application built with Soli
 
 The application captures audio from the user's microphone, processes it in real-time, and provides live transcription with sentence boundary detection. It also integrates with Google's Gemini API for post-processing and analysis of transcribed text.
 
+**Architecture:** Transcription uses **per-utterance** mode (VAD-defined segments, no cross-segment model state). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for decisions and NeMo streaming limitations.
+
 Key features include:
 - Real-time audio capture and processing
 - Client-side speech transcription using Parakeet.js

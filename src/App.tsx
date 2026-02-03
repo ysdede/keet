@@ -13,6 +13,9 @@ import { ModelManager, TranscriptionService } from './lib/transcription';
 
 // Singleton instances
 let audioEngine: AudioEngine | null = null;
+// Reactive signal for UI components to access the engine
+export const [audioEngineSignal, setAudioEngineSignal] = createSignal<AudioEngine | null>(null);
+
 let modelManager: ModelManager | null = null;
 
 let transcriptionService: TranscriptionService | null = null;
@@ -51,70 +54,65 @@ const Header: Component<{ onTabChange: (tab: string) => void }> = (props) => {
             sampleRate: 16000,
             bufferDuration: 30,
             energyThreshold: 0.01,
-            minSpeechDuration: 100,
-            minSilenceDuration: 300,
+            minSpeechDuration: 80,    // 80ms to confirm speech (fast)
+            minSilenceDuration: 400,  // 400ms silence = end segment (natural pauses)
+            maxSegmentDuration: 30.0, // Don't split artificially - let VAD handle it
             deviceId: appStore.selectedDeviceId(),
           });
+          setAudioEngineSignal(audioEngine);
         } else {
           audioEngine.updateConfig({ deviceId: appStore.selectedDeviceId() });
         }
 
         if (isModelReady() && modelManager) {
+          // Per-utterance transcription mode: Just need the model reference
+          // We don't use the streaming transcriber since parakeet.js lacks encoder cache
           if (!transcriptionService) {
             transcriptionService = new TranscriptionService(modelManager, {
               sampleRate: 16000,
               returnTimestamps: true,
+              returnConfidences: true,
               debug: true,
-            }, {
-              onResult: (result) => {
-                if (result.chunkText) {
-                  appStore.setPendingText(result.chunkText);
-                }
-
-                // Update metrics for debug panel
-                const startTime = Date.now();
-                appStore.setInferenceLatency(Date.now() - startTime); // This is mock latency for now, streamer doesn't provide it directly
-
-                if (result.words && result.words.length > 0) {
-                  const lastWords = result.words.slice(-5).map((w, i) => ({
-                    id: `TOK_${Date.now()}_${i}`,
-                    text: w.text,
-                    confidence: w.confidence || 0.95
-                  }));
-                  appStore.setDebugTokens(prev => [...prev.slice(-15), ...lastWords]);
-
-                  // Update system metrics
-                  appStore.setSystemMetrics({
-                    throughput: (result.words.length / (result.totalDuration || 0.1)),
-                    modelConfidence: result.words.reduce((acc, w) => acc + (w.confidence || 0.9), 0) / result.words.length,
-                  });
-                }
-
-                if (result.isFinal && result.text) {
-                  appStore.appendTranscript(result.text + ' ');
-                  appStore.setPendingText('');
-                }
-              },
-            });
+            }, {});
             transcriptionService.initialize();
-          } else {
-            transcriptionService.reset();
+            console.log('[App] Per-utterance transcription mode initialized');
           }
         }
 
         // Subscribe to speech segments for transcription (ensure clean sub)
+        // NOTE: Using per-utterance transcription mode.
+        // Each VAD segment is transcribed independently and appended to transcript.
+        // This is necessary because parakeet.js lacks encoder cache for true streaming.
         if (segmentUnsubscribe) segmentUnsubscribe();
         segmentUnsubscribe = audioEngine.onSpeechSegment(async (segment) => {
           if (transcriptionService && isModelReady()) {
             const startTime = Date.now();
             try {
               const samples = audioEngine!.getRingBuffer().read(segment.startFrame, segment.endFrame);
-              const result = await transcriptionService.processChunk(samples);
 
+              // Phase 1: Stateless/Per-Utterance Transcription
+              // Transcribe this utterance directly using the service helper
+              const result = await transcriptionService.transcribeSegment(samples);
+
+              // Append utterance to transcript
               if (result.text) {
                 appStore.appendTranscript(result.text + ' ');
-                appStore.setPendingText('');
-                transcriptionService.reset(); // Clean slate for next utterance
+
+                // Update metrics and debug tokens
+                if (result.words && result.words.length > 0) {
+                  const lastWords = result.words.slice(-5).map((w, i) => ({
+                    id: `TOK_${Date.now()}_${i}`,
+                    text: w.text,
+                    confidence: w.confidence ?? 0
+                  }));
+                  appStore.setDebugTokens(prev => [...prev.slice(-15), ...lastWords]);
+
+                  const avgConf = result.words.reduce((acc, w) => acc + (w.confidence || 0), 0) / result.words.length;
+                  appStore.setSystemMetrics({
+                    throughput: result.words.length / (segment.duration || 0.1),
+                    modelConfidence: avgConf,
+                  });
+                }
               }
 
               appStore.setInferenceLatency(Date.now() - startTime);
@@ -173,9 +171,9 @@ const Header: Component<{ onTabChange: (tab: string) => void }> = (props) => {
           <button
             onClick={toggleRecording}
             disabled={appStore.modelState() === 'loading'}
-            class={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group ${isRecording()
+            class={`w-12 h-12 rounded-full flex-none flex items-center justify-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group ${isRecording()
               ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20'
-              : 'bg-primary hover:bg-blue-600 shadow-primary/20'
+              : 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/20'
               }`}
           >
             <Show
@@ -346,6 +344,7 @@ const App: Component = () => {
       onProgress: (progress) => {
         appStore.setModelProgress(progress.progress);
         appStore.setModelMessage(progress.message || '');
+        appStore.setModelFile(progress.file || '');
       },
       onStateChange: (state) => {
         appStore.setModelState(state);
@@ -376,6 +375,7 @@ const App: Component = () => {
         state={appStore.modelState()}
         progress={appStore.modelProgress()}
         message={appStore.modelMessage()}
+        file={appStore.modelFile()}
         backend={appStore.backend()}
         selectedModelId={appStore.selectedModelId()}
         onModelSelect={appStore.setSelectedModelId}
@@ -424,6 +424,7 @@ const App: Component = () => {
       <DebugPanel
         isVisible={isDebugVisible()}
         onClose={() => setIsDebugVisible(false)}
+        audioEngine={audioEngineSignal() ?? undefined}
       />
 
       <StatusBar />

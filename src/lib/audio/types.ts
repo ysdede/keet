@@ -10,8 +10,10 @@ export interface AudioEngineConfig {
     energyThreshold: number;
     /** Minimum speech duration in ms to avoid clicks (default: 100) */
     minSpeechDuration: number;
-    /** Minimum silence duration to end segment (default: 300ms) */
+    /** Minimum silence duration to end segment (default: 100ms for fast triggering) */
     minSilenceDuration: number;
+    /** Max segment duration in seconds - splits long utterances for faster streaming (default: 3.0s) */
+    maxSegmentDuration: number;
     /** Preferred device ID (optional) */
     deviceId?: string;
 }
@@ -47,6 +49,9 @@ export interface AudioEngine {
 
     /** Get current audio energy level (for visualization) */
     getCurrentEnergy(): number;
+
+    /** Get current signal metrics (noise floor, SNR, thresholds) */
+    getSignalMetrics(): { noiseFloor: number; snr: number; threshold: number; snrThreshold: number };
 
     /** Check if speech is currently detected */
     isSpeechActive(): boolean;

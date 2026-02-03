@@ -94,7 +94,8 @@ export class ModelManager {
           this._setProgress({
             stage: 'download',
             progress: pct,
-            message: `Downloading ${p.file} (${Math.round(p.loaded / 1024 / 1024)}MB)`
+            message: 'Downloading assets...',
+            file: `${p.file} (${Math.round(p.loaded / 1024 / 1024)}MB)`
           });
         }
       });

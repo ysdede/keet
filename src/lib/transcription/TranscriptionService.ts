@@ -5,11 +5,11 @@
  * StatefulStreamingTranscriber. No complex merging logic required!
  */
 
-import type { 
-  TranscriptionResult, 
-  TranscriptionServiceConfig, 
+import type {
+  TranscriptionResult,
+  TranscriptionServiceConfig,
   TranscriptionCallbacks,
-  TranscriptionWord 
+  TranscriptionWord
 } from './types';
 import { ModelManager } from './ModelManager';
 
@@ -21,7 +21,7 @@ export class TranscriptionService {
   private _isProcessing: boolean = false;
 
   constructor(
-    modelManager: ModelManager, 
+    modelManager: ModelManager,
     config: TranscriptionServiceConfig = {},
     callbacks: TranscriptionCallbacks = {}
   ) {
@@ -163,5 +163,42 @@ export class TranscriptionService {
       totalDuration: 0,
       isFinal,
     };
+  }
+
+  /**
+   * Transcribe a complete audio segment (Phase 1: Stateless/Per-Utterance).
+   * Bypasses the stateful streamer and uses the model's direct transcribe method.
+   */
+  async transcribeSegment(audio: Float32Array): Promise<TranscriptionResult> {
+    const model = this._modelManager.getModel();
+    if (!model) {
+      throw new Error('Model not loaded');
+    }
+
+    try {
+      const result = await model.transcribe(audio, this._config.sampleRate, {
+        returnTimestamps: this._config.returnTimestamps,
+        returnConfidences: this._config.returnConfidences,
+      });
+
+      // Map to TranscriptionResult
+      const text = (result.utterance_text || result.text || '').trim();
+
+      return {
+        chunkText: '',
+        text: text,
+        words: (result.words || []).map((w: any) => ({
+          text: w.text,
+          start: w.start,
+          end: w.end,
+          confidence: w.confidence,
+        })),
+        totalDuration: audio.length / this._config.sampleRate,
+        isFinal: true
+      };
+    } catch (e) {
+      console.error('[TranscriptionService] Segment transcription failed:', e);
+      throw e;
+    }
   }
 }
