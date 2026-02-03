@@ -9,7 +9,7 @@
 
 import { Component, Show, For, Switch, Match, createSignal, onMount, onCleanup } from 'solid-js';
 import { appStore } from './stores/appStore';
-import { CompactWaveform, ModelLoadingOverlay, Sidebar, DebugPanel, StatusBar, PrivacyBadge } from './components';
+import { CompactWaveform, ModelLoadingOverlay, Sidebar, DebugPanel, StatusBar } from './components';
 import { AudioEngine } from './lib/audio';
 import { ModelManager, TranscriptionService, TokenStreamTranscriber } from './lib/transcription';
 
@@ -320,9 +320,18 @@ const TranscriptPanel: Component = () => {
         <Show
           when={appStore.transcript() || appStore.pendingText()}
           fallback={
-            <p class="text-xl text-gray-400 dark:text-gray-500">
-              Click the microphone to start recording...
-            </p>
+            <Show
+              when={appStore.recordingState() === 'recording'}
+              fallback={
+                <p class="text-xl text-gray-400 dark:text-gray-500">
+                  Click the microphone to start recording...
+                </p>
+              }
+            >
+              <p class="text-xl text-gray-600 dark:text-gray-300 opacity-60">
+                <span class="animate-pulse">Listening...</span>
+              </p>
+            </Show>
           }
         >
           <p class="text-xl text-gray-600 dark:text-gray-300">
@@ -331,11 +340,6 @@ const TranscriptPanel: Component = () => {
               <span class="opacity-60"> {appStore.pendingText()}</span>
             </Show>
           </p>
-          <Show when={appStore.recordingState() === 'recording'}>
-            <p class="text-xl text-gray-600 dark:text-gray-300 mt-6 opacity-60">
-              <span class="animate-pulse">Listening...</span>
-            </p>
-          </Show>
         </Show>
       </div>
     </section>
@@ -483,7 +487,6 @@ const App: Component = () => {
       />
 
       <StatusBar />
-      <PrivacyBadge />
     </div>
   );
 };
