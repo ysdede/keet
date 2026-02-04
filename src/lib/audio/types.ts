@@ -1,4 +1,22 @@
 /**
+ * Audio metrics for UI visualization
+ */
+export interface AudioMetrics {
+    /** Current energy level of the audio */
+    currentEnergy: number;
+    /** Smoothed average energy */
+    averageEnergy: number;
+    /** Peak energy level (with decay) */
+    peakEnergy: number;
+    /** Estimated noise floor */
+    noiseFloor: number;
+    /** Signal-to-noise ratio in dB */
+    currentSNR: number;
+    /** Whether speech is currently detected */
+    isSpeaking: boolean;
+}
+
+/**
  * Configuration for the AudioEngine
  */
 export interface AudioEngineConfig {
@@ -83,6 +101,35 @@ export interface AudioEngine {
 
     /** Dispose resources */
     dispose(): void;
+
+    /**
+     * Get visualization data subsampled to fit the target width.
+     * Returns min/max pairs for each pixel to preserve peaks.
+     * @param targetWidth - Desired number of data points (canvas width)
+     * @returns Float32Array with alternating min/max values
+     */
+    getVisualizationData(targetWidth: number): Float32Array;
+
+    /**
+     * Get current audio metrics for UI visualization.
+     */
+    getMetrics(): AudioMetrics;
+
+    /**
+     * Get current time in seconds (for time markers).
+     */
+    getCurrentTime(): number;
+
+    /**
+     * Get visualization buffer duration in seconds.
+     */
+    getVisualizationDuration(): number;
+
+    /**
+     * Subscribe to visualization updates.
+     * Callback is invoked after each audio chunk is processed.
+     */
+    onVisualizationUpdate(callback: (data: Float32Array, metrics: AudioMetrics) => void): () => void;
 }
 
 /**

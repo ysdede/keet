@@ -9,7 +9,7 @@
 
 import { Component, Show, For, Switch, Match, createSignal, onMount, onCleanup, createEffect } from 'solid-js';
 import { appStore } from './stores/appStore';
-import { CompactWaveform, ModelLoadingOverlay, Sidebar, DebugPanel, StatusBar } from './components';
+import { CompactWaveform, BufferVisualizer, ModelLoadingOverlay, Sidebar, DebugPanel, StatusBar } from './components';
 import { AudioEngine } from './lib/audio';
 import { ModelManager, TranscriptionService, TokenStreamTranscriber } from './lib/transcription';
 
@@ -295,8 +295,26 @@ const Header: Component<{ onTabChange: (tab: string) => void }> = (props) => {
 };
 
 const TranscriptPanel: Component = () => {
+  const isRecording = () => appStore.recordingState() === 'recording';
+
   return (
     <section class="flex-1 flex flex-col min-w-0 bg-white dark:bg-card-dark rounded-3xl shadow-xl border border-gray-200 dark:border-gray-700/50 overflow-hidden relative z-10">
+      {/* Waveform Visualizer */}
+      <Show when={isRecording()}>
+        <div class="px-4 pt-4">
+          <div class="rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700/50">
+            <BufferVisualizer
+              audioEngine={audioEngineSignal() ?? undefined}
+              height={80}
+              showThreshold={true}
+              snrThreshold={6.0}
+              showTimeMarkers={true}
+              visible={isRecording()}
+            />
+          </div>
+        </div>
+      </Show>
+
       {/* Header */}
       <div class="px-8 py-6 border-b border-gray-100 dark:border-gray-700/50 flex justify-between items-end">
         <div>

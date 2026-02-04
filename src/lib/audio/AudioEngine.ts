@@ -1,4 +1,4 @@
-import { AudioEngine as IAudioEngine, AudioEngineConfig, AudioSegment, IRingBuffer } from './types';
+import { AudioEngine as IAudioEngine, AudioEngineConfig, AudioSegment, IRingBuffer, AudioMetrics } from './types';
 import { RingBuffer } from './RingBuffer';
 import { EnergyVAD } from '../vad/EnergyVAD';
 import { VADResult } from '../vad/types';
@@ -26,6 +26,9 @@ function resampleLinear(input: Float32Array, fromRate: number, toRate: number): 
 
     return output;
 }
+
+/** Duration of the visualization buffer in seconds */
+const VISUALIZATION_BUFFER_DURATION = 30;
 
 /**
  * AudioEngine implementation for capturing audio, buffering it, and performing basic VAD.
@@ -61,6 +64,24 @@ export class AudioEngine implements IAudioEngine {
         lastWindowEnd: number; // Frame offset of last window end
     }> = [];
 
+    // Visualization buffer (separate from ring buffer for efficient min/max subsampling)
+    private visualizationBuffer: Float32Array | null = null;
+    private visualizationBufferPosition: number = 0;
+    private visualizationBufferSize: number = 0;
+
+    // Metrics for UI components
+    private metrics: AudioMetrics = {
+        currentEnergy: 0,
+        averageEnergy: 0,
+        peakEnergy: 0,
+        noiseFloor: 0.01,
+        currentSNR: 0,
+        isSpeaking: false,
+    };
+
+    // Subscribers for visualization updates
+    private visualizationCallbacks: Array<(data: Float32Array, metrics: AudioMetrics) => void> = [];
+
     constructor(config: Partial<AudioEngineConfig> = {}) {
         this.config = {
             sampleRate: 16000,
@@ -83,6 +104,11 @@ export class AudioEngine implements IAudioEngine {
             minSilenceDuration: this.config.minSilenceDuration,
             sampleRate: this.targetSampleRate,
         });
+
+        // Initialize visualization buffer (30 seconds at target sample rate)
+        this.visualizationBufferSize = Math.round(this.targetSampleRate * VISUALIZATION_BUFFER_DURATION);
+        this.visualizationBuffer = new Float32Array(this.visualizationBufferSize);
+        this.visualizationBufferPosition = 0;
     }
 
     private isWorkletInitialized = false;
@@ -330,6 +356,17 @@ export class AudioEngine implements IAudioEngine {
         const endFrame = this.ringBuffer.getCurrentFrame() + chunk.length;
         this.ringBuffer.write(chunk);
 
+        // 2.5 Update visualization buffer
+        this.updateVisualizationBuffer(chunk);
+
+        // 2.6 Update metrics
+        this.metrics.currentEnergy = vadResult.energy;
+        this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + vadResult.energy * 0.05;
+        this.metrics.peakEnergy = Math.max(this.metrics.peakEnergy * 0.99, vadResult.energy);
+        this.metrics.noiseFloor = vadResult.noiseFloor ?? this.metrics.noiseFloor;
+        this.metrics.currentSNR = vadResult.snr ?? this.metrics.currentSNR;
+        this.metrics.isSpeaking = vadResult.isSpeech;
+
         // 3. Handle segments
         if (vadResult.speechStart) {
             this.speechStartFrame = endFrame - chunk.length;
@@ -387,6 +424,9 @@ export class AudioEngine implements IAudioEngine {
 
         // 6. Fixed-window streaming (v3 token streaming mode)
         this.processWindowCallbacks(endFrame);
+
+        // 7. Notify visualization subscribers
+        this.notifyVisualizationUpdate();
     }
 
     /**
@@ -430,5 +470,138 @@ export class AudioEngine implements IAudioEngine {
 
     private notifySegment(segment: AudioSegment): void {
         this.segmentCallbacks.forEach((cb) => cb(segment));
+    }
+
+    /**
+     * Update the visualization buffer with new audio data.
+     * This is a circular buffer that stores the most recent VISUALIZATION_BUFFER_DURATION seconds.
+     */
+    private updateVisualizationBuffer(chunk: Float32Array): void {
+        if (!this.visualizationBuffer) return;
+
+        const chunkLength = chunk.length;
+        const bufferLength = this.visualizationBufferSize;
+
+        // If chunk is larger than buffer, only take the last portion
+        if (chunkLength >= bufferLength) {
+            this.visualizationBuffer.set(chunk.subarray(chunkLength - bufferLength));
+            this.visualizationBufferPosition = 0;
+            return;
+        }
+
+        // Calculate where to write the new chunk
+        const endPosition = this.visualizationBufferPosition + chunkLength;
+        if (endPosition <= bufferLength) {
+            // Simple case: just write the chunk
+            this.visualizationBuffer.set(chunk, this.visualizationBufferPosition);
+            this.visualizationBufferPosition = endPosition;
+        } else {
+            // Split case: wrap around the buffer
+            const firstPart = bufferLength - this.visualizationBufferPosition;
+            const secondPart = chunkLength - firstPart;
+
+            // Write first part at current position
+            this.visualizationBuffer.set(chunk.subarray(0, firstPart), this.visualizationBufferPosition);
+
+            // Write second part at beginning
+            this.visualizationBuffer.set(chunk.subarray(firstPart), 0);
+
+            this.visualizationBufferPosition = secondPart;
+        }
+    }
+
+    /**
+     * Get visualization data subsampled to fit the target width.
+     * Returns min/max pairs for each pixel to preserve peaks in the waveform.
+     * @param targetWidth - The desired number of data points (e.g., canvas width).
+     * @returns Float32Array containing alternating min/max values, length targetWidth * 2.
+     */
+    getVisualizationData(targetWidth: number): Float32Array {
+        if (!this.visualizationBuffer || !targetWidth || targetWidth <= 0) {
+            return new Float32Array(0);
+        }
+
+        const bufferLength = this.visualizationBufferSize;
+        if (bufferLength === 0) return new Float32Array(0);
+
+        // Arrange the circular buffer into chronological order
+        const orderedBuffer = new Float32Array(bufferLength);
+        const pos = this.visualizationBufferPosition;
+        orderedBuffer.set(this.visualizationBuffer.subarray(pos), 0);
+        orderedBuffer.set(this.visualizationBuffer.subarray(0, pos), bufferLength - pos);
+
+        // Determine samples per point/pixel
+        const numPoints = Math.floor(targetWidth);
+        if (numPoints <= 0) return new Float32Array(0);
+
+        const samplesPerPoint = Math.max(1, Math.floor(bufferLength / numPoints));
+
+        // Create output buffer (2 values per point: min and max)
+        const outputNumPoints = Math.floor(bufferLength / samplesPerPoint);
+        const subsampledBuffer = new Float32Array(outputNumPoints * 2);
+
+        // Process buffer in chunks and find min/max for each chunk
+        let outputIndex = 0;
+        for (let i = 0; i < outputNumPoints; i++) {
+            const startIndex = i * samplesPerPoint;
+            const endIndex = Math.min(startIndex + samplesPerPoint, bufferLength);
+
+            if (startIndex >= endIndex) continue;
+
+            let minVal = orderedBuffer[startIndex];
+            let maxVal = orderedBuffer[startIndex];
+
+            for (let j = startIndex + 1; j < endIndex; j++) {
+                const val = orderedBuffer[j];
+                if (val < minVal) minVal = val;
+                if (val > maxVal) maxVal = val;
+            }
+
+            // Store min and max for this interval
+            subsampledBuffer[outputIndex++] = minVal;
+            subsampledBuffer[outputIndex++] = maxVal;
+        }
+
+        return subsampledBuffer;
+    }
+
+    /**
+     * Get current audio metrics for UI visualization.
+     */
+    getMetrics(): AudioMetrics {
+        return { ...this.metrics };
+    }
+
+    /**
+     * Get current time in seconds (for waveform time markers).
+     */
+    getCurrentTime(): number {
+        return this.ringBuffer.getCurrentTime();
+    }
+
+    /**
+     * Get the visualization buffer duration in seconds.
+     */
+    getVisualizationDuration(): number {
+        return VISUALIZATION_BUFFER_DURATION;
+    }
+
+    /**
+     * Subscribe to visualization updates.
+     * Callback is invoked after each audio chunk is processed.
+     */
+    onVisualizationUpdate(callback: (data: Float32Array, metrics: AudioMetrics) => void): () => void {
+        this.visualizationCallbacks.push(callback);
+        return () => {
+            this.visualizationCallbacks = this.visualizationCallbacks.filter((cb) => cb !== callback);
+        };
+    }
+
+    /**
+     * Notify visualization subscribers with updated data.
+     */
+    private notifyVisualizationUpdate(): void {
+        const data = this.getVisualizationData(800); // Default width for subscribers
+        this.visualizationCallbacks.forEach((cb) => cb(data, this.getMetrics()));
     }
 }
