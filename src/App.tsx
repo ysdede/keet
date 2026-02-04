@@ -30,7 +30,108 @@ let windowUnsubscribe: (() => void) | null = null;
 
 let energyPollInterval: number | undefined;
 
-const Header: Component<{ onTabChange: (tab: string) => void }> = (props) => {
+const TranscriptPanel: Component = () => {
+  const isRecording = () => appStore.recordingState() === 'recording';
+
+  return (
+    <section class="flex-1 flex flex-col min-w-0 nm-flat rounded-[40px] overflow-hidden relative z-10 transition-all duration-500">
+      {/* Waveform Visualizer */}
+      <Show when={isRecording()}>
+        <div class="px-6 pt-6">
+          <div class="rounded-3xl overflow-hidden nm-inset border-4 border-transparent">
+            <BufferVisualizer
+              audioEngine={audioEngineSignal() ?? undefined}
+              height={100}
+              showThreshold={true}
+              snrThreshold={6.0}
+              showTimeMarkers={true}
+              visible={isRecording()}
+            />
+          </div>
+        </div>
+      </Show>
+
+      {/* Transcript content area */}
+      <div class="flex-1 overflow-y-auto px-6 pb-6 pt-2 relative group">
+
+        {/* Floating Action Toolbar */}
+        <div class="absolute top-8 right-12 z-20 flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          <div class="nm-flat rounded-2xl px-4 py-2 flex items-center gap-4">
+            <div class="flex items-center gap-2 pr-2 border-r border-slate-200 dark:border-slate-700">
+              <div class={`w-1.5 h-1.5 rounded-full ${isRecording() ? 'bg-red-500 animate-pulse' : 'bg-slate-300'}`} />
+              <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                {formatDuration(appStore.sessionDuration())}
+              </span>
+            </div>
+
+            <div class="flex gap-2">
+              <button
+                onClick={() => appStore.copyTranscript()}
+                class="w-8 h-8 rounded-lg nm-button flex items-center justify-center text-slate-500 hover:text-blue-500 transition-all"
+                title="Copy"
+              >
+                <span class="material-icons-round text-base">content_copy</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({ title: 'BoncukJS Transcript', text: appStore.transcript() });
+                  } else {
+                    appStore.copyTranscript();
+                  }
+                }}
+                class="w-8 h-8 rounded-lg nm-button flex items-center justify-center text-slate-500 hover:text-blue-500 transition-all"
+                title="Share"
+              >
+                <span class="material-icons-round text-base">ios_share</span>
+              </button>
+              <button
+                onClick={() => appStore.clearTranscript()}
+                class="w-8 h-8 rounded-lg nm-button flex items-center justify-center text-slate-500 hover:text-red-500 transition-all"
+                title="Clear"
+              >
+                <span class="material-icons-round text-base">delete_outline</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="nm-inset rounded-[32px] min-h-full p-10 leading-relaxed relative">
+          <Show
+            when={appStore.transcript() || appStore.pendingText()}
+            fallback={
+              <div class="h-full flex flex-col items-center justify-center text-center py-20 opacity-30">
+                <span class="material-icons-round text-6xl mb-4">Chat_bubble_outline</span>
+                <p class="text-lg font-medium">Ready to transcribe...</p>
+              </div>
+            }
+          >
+            <p class="text-xl text-slate-700 dark:text-slate-200 font-medium">
+              {appStore.transcript()}
+              <Show when={appStore.pendingText()}>
+                <span class="text-blue-500/60 font-medium"> {appStore.pendingText()}</span>
+              </Show>
+            </p>
+          </Show>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+// Helper function
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Main App
+const App: Component = () => {
+  const [activeTab, setActiveTab] = createSignal('transcript');
+  const [isDebugVisible, setIsDebugVisible] = createSignal(false);
+  const [showModelOverlay, setShowModelOverlay] = createSignal(false);
+
   const isRecording = () => appStore.recordingState() === 'recording';
   const isModelReady = () => appStore.modelState() === 'ready';
 
@@ -223,189 +324,10 @@ const Header: Component<{ onTabChange: (tab: string) => void }> = (props) => {
     }
   });
 
-  return (
-    <header class="flex-none p-4 pb-0">
-      <div class="bg-white dark:bg-card-dark rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-3 flex items-center justify-between gap-4">
-        <div class="relative flex items-center gap-3 bg-gray-100 dark:bg-gray-900/50 rounded-xl px-4 py-2 border border-transparent hover:border-gray-300 dark:hover:border-gray-600 transition-colors w-64 overflow-hidden">
-          <span class="material-icons-round text-gray-500 dark:text-gray-400">mic</span>
-          <select
-            class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-            value={appStore.selectedDeviceId()}
-            onChange={(e) => {
-              const id = e.currentTarget.value;
-              appStore.setSelectedDeviceId(id);
-              audioEngine?.setDevice(id);
-            }}
-          >
-            <For each={appStore.availableDevices()}>
-              {(device) => (
-                <option value={device.deviceId}>{device.label || `Mic ${device.deviceId.slice(0, 5)}...`}</option>
-              )}
-            </For>
-          </select>
-          <span class="text-sm font-medium flex-1 truncate">
-            {appStore.availableDevices().find(d => d.deviceId === appStore.selectedDeviceId())?.label || 'Select Microphone'}
-          </span>
-          <span class="material-icons-round text-gray-500 text-sm">expand_more</span>
-        </div>
-
-        <div class="flex items-center gap-3">
-          <button
-            onClick={toggleRecording}
-            disabled={appStore.modelState() === 'loading'}
-            class={`w-12 h-12 rounded-full flex-none flex items-center justify-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group ${isRecording()
-              ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20'
-              : 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/20'
-              }`}
-          >
-            <Show
-              when={isRecording()}
-              fallback={<div class="w-4 h-4 bg-white rounded-full group-hover:scale-110 transition-transform"></div>}
-            >
-              <div class="w-4 h-4 bg-white rounded-sm group-hover:scale-110 transition-transform"></div>
-            </Show>
-          </button>
-
-          <Show when={isRecording()}>
-            <button
-              onClick={toggleRecording}
-              class="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center transition-colors"
-            >
-              <span class="material-icons-round text-xl">stop</span>
-            </button>
-          </Show>
-
-          <button
-            onClick={() => props.onTabChange('ai')}
-            class="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center transition-colors"
-          >
-            <span class="material-icons-round text-xl">settings</span>
-          </button>
-        </div>
-
-        <div class="flex-1 h-10">
-          <CompactWaveform
-            audioLevel={appStore.audioLevel()}
-            isRecording={isRecording()}
-          />
-        </div>
-      </div>
-    </header>
-  );
-};
-
-const TranscriptPanel: Component = () => {
-  const isRecording = () => appStore.recordingState() === 'recording';
-
-  return (
-    <section class="flex-1 flex flex-col min-w-0 bg-white dark:bg-card-dark rounded-3xl shadow-xl border border-gray-200 dark:border-gray-700/50 overflow-hidden relative z-10">
-      {/* Waveform Visualizer */}
-      <Show when={isRecording()}>
-        <div class="px-4 pt-4">
-          <div class="rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700/50">
-            <BufferVisualizer
-              audioEngine={audioEngineSignal() ?? undefined}
-              height={80}
-              showThreshold={true}
-              snrThreshold={6.0}
-              showTimeMarkers={true}
-              visible={isRecording()}
-            />
-          </div>
-        </div>
-      </Show>
-
-      {/* Header */}
-      <div class="px-8 py-6 border-b border-gray-100 dark:border-gray-700/50 flex justify-between items-end">
-        <div>
-          <h1 class="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
-            Live Transcript
-          </h1>
-          <p class="text-gray-400 dark:text-gray-500 text-sm mt-1">
-            Session: {formatDuration(appStore.sessionDuration())}
-          </p>
-        </div>
-        <div class="flex gap-2">
-          <button
-            onClick={() => appStore.copyTranscript()}
-            class="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-400 dark:text-gray-500 hover:text-primary dark:hover:text-primary transition-all"
-          >
-            <span class="material-icons-round text-xl">content_copy</span>
-            <span class="text-[10px] font-medium">Copy</span>
-          </button>
-          <button
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({
-                  title: 'BoncukJS Transcript',
-                  text: appStore.transcript(),
-                });
-              } else {
-                appStore.copyTranscript();
-                alert('Transcript copied to clipboard!');
-              }
-            }}
-            class="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-400 dark:text-gray-500 hover:text-primary dark:hover:text-primary transition-all"
-          >
-            <span class="material-icons-round text-xl">ios_share</span>
-            <span class="text-[10px] font-medium">Share</span>
-          </button>
-          <button
-            onClick={() => appStore.clearTranscript()}
-            class="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-400 dark:text-gray-500 hover:text-red-400 dark:hover:text-red-400 transition-all"
-          >
-            <span class="material-icons-round text-xl">delete_outline</span>
-            <span class="text-[10px] font-medium">Clear</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Transcript content */}
-      <div class="flex-1 overflow-y-auto p-8 prose prose-lg dark:prose-invert max-w-none leading-relaxed">
-        <Show
-          when={appStore.transcript() || appStore.pendingText()}
-          fallback={
-            <Show
-              when={appStore.recordingState() === 'recording'}
-              fallback={
-                <p class="text-xl text-gray-400 dark:text-gray-500">
-                  Click the microphone to start recording...
-                </p>
-              }
-            >
-              <p class="text-xl text-gray-600 dark:text-gray-300 opacity-60">
-                <span class="animate-pulse">Listening...</span>
-              </p>
-            </Show>
-          }
-        >
-          <p class="text-xl text-gray-600 dark:text-gray-300">
-            {appStore.transcript()}
-            <Show when={appStore.pendingText()}>
-              <span class="opacity-60"> {appStore.pendingText()}</span>
-            </Show>
-          </p>
-        </Show>
-      </div>
-    </section>
-  );
-};
-
-// Helper function
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-}
-
-// Main App
-const App: Component = () => {
-  const [activeTab, setActiveTab] = createSignal('transcript');
-  const [isDebugVisible, setIsDebugVisible] = createSignal(false);
-
   // Retry function for model loading
   const retryModelLoad = async () => {
     if (modelManager) {
+      setShowModelOverlay(true);
       try {
         await modelManager.loadModel();
         appStore.setBackend(modelManager.getBackend());
@@ -420,10 +342,16 @@ const App: Component = () => {
   const loadSelectedModel = async () => {
     if (!modelManager) return;
 
+    setShowModelOverlay(true);
     try {
       await modelManager.loadModel({ modelId: appStore.selectedModelId() });
       appStore.setBackend(modelManager.getBackend());
       appStore.setIsOfflineReady(modelManager.isOfflineReady());
+      // Auto-close on success? Maybe not, let user see "Ready" state or explicitly close?
+      // ModelManager sets state to 'ready'. Overlay might show something.
+      // If we want to auto-close, we can do it here. But user might want to see 'Ready' message.
+      // Current behavior: shows 'ready' state.
+      setTimeout(() => setShowModelOverlay(false), 1500); // Auto-close shortly after ready
     } catch (e) {
       console.error('Failed to load model:', e);
     }
@@ -433,10 +361,12 @@ const App: Component = () => {
   const handleLocalLoad = async (files: FileList) => {
     if (!modelManager) return;
 
+    setShowModelOverlay(true);
     try {
       await modelManager.loadLocalModel(files);
       appStore.setBackend(modelManager.getBackend());
       appStore.setIsOfflineReady(modelManager.isOfflineReady());
+      setTimeout(() => setShowModelOverlay(false), 1500);
     } catch (e) {
       console.error('Failed to side-load local model:', e);
     }
@@ -472,10 +402,10 @@ const App: Component = () => {
   });
 
   return (
-    <div class="h-screen w-full overflow-hidden flex flex-col bg-background-light dark:bg-background-dark text-gray-800 dark:text-gray-100 font-sans selection:bg-primary selection:text-white transition-colors duration-300">
+    <div class="h-screen w-full overflow-hidden flex flex-col bg-[var(--nm-bg)] dark:bg-[var(--nm-bg-dark)] text-slate-800 dark:text-slate-100 font-sans selection:bg-primary selection:text-white transition-colors duration-300">
       {/* Model Selection & Loading Overlay */}
       <ModelLoadingOverlay
-        isVisible={appStore.modelState() !== 'ready'}
+        isVisible={showModelOverlay()}
         state={appStore.modelState()}
         progress={appStore.modelProgress()}
         message={appStore.modelMessage()}
@@ -485,6 +415,7 @@ const App: Component = () => {
         onModelSelect={appStore.setSelectedModelId}
         onStart={loadSelectedModel}
         onLocalLoad={handleLocalLoad}
+        onClose={() => setShowModelOverlay(false)}
       />
 
       {/* Error Toast */}
@@ -502,27 +433,67 @@ const App: Component = () => {
       </Show>
 
 
-      <Header onTabChange={setActiveTab} />
 
-      <main class="flex-1 flex overflow-hidden p-4 gap-4 relative">
-        <Switch>
-          <Match when={activeTab() === 'transcript'}>
-            <TranscriptPanel />
-          </Match>
-          <Match when={activeTab() === 'ai'}>
-            <div class="flex-1 bg-white dark:bg-card-dark rounded-3xl p-8 shadow-xl">
-              <h2 class="text-2xl font-bold">AI Engine Status</h2>
-              <p class="mt-4 text-gray-500">Model: {appStore.selectedModelId()}</p>
-              <p class="text-gray-500">Backend: {appStore.backend().toUpperCase()}</p>
-              <p class="text-gray-500">Offline Ready: {appStore.isOfflineReady() ? 'Yes' : 'No'}</p>
-            </div>
-          </Match>
-        </Switch>
+
+      <main class="flex-1 flex overflow-hidden p-4 gap-6 relative">
         <Sidebar
           activeTab={activeTab()}
           onTabChange={setActiveTab}
           onToggleDebug={() => setIsDebugVisible(!isDebugVisible())}
+          isRecording={isRecording()}
+          onToggleRecording={toggleRecording}
+          isModelReady={isModelReady()}
+          onLoadModel={() => setShowModelOverlay(true)}
+          modelState={appStore.modelState()}
+          availableDevices={appStore.availableDevices()}
+          selectedDeviceId={appStore.selectedDeviceId()}
+          onDeviceSelect={(id) => {
+            appStore.setSelectedDeviceId(id);
+            audioEngine?.setDevice(id);
+          }}
+          audioLevel={appStore.audioLevel()}
         />
+
+        <div class="flex-1 flex flex-col min-w-0 min-h-0">
+          <Switch>
+            <Match when={activeTab() === 'transcript'}>
+              <TranscriptPanel />
+            </Match>
+            <Match when={activeTab() === 'ai'}>
+              <div class="flex-1 nm-flat rounded-[40px] p-10 flex flex-col transition-all">
+                <h2 class="text-3xl font-bold text-slate-800 dark:text-slate-100 mb-8 px-2">AI Engine Status</h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div class="p-6 rounded-3xl nm-inset group transition-all">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">Active Model</div>
+                    <div class="text-xl font-bold text-slate-700 dark:text-slate-200 truncate px-1">{appStore.selectedModelId()}</div>
+                  </div>
+
+                  <div class="p-6 rounded-3xl nm-inset group transition-all">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">Inference Backend</div>
+                    <div class="text-xl font-bold text-slate-700 dark:text-slate-200 px-1">{appStore.backend().toUpperCase()}</div>
+                  </div>
+
+                  <div class="p-6 rounded-3xl nm-inset group transition-all">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">Offline Readiness</div>
+                    <div class="flex items-center gap-2 px-1">
+                      <div class={`w-2 h-2 rounded-full ${appStore.isOfflineReady() ? 'bg-green-500' : 'bg-amber-500'}`} />
+                      <div class="text-xl font-bold text-slate-700 dark:text-slate-200">{appStore.isOfflineReady() ? 'Ready' : 'Streaming'}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-auto px-2">
+                  <div class="p-6 rounded-3xl nm-inset bg-blue-500/5">
+                    <p class="text-sm text-slate-500 leading-relaxed italic">
+                      "Speech is processed entirely on your device. Your audio never leaves this browser tab."
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </Match>
+          </Switch>
+        </div>
       </main>
 
       <DebugPanel
@@ -532,6 +503,17 @@ const App: Component = () => {
       />
 
       <StatusBar />
+
+      {/* Global SVG Filters for Hardware Effects */}
+      <svg style="position: absolute; width: 0; height: 0; overflow: hidden;" aria-hidden="true">
+        <defs>
+          <filter id="mercury">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+            <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo" />
+            <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+          </filter>
+        </defs>
+      </svg>
     </div>
   );
 };

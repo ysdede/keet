@@ -12,70 +12,67 @@ interface DebugPanelProps {
 export const DebugPanel: Component<DebugPanelProps> = (props) => {
   return (
     <div
-      class={`h-64 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-panel-dark transition-all duration-300 flex-col font-mono text-xs overflow-hidden ${props.isVisible ? 'flex' : 'hidden'
+      class={`h-80 nm-inset mx-6 mb-6 rounded-[32px] transition-all duration-300 flex-col font-mono text-[11px] overflow-hidden ${props.isVisible ? 'flex' : 'hidden'
         }`}
     >
-      <div class="flex items-center justify-between px-4 py-2 bg-gray-200 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
-        <div class="flex items-center gap-4">
-          <span class="font-bold text-primary italic">BONCUK DEBUG</span>
-          <span class="text-gray-500">ENGINE: <span class="text-gray-700 dark:text-gray-300">{appStore.backend().toUpperCase()}</span></span>
-
-          {/* Mode Toggle */}
-          <div class="flex items-center gap-1 bg-gray-300 dark:bg-gray-700 rounded-lg p-0.5">
-            <button
-              class={`px-2 py-0.5 rounded text-xs transition-colors ${appStore.transcriptionMode() === 'v2-utterance'
-                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
-                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-              onClick={() => appStore.setTranscriptionMode('v2-utterance')}
-              title="Per-utterance VAD mode"
-            >
-              v2 VAD
-            </button>
-            <button
-              class={`px-2 py-0.5 rounded text-xs transition-colors ${appStore.transcriptionMode() === 'v3-streaming'
-                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
-                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-              onClick={() => appStore.setTranscriptionMode('v3-streaming')}
-              title="Streaming LCS+PTFA merge"
-            >
-              v3 LCS
-            </button>
+      <div class="flex items-center justify-between px-6 py-4 bg-transparent border-b border-slate-200/50 dark:border-slate-800/50">
+        <div class="flex items-center gap-6">
+          <div class="flex items-center gap-2">
+            <span class="material-icons-round text-blue-500 text-lg">terminal</span>
+            <span class="font-black text-slate-700 dark:text-slate-200 tracking-tighter uppercase">Boncuk_Debugger</span>
           </div>
 
-          {/* Merge Info (v3 only) */}
-          {appStore.transcriptionMode() === 'v3-streaming' && (
-            <div class="flex items-center gap-2 text-xs">
-              <span class={`px-2 py-0.5 rounded ${appStore.mergeInfo().anchorValid
-                ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400'
-                : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-400'
-                }`}>
-                LCS: {appStore.mergeInfo().lcsLength} | Chunks: {appStore.mergeInfo().chunkCount}
-              </span>
-            </div>
-          )}
+          <div class="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-2"></div>
+
+          {/* Mode Toggle */}
+          <div class="flex items-center gap-1 nm-flat rounded-xl p-1">
+            <button
+              class={`px-3 py-1 rounded-lg text-[10px] font-black tracking-widest transition-all ${appStore.transcriptionMode() === 'v2-utterance'
+                ? 'nm-inset text-blue-500'
+                : 'text-slate-400 hover:text-slate-200'
+                }`}
+              onClick={() => appStore.setTranscriptionMode('v2-utterance')}
+            >
+              V2_VAD
+            </button>
+            <button
+              class={`px-3 py-1 rounded-lg text-[10px] font-black tracking-widest transition-all ${appStore.transcriptionMode() === 'v3-streaming'
+                ? 'nm-inset text-blue-500'
+                : 'text-slate-400 hover:text-slate-200'
+                }`}
+              onClick={() => appStore.setTranscriptionMode('v3-streaming')}
+            >
+              V3_LCS
+            </button>
+          </div>
         </div>
-        <div class="flex gap-4 text-gray-500">
-          <span>Latency: <span class="text-gray-900 dark:text-gray-100">{appStore.inferenceLatency()}ms</span></span>
-          <button class="hover:text-red-500 transition-colors" onClick={() => props.onClose()}>
-            <span class="material-icons-round text-base align-middle">close</span>
+
+        <div class="flex items-center gap-6">
+          <div class="nm-flat rounded-xl px-3 py-1 flex items-center gap-2">
+            <span class="text-slate-400 font-bold uppercase text-[9px]">Latency</span>
+            <span class="text-blue-500 font-black">{appStore.inferenceLatency()}ms</span>
+          </div>
+          <button class="w-8 h-8 rounded-lg nm-button flex items-center justify-center text-slate-400 hover:text-red-500 transition-all" onClick={() => props.onClose()}>
+            <span class="material-icons-round text-base">close</span>
           </button>
         </div>
       </div>
 
-      <div class="flex flex-1 overflow-hidden">
+      <div class="flex flex-1 overflow-hidden p-4 gap-4">
         {/* Token Stream */}
-        <div class="w-1/3 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto">
-          <h3 class="text-gray-400 uppercase tracking-wider mb-2 font-bold">Token Stream</h3>
-          <div class="space-y-1 font-mono">
+        <div class="flex-1 nm-inset rounded-2xl p-4 overflow-y-auto bg-slate-500/5">
+          <div class="flex items-center justify-between mb-4 px-1">
+            <h3 class="text-slate-400 uppercase tracking-widest font-black text-[9px]">Stream_Buffer</h3>
+            <span class="text-[9px] font-bold text-slate-500 px-2 py-0.5 nm-flat rounded-full">LIVE</span>
+          </div>
+          <div class="space-y-1">
             <For each={appStore.debugTokens()}
-              fallback={<div class="text-gray-500 italic">Waiting for speech...</div>}>
+              fallback={<div class="text-slate-400 italic text-center py-10 opacity-50 underline decoration-dotted">No input detected...</div>}>
               {(token) => (
-                <div class={`flex justify-between hover:bg-white dark:hover:bg-gray-800 px-1 rounded cursor-pointer ${token.confidence < 0.5 ? 'bg-yellow-100 dark:bg-yellow-900/20 border-l-2 border-yellow-500' : ''}`}>
-                  <span class="text-blue-600 dark:text-blue-400">ID_{token.id.slice(-3)}</span>
-                  <span class="text-gray-600 dark:text-gray-300">"{token.text}"</span>
-                  <span class="text-gray-400">{token.confidence.toFixed(2)}</span>
+                <div class={`flex justify-between items-center px-3 py-1.5 rounded-xl transition-all ${token.confidence < 0.5 ? 'bg-amber-500/10 text-amber-500' : 'hover:bg-blue-500/5'}`}>
+                  <span class="text-blue-500 font-bold opacity-70">{token.id.slice(-4)}</span>
+                  <span class="text-slate-700 dark:text-slate-200 font-bold">"{token.text}"</span>
+                  <span class="text-slate-400 font-black">{(token.confidence * 100).toFixed(0)}%</span>
                 </div>
               )}
             </For>
@@ -83,55 +80,44 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
         </div>
 
         {/* Inference State */}
-        <div class="w-1/3 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto bg-gray-100 dark:bg-[#0d1117] flex flex-col gap-4">
+        <div class="w-1/3 nm-inset rounded-2xl p-4 overflow-y-auto bg-slate-500/5 flex flex-col gap-4">
           <div>
-            <h3 class="text-gray-400 uppercase tracking-wider mb-2 font-bold">Parakeet State</h3>
-            <pre class="text-green-600 dark:text-green-400 text-[10px]">{JSON.stringify({
-              "backend": appStore.backend(),
-              "model_ready": appStore.isOfflineReady(),
-              "selected_id": appStore.selectedModelId(),
-              "audio_level": appStore.audioLevel().toFixed(4),
-              "speech_active": appStore.isSpeechDetected(),
-              "last_latency": appStore.inferenceLatency() + "ms"
-            }, null, 2)}</pre>
+            <h3 class="text-slate-400 uppercase tracking-widest font-black text-[9px] mb-4 px-1">Engine_State</h3>
+            <div class="nm-flat rounded-xl p-3 bg-slate-900/90 text-[10px]">
+              <pre class="text-emerald-500 leading-relaxed font-bold">{JSON.stringify({
+                "backend": appStore.backend(),
+                "ready": appStore.isOfflineReady(),
+                "audio": appStore.audioLevel().toFixed(4),
+                "vad": appStore.isSpeechDetected()
+              }, null, 2)}</pre>
+            </div>
           </div>
 
-          <EnergyMeter audioEngine={props.audioEngine} />
+          <div class="mt-auto">
+            <EnergyMeter audioEngine={props.audioEngine} />
+          </div>
         </div>
 
         {/* System Metrics */}
-        <div class="w-1/3 p-4 flex flex-col overflow-y-auto">
-          <h3 class="text-gray-400 uppercase tracking-wider mb-2 font-bold">Metrics</h3>
-          <div class="space-y-4">
+        <div class="flex-1 nm-inset rounded-2xl p-4 overflow-y-auto bg-slate-500/5 flex flex-col">
+          <h3 class="text-slate-400 uppercase tracking-widest font-black text-[9px] mb-4 px-1">Perf_Metrics</h3>
+          <div class="space-y-4 px-1">
             <div>
-              <div class="flex justify-between mb-1">
-                <span class="text-gray-500">Throughput</span>
-                <span class="text-gray-800 dark:text-gray-200">{appStore.systemMetrics().throughput.toFixed(1)} t/s</span>
+              <div class="flex justify-between mb-2">
+                <span class="text-slate-400 font-bold uppercase text-[9px]">Throughput</span>
+                <span class="text-slate-700 dark:text-slate-200 font-black">{appStore.systemMetrics().throughput.toFixed(1)} t/s</span>
               </div>
-              <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                <div class="bg-primary h-full transition-all duration-500" style={{ width: `${Math.min(100, appStore.systemMetrics().throughput * 2)}%` }}></div>
+              <div class="h-2 nm-inset rounded-full overflow-hidden p-0.5">
+                <div class="bg-blue-500 h-full rounded-full transition-all duration-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" style={{ width: `${Math.min(100, appStore.systemMetrics().throughput * 2)}%` }}></div>
               </div>
             </div>
-            <div>
-              <div class="flex justify-between mb-1">
-                <span class="text-gray-500">Avg Confidence</span>
-                <span class="text-gray-800 dark:text-gray-200">{(appStore.systemMetrics().modelConfidence * 100).toFixed(1)}%</span>
-              </div>
-              <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                <div class="bg-green-500 h-full transition-all duration-500" style={{ width: `${appStore.systemMetrics().modelConfidence * 100}%` }}></div>
-              </div>
-            </div>
-          </div>
 
-          {appStore.transcriptionMode() === 'v3-streaming' && (
-            <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <h3 class="text-gray-400 uppercase tracking-wider mb-2 font-bold">Streaming Config</h3>
-
-              <div class="space-y-4">
+            {appStore.transcriptionMode() === 'v3-streaming' && (
+              <div class="mt-4 pt-4 border-t border-slate-200/50 dark:border-slate-800/50 space-y-4">
                 <div>
-                  <div class="flex justify-between mb-1">
-                    <span class="text-gray-500">Window</span>
-                    <span class="text-gray-800 dark:text-gray-200">{appStore.streamingWindow().toFixed(1)}s</span>
+                  <div class="flex justify-between mb-2">
+                    <span class="text-slate-400 font-bold uppercase text-[9px]">Streaming Window</span>
+                    <span class="text-blue-500 font-black">{appStore.streamingWindow().toFixed(1)}s</span>
                   </div>
                   <input
                     type="range"
@@ -140,28 +126,19 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
                     step="0.08"
                     value={appStore.streamingWindow()}
                     onInput={(e) => appStore.setStreamingWindow(parseFloat(e.currentTarget.value))}
-                    class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                    class="w-full h-1 nm-flat rounded-lg appearance-none cursor-pointer"
                   />
                 </div>
 
-                <div>
-                  <div class="flex justify-between mb-1">
-                    <span class="text-gray-500">Overlap</span>
-                    <span class="text-gray-800 dark:text-gray-200">{appStore.streamingOverlap().toFixed(1)}s</span>
+                <div class="nm-flat rounded-xl p-3 bg-blue-500/5">
+                  <div class="text-[9px] font-bold text-slate-500 uppercase mb-1">Anchor_Status</div>
+                  <div class={`text-[10px] font-black ${appStore.mergeInfo().anchorValid ? 'text-emerald-500' : 'text-amber-500'}`}>
+                    {appStore.mergeInfo().anchorValid ? 'STABLE_LCS_LOCK' : 'SEARCHING_LOCK...'}
                   </div>
-                  <input
-                    type="range"
-                    min="0.08"
-                    max="6.0"
-                    step="0.08"
-                    value={appStore.streamingOverlap()}
-                    onInput={(e) => appStore.setStreamingOverlap(parseFloat(e.currentTarget.value))}
-                    class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                  />
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -44,50 +44,58 @@ export const EnergyMeter: Component<EnergyMeterProps> = (props) => {
     };
 
     return (
-        <div class="flex flex-col gap-2 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-            <div class="flex items-center justify-between">
-                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Signal Analysis</h3>
-                {/* Speaking indicator */}
-                <span class={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                    isSpeaking() 
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' 
-                        : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-                }`}>
-                    {isSpeaking() ? 'SPEECH' : 'SILENCE'}
-                </span>
+        <div class="flex flex-col gap-4 p-5 nm-inset rounded-3xl bg-slate-500/5 transition-all">
+            <div class="flex items-center justify-between px-1">
+                <h3 class="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Signal_Analysis</h3>
+                {/* Speaking indicator - Neumorphic LED style */}
+                <div class={`flex items-center gap-2 px-3 py-1 rounded-full nm-flat transition-all ${isSpeaking()
+                        ? 'text-emerald-500'
+                        : 'text-slate-500 opacity-60'
+                    }`}>
+                    <div class={`w-1.5 h-1.5 rounded-full ${isSpeaking() ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-slate-400'}`} />
+                    <span class="text-[9px] font-black tracking-widest">
+                        {isSpeaking() ? 'SPEECH' : 'SILENCE'}
+                    </span>
+                </div>
             </div>
 
             {/* Energy Bar */}
-            <div class="relative w-full h-4 bg-gray-200 dark:bg-gray-900 rounded-full overflow-hidden">
+            <div class="relative w-full h-3 nm-inset bg-slate-900/10 rounded-full overflow-hidden p-0.5">
                 {/* Energy Fill - color based on speech state */}
                 <div
-                    class={`absolute top-0 bottom-0 left-0 transition-all duration-75 ${
-                        isSpeaking() ? 'bg-green-500' : 'bg-blue-500'
-                    }`}
+                    class={`h-full rounded-full transition-all duration-75 ${isSpeaking() ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]' : 'bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.5)]'
+                        }`}
                     style={{ width: `${toPercent(energy())}%` }}
                 />
 
                 {/* Noise Floor Marker */}
                 <div
-                    class="absolute top-0 bottom-0 w-1 bg-yellow-500 opacity-70"
+                    class="absolute top-0 bottom-0 w-0.5 bg-amber-500 opacity-50 z-20"
                     style={{ left: `${toPercent(metrics().noiseFloor)}%` }}
-                    title={`Noise Floor: ${metrics().noiseFloor.toFixed(5)}`}
                 />
 
                 {/* Energy Threshold Marker */}
                 <div
-                    class="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
+                    class="absolute top-0 bottom-0 w-px bg-red-500 z-30"
                     style={{ left: `${toPercent(metrics().threshold)}%` }}
-                    title={`Energy Threshold: ${metrics().threshold}`}
                 />
             </div>
 
-            <div class="flex justify-between text-xs text-gray-500">
-                <span>Noise: {metrics().noiseFloor.toFixed(5)}</span>
-                <span>Energy: {energy().toFixed(4)}</span>
-                <span class={metrics().snr > metrics().snrThreshold ? 'text-green-600 font-bold' : metrics().snr > 0 ? 'text-yellow-600' : 'text-red-600'}>
-                    SNR: {metrics().snr.toFixed(1)} dB (th: {metrics().snrThreshold})
-                </span>
+            <div class="grid grid-cols-3 items-center px-1">
+                <div class="flex flex-col">
+                    <span class="text-[8px] font-black text-slate-500 uppercase tracking-tighter">Noise</span>
+                    <span class="text-[10px] font-bold text-slate-400">{metrics().noiseFloor.toFixed(5)}</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <span class="text-[8px] font-black text-slate-500 uppercase tracking-tighter">Energy</span>
+                    <span class="text-[10px] font-bold text-slate-400">{energy().toFixed(4)}</span>
+                </div>
+                <div class="flex flex-col items-end">
+                    <span class="text-[8px] font-black text-slate-500 uppercase tracking-tighter">SNR_Ratio</span>
+                    <span class={`text-[10px] font-black ${metrics().snr > metrics().snrThreshold ? 'text-emerald-500' : 'text-amber-500'}`}>
+                        {metrics().snr.toFixed(1)} dB
+                    </span>
+                </div>
             </div>
         </div>
     );

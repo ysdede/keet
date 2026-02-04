@@ -45,14 +45,17 @@ export const Waveform: Component<WaveformProps> = (props) => {
   });
 
   return (
-    <div class="flex items-center justify-end gap-[3px] h-10 opacity-80 mask-image-linear-to-r">
+    <div class="flex items-center justify-end gap-[6px] h-10 px-5 nm-inset rounded-[24px] bg-slate-500/5 overflow-hidden">
       <For each={barHeights()}>
         {(height) => (
           <div
-            class="w-1 bg-primary rounded-full transition-all duration-75 waveform-bar"
+            class={`w-1 rounded-full transition-all duration-75 ${props.isRecording
+                ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5),_inset_0.5px_0.5px_1px_rgba(255,255,255,0.4),_inset_-0.5px_-0.5px_1px_rgba(0,0,0,0.2)]'
+                : 'bg-slate-300 dark:bg-slate-700 shadow-[inset_0.5px_0.5px_1px_rgba(0,0,0,0.2),_0.5px_0.5px_1px_rgba(255,255,255,0.1)]'
+              }`}
             style={{
-              height: `${Math.max(10, height * 100)}%`,
-              opacity: props.isRecording ? 0.8 + height * 0.2 : 0.4,
+              height: `${Math.max(15, height * 100)}%`,
+              opacity: props.isRecording ? 1 : 0.6,
             }}
           />
         )}

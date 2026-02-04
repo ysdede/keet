@@ -11,6 +11,7 @@ interface ModelLoadingOverlayProps {
     onModelSelect: (id: string) => void;
     onStart: () => void;
     onLocalLoad: (files: FileList) => void;
+    onClose?: () => void;
 }
 
 const MODELS = [
@@ -31,7 +32,7 @@ export const ModelLoadingOverlay: Component<ModelLoadingOverlayProps> = (props) 
 
     return (
         <Show when={props.isVisible}>
-            <div class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 backdrop-blur-[2px]">
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-[var(--nm-bg)]/60 backdrop-blur-sm dark:bg-[var(--nm-bg-dark)]/60">
                 {/* Hidden File Input */}
                 <input
                     type="file"
@@ -41,134 +42,146 @@ export const ModelLoadingOverlay: Component<ModelLoadingOverlayProps> = (props) 
                     onChange={handleFileChange}
                 />
 
-                <div class="w-full max-w-md mx-4">
+                <div class="w-full max-w-lg mx-4">
+                    {/* Neumorphic Card */}
+                    <div class="relative nm-flat rounded-[40px] overflow-hidden transition-all duration-300 animate-in fade-in duration-500">
+                        {/* Close Button */}
+                        <Show when={props.onClose}>
+                            <button
+                                onClick={() => props.onClose?.()}
+                                class="absolute top-6 right-6 w-10 h-10 rounded-xl nm-button flex items-center justify-center text-slate-400 hover:text-red-500 transition-all z-10"
+                            >
+                                <span class="material-icons-round text-base">close</span>
+                            </button>
+                        </Show>
 
-                    {/* Card */}
-                    <div class="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-300">
-                        {/* Header */}
-                        <div class="p-8 pb-4 text-center">
-                            <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-xl ring-4 ring-blue-500/20">
+                        {/* Header Section */}
+                        <div class="p-10 pb-6 text-center">
+                            <div class="w-24 h-24 mx-auto mb-8 rounded-[32px] nm-inset flex items-center justify-center">
                                 <Show
                                     when={props.state !== 'error'}
-                                    fallback={<span class="material-icons-round text-white text-4xl">error_outline</span>}
+                                    fallback={<span class="material-icons-round text-red-500 text-5xl">error_outline</span>}
                                 >
-                                    <span class={`material-icons-round text-white text-4xl ${props.state === 'loading' ? 'animate-pulse' : ''}`}>
-                                        {props.state === 'loading' ? 'auto_awesome' : 'model_training'}
+                                    <span class={`material-icons-round text-blue-500 text-5xl ${props.state === 'loading' ? 'animate-pulse' : ''}`}>
+                                        {props.state === 'loading' ? 'auto_awesome' : 'psychology'}
                                     </span>
                                 </Show>
                             </div>
 
-                            <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+                            <h2 class="text-3xl font-bold text-slate-800 dark:text-slate-100">
                                 {props.state === 'unloaded' ? 'Select AI Model' :
-                                    props.state === 'error' ? 'Loading Failed' : 'Loading Model'}
+                                    props.state === 'error' ? 'Loading Failed' : 'Assembling Brain'}
                             </h2>
 
-                            <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                            <p class="text-sm text-slate-400 font-medium mt-3 px-10">
                                 {props.state === 'unloaded' ? 'Choose the engine for your transcription session.' : props.message}
                             </p>
                         </div>
 
-                        {/* Selection Mode */}
-                        <Show when={props.state === 'unloaded'}>
-                            <div class="px-8 pb-8 space-y-3">
-                                <div class="grid gap-3">
-                                    <For each={MODELS}>
-                                        {(model) => (
-                                            <button
-                                                onClick={() => props.onModelSelect(model.id)}
-                                                class={`flex items-center text-left p-4 rounded-2xl border-2 transition-all ${props.selectedModelId === model.id
-                                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                                                    : 'border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600'
-                                                    }`}
-                                            >
-                                                <div class={`w-5 h-5 rounded-full border-2 mr-4 flex-none items-center justify-center flex ${props.selectedModelId === model.id ? 'border-blue-500' : 'border-gray-300'
-                                                    }`}>
-                                                    <Show when={props.selectedModelId === model.id}>
-                                                        <div class="w-2.5 h-2.5 bg-blue-500 rounded-full" />
-                                                    </Show>
-                                                </div>
-                                                <div>
-                                                    <div class="font-semibold text-gray-900 dark:text-white">{model.name}</div>
-                                                    <div class="text-xs text-gray-500 dark:text-gray-400">{model.desc}</div>
-                                                </div>
-                                            </button>
-                                        )}
-                                    </For>
+                        {/* Content Section */}
+                        <div class="px-10 pb-10">
+                            {/* Selection Mode */}
+                            <Show when={props.state === 'unloaded'}>
+                                <div class="space-y-4">
+                                    <div class="grid gap-4">
+                                        <For each={MODELS}>
+                                            {(model) => (
+                                                <button
+                                                    onClick={() => props.onModelSelect(model.id)}
+                                                    class={`flex items-center text-left p-5 rounded-3xl transition-all ${props.selectedModelId === model.id
+                                                            ? 'nm-inset text-blue-500 border-2 border-blue-500/20'
+                                                            : 'nm-button text-slate-600'
+                                                        }`}
+                                                >
+                                                    <div class={`w-6 h-6 rounded-full nm-inset mr-5 flex flex-none items-center justify-center ${props.selectedModelId === model.id ? 'text-blue-500' : 'text-slate-300'
+                                                        }`}>
+                                                        <Show when={props.selectedModelId === model.id}>
+                                                            <div class="w-2.5 h-2.5 bg-blue-500 rounded-full" />
+                                                        </Show>
+                                                    </div>
+                                                    <div>
+                                                        <div class="font-bold text-lg leading-tight">{model.name}</div>
+                                                        <div class="text-xs font-semibold opacity-60 uppercase tracking-widest mt-1">{model.desc}</div>
+                                                    </div>
+                                                </button>
+                                            )}
+                                        </For>
 
-                                    {/* Local Disk Option */}
+                                        {/* Local Disk Option */}
+                                        <button
+                                            onClick={() => fileInput?.click()}
+                                            class="flex items-center text-left p-5 rounded-3xl nm-button opacity-70 hover:opacity-100 transition-all group"
+                                        >
+                                            <div class="w-10 h-10 rounded-2xl nm-inset flex items-center justify-center mr-5">
+                                                <span class="material-icons-round text-slate-400 text-xl">folder_open</span>
+                                            </div>
+                                            <div>
+                                                <div class="font-bold text-lg leading-tight">Load from Disk</div>
+                                                <div class="text-xs font-semibold opacity-60 uppercase tracking-widest mt-1">Sideload local files</div>
+                                            </div>
+                                        </button>
+                                    </div>
+
                                     <button
-                                        onClick={() => fileInput?.click()}
-                                        class="flex items-center text-left p-4 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all group"
+                                        onClick={() => props.onStart()}
+                                        class="w-full mt-6 py-5 nm-button text-blue-600 font-black rounded-3xl active:nm-inset transition-all uppercase tracking-widest text-sm"
                                     >
-                                        <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mr-4 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30">
-                                            <span class="material-icons-round text-gray-400 group-hover:text-blue-500 text-lg">folder_open</span>
-                                        </div>
-                                        <div>
-                                            <div class="font-semibold text-gray-900 dark:text-white">Load from Disk</div>
-                                            <div class="text-xs text-gray-500 dark:text-gray-400">Select model files from your drive</div>
-                                        </div>
+                                        Initialize Engine
                                     </button>
                                 </div>
+                            </Show>
 
-                                <button
-                                    onClick={() => props.onStart()}
-                                    class="w-full mt-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold rounded-2xl hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all"
-                                >
-                                    Start Loading
-                                </button>
-                            </div>
-                        </Show>
+                            {/* Progress Mode */}
+                            <Show when={props.state === 'loading'}>
+                                <div class="mt-4">
+                                    <div class="h-6 nm-inset rounded-full overflow-hidden p-1.5">
+                                        <div
+                                            class="h-full bg-blue-500 rounded-full transition-all duration-300 ease-out shadow-[0_0_12px_rgba(59,130,246,0.6)]"
+                                            style={{ width: progressWidth() }}
+                                        />
+                                    </div>
 
-                        {/* Progress Mode */}
-                        <Show when={props.state === 'loading'}>
-                            <div class="px-8 pb-8">
-                                <div class="h-3 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                                    <div
-                                        class="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-300 ease-out"
-                                        style={{ width: progressWidth() }}
-                                    />
+                                    <div class="flex justify-between items-center mt-6">
+                                        <div class="flex flex-col">
+                                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Status</span>
+                                            <span class="text-blue-500 font-black text-2xl">{props.progress}%</span>
+                                        </div>
+                                        <div class="flex flex-col text-right">
+                                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Active Asset</span>
+                                            <span class="text-slate-500 font-bold text-xs truncate max-w-[200px]">
+                                                {props.file || `${MODELS.find(m => m.id === props.selectedModelId)?.name || 'Model'} assets`}
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
+                            </Show>
 
-                                <div class="flex justify-between mt-3 text-sm font-medium">
-                                    <span class="text-blue-500">
-                                        {props.progress}%
-                                    </span>
-                                    <span class="text-gray-400 dark:text-gray-500 uppercase tracking-tighter text-xs">
-                                        {props.file || `${MODELS.find(m => m.id === props.selectedModelId)?.name || 'Model'} assets`}
-                                    </span>
+                            {/* Error Mode */}
+                            <Show when={props.state === 'error'}>
+                                <div>
+                                    <button
+                                        onClick={() => props.onStart()}
+                                        class="w-full py-5 nm-button text-red-500 font-black rounded-3xl shadow-none"
+                                    >
+                                        RETRY LOADING
+                                    </button>
                                 </div>
-                            </div>
-                        </Show>
+                            </Show>
+                        </div>
 
-                        {/* Error Mode */}
-                        <Show when={props.state === 'error'}>
-                            <div class="px-8 pb-8">
-                                <button
-                                    onClick={() => props.onStart()}
-                                    class="w-full py-4 bg-red-500 text-white font-bold rounded-2xl hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
-                                >
-                                    Retry Loading
-                                </button>
-                            </div>
-                        </Show>
-
-                        {/* Footer / Backend Info */}
-                        <div class="px-8 py-4 bg-gray-50 dark:bg-slate-900/50 border-t border-gray-100 dark:border-gray-700/50 flex items-center justify-between">
+                        {/* Neumorphic Footer */}
+                        <div class="px-10 py-6 nm-inset bg-transparent flex items-center justify-between rounded-t-[40px] opacity-80">
                             <div class="flex items-center gap-2">
-                                <span class="material-icons-round text-sm text-gray-400">memory</span>
-                                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                                    {props.backend === 'webgpu' ? 'WebGPU Acceleration' : 'WASM Compatibility'}
+                                <span class="material-icons-round text-sm text-slate-400">memory</span>
+                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    {props.backend === 'webgpu' ? 'WebGPU Acceleration' : 'WASM COMPATIBILITY'}
                                 </span>
                             </div>
-                            <span class="text-[10px] text-gray-400 uppercase font-bold tracking-widest">
-                                BoncukJS v2.0
+                            <span class="text-[10px] text-slate-300 font-black tracking-widest">
+                                BONCUKCORE V2
                             </span>
                         </div>
                     </div>
-
-                    <p class="text-center text-xs text-slate-500 mt-6 font-medium">
-                        Model assets are cached in your browser after the first download.
-                    </p>
                 </div>
             </div>
         </Show>

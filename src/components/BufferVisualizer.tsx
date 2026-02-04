@@ -48,7 +48,6 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
   const visible = () => props.visible ?? true;
 
   let animationFrameId: number | undefined;
-  let unsubscribe: (() => void) | null = null;
   let resizeObserver: ResizeObserver | null = null;
 
   // Draw function
@@ -68,153 +67,228 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     const computedStyle = getComputedStyle(document.documentElement);
     const isDarkMode = document.documentElement.classList.contains('dark');
 
-    // Colors (fallbacks for light/dark mode)
-    const bgColor = isDarkMode ? '#1a1a2e' : '#f8fafc';
-    const waveformColor = isDarkMode ? 'rgba(148, 163, 184, 0.8)' : 'rgba(71, 85, 105, 0.8)';
-    const thresholdColor = isDarkMode ? 'rgba(59, 130, 246, 0.8)' : 'rgba(37, 99, 235, 0.8)';
-    const noiseFloorColor = isDarkMode ? 'rgba(34, 197, 94, 0.6)' : 'rgba(22, 163, 74, 0.6)';
-    const textColor = isDarkMode ? 'rgba(148, 163, 184, 0.8)' : 'rgba(100, 116, 139, 0.8)';
-    const tickColor = isDarkMode ? 'rgba(100, 116, 139, 0.5)' : 'rgba(148, 163, 184, 0.5)';
-    const speakingColor = '#22c55e';
+    // Colors (Mechanical Etched Palette)
+    const bgColor = isDarkMode ? '#1e293b' : '#f0f2f5';
+    const highlightColor = isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.8)';
+    const shadowColor = isDarkMode ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.1)';
+    const etchColor = isDarkMode ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.05)';
+    const signalActiveColor = '#3b82f6'; // Keep active elements blue but subtle
 
     // Background
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, width, canvasHeight);
+    if (ctx) {
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, width, canvasHeight);
 
-    // Draw time markers at the top
-    if (showTimeMarkers() && props.audioEngine) {
-      drawTimeMarkers(width, canvasHeight, textColor, tickColor);
-    }
-
-    // Draw segment boundaries (before waveform so they appear behind)
-    if (props.audioEngine) {
-      drawSegments(width, canvasHeight, isDarkMode);
-    }
-
-    // Draw waveform using min/max data
-    if (data.length >= 2) {
+      // Baseline (Etched indent)
       ctx.beginPath();
-      ctx.strokeStyle = waveformColor;
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = shadowColor;
+      ctx.lineWidth = 0.5;
+      ctx.moveTo(0, centerY);
+      ctx.lineTo(width, centerY);
+      ctx.stroke();
 
-      const numPoints = data.length / 2; // Number of min/max pairs
-      const step = width / numPoints;
-
-      for (let i = 0; i < numPoints; i++) {
-        const x = i * step;
-        const minVal = data[i * 2];
-        const maxVal = data[i * 2 + 1];
-
-        // Scale values to canvas coordinates
-        const yMin = centerY - minVal * centerY;
-        const yMax = centerY - maxVal * centerY;
-
-        // Draw vertical line for this point
-        ctx.moveTo(x, yMin);
-        ctx.lineTo(x, yMax);
+      // Draw time markers at the top
+      if (showTimeMarkers() && props.audioEngine) {
+        // Use the new textColor and tickColor based on the etched palette
+        const textColor = isDarkMode ? '#94a3b8' : '#94a3b8';
+        const tickColor = isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
+        drawTimeMarkers(width, canvasHeight, textColor, tickColor);
       }
-      ctx.stroke();
-    }
 
-    // Draw adaptive threshold based on SNR
-    if (showThreshold() && currentMetrics.noiseFloor > 0) {
-      const snrRatio = Math.pow(10, snrThreshold() / 10);
-      const adaptiveThreshold = currentMetrics.noiseFloor * snrRatio;
+      // Draw segment boundaries (before waveform so they appear behind)
+      if (props.audioEngine) {
+        drawSegments(width, canvasHeight, isDarkMode);
+      }
 
-      // Positive threshold line
-      ctx.beginPath();
-      ctx.strokeStyle = thresholdColor;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([]);
+      // Draw waveform using high-fidelity bucketed downsampling - Etched Mercury Line
+      if (data.length >= 2) {
+        // Higher resolution for a true waveform look (approx 400-500 buckets)
+        const numBuckets = Math.min(500, Math.floor(width / 1.5));
+        const bucketSize = Math.floor(data.length / (numBuckets * 2));
+        const bucketWidth = width / numBuckets;
 
-      const adaptiveYPos = centerY - adaptiveThreshold * centerY;
-      ctx.moveTo(0, adaptiveYPos);
-      ctx.lineTo(width, adaptiveYPos);
+        // Bucket aggregated data (Max Peaks)
+        const bucketedPeaks: number[] = [];
+        for (let b = 0; b < numBuckets; b++) {
+          let maxVal = 0;
+          for (let s = 0; s < bucketSize; s++) {
+            const idx = (b * bucketSize + s) * 2;
+            if (idx + 1 < data.length) {
+              const val = Math.abs(data[idx + 1]);
+              if (val > maxVal) maxVal = val;
+            }
+          }
+          bucketedPeaks.push(maxVal);
+        }
 
-      // Negative threshold line (mirror)
-      const adaptiveYNeg = centerY + adaptiveThreshold * centerY;
-      ctx.moveTo(0, adaptiveYNeg);
-      ctx.lineTo(width, adaptiveYNeg);
-      ctx.stroke();
+        const drawEngravedLines = (offsetX: number, offsetY: number, strokeColor: string, lineWidth: number) => {
+          if (!ctx) return;
+          ctx.beginPath();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWidth;
+          ctx.lineCap = 'round';
 
-      // Label
-      ctx.fillStyle = thresholdColor;
-      ctx.font = '10px system-ui, sans-serif';
-      ctx.fillText(`SNR ${snrThreshold().toFixed(1)}dB`, 5, adaptiveYPos - 5);
-    }
+          for (let i = 0; i < numBuckets; i++) {
+            const x = (i * bucketWidth) + offsetX;
+            const peak = bucketedPeaks[i];
 
-    // Draw noise floor level
-    if (currentMetrics.noiseFloor > 0) {
-      const noiseFloorY = centerY - currentMetrics.noiseFloor * centerY;
+            // Draw a symmetrical line
+            const yMin = centerY - (peak * centerY * 0.9) + offsetY;
+            const yMax = centerY + (peak * centerY * 0.9) + offsetY;
 
-      ctx.beginPath();
-      ctx.strokeStyle = noiseFloorColor;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([1, 1]);
-      ctx.moveTo(0, noiseFloorY);
-      ctx.lineTo(width, noiseFloorY);
-      ctx.stroke();
+            if (peak > 0.005) {
+              ctx.moveTo(x, yMin);
+              ctx.lineTo(x, yMax);
+            }
+          }
+          ctx.stroke();
+        };
 
-      // Mirror for negative
-      const noiseFloorYNeg = centerY + currentMetrics.noiseFloor * centerY;
-      ctx.beginPath();
-      ctx.moveTo(0, noiseFloorYNeg);
-      ctx.lineTo(width, noiseFloorYNeg);
-      ctx.stroke();
+        // 1. Highlight Pass (Sharp top-left edge)
+        drawEngravedLines(-0.3, -0.3, highlightColor, 1.2);
 
-      ctx.setLineDash([]);
-    }
+        // 2. Shadow Pass (Depressed groove)
+        drawEngravedLines(0.6, 0.6, shadowColor, 1.5);
 
-    // Draw speaking indicator
-    if (currentMetrics.isSpeaking) {
-      const indicatorX = width - 15;
-      const indicatorY = 15;
-      const radius = 5;
+        // 3. Main Etch Pass (Base material color)
+        drawEngravedLines(0, 0, etchColor, 1.2);
 
-      ctx.beginPath();
-      ctx.arc(indicatorX, indicatorY, radius, 0, Math.PI * 2);
-      ctx.fillStyle = speakingColor;
-      ctx.fill();
+        // 4. Subtle Active signal glow during speaking
+        if (currentMetrics.isSpeaking) {
+          ctx.globalAlpha = 0.5;
+          ctx.shadowBlur = 4;
+          ctx.shadowColor = signalActiveColor;
+          drawEngravedLines(0, 0, signalActiveColor, 1.0);
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = 1.0;
+        }
+      }
 
-      // Ripple effect when speaking
-      const time = performance.now() / 1000;
-      const rippleRadius = radius + Math.sin(time * 5) * 2;
+      // Draw adaptive threshold (Etched dashes)
+      if (showThreshold() && currentMetrics.noiseFloor > 0) {
+        const snrRatio = Math.pow(10, snrThreshold() / 10);
+        const adaptiveThreshold = currentMetrics.noiseFloor * snrRatio;
 
-      ctx.beginPath();
-      ctx.arc(indicatorX, indicatorY, rippleRadius, 0, Math.PI * 2);
-      ctx.strokeStyle = speakingColor;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
+        const drawThresholdLine = (offsetY: number, color: string) => {
+          if (!ctx) return;
+          ctx.beginPath();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 4]);
+          const adaptiveYPos = centerY - adaptiveThreshold * centerY + offsetY;
+          ctx.moveTo(0, adaptiveYPos); ctx.lineTo(width, adaptiveYPos);
+          const adaptiveYNeg = centerY + adaptiveThreshold * centerY + offsetY;
+          ctx.moveTo(0, adaptiveYNeg); ctx.lineTo(width, adaptiveYNeg);
+          ctx.stroke();
+        };
 
-    // Draw SNR meter on the right side
-    if (currentMetrics.currentSNR > 0) {
-      const snrHeight = Math.min(60, currentMetrics.currentSNR * 2);
-      const meterX = width - 30;
-      const meterWidth = 20;
-      const meterY = canvasHeight - 10 - snrHeight;
+        drawThresholdLine(1, highlightColor);
+        drawThresholdLine(0, shadowColor);
+        ctx.setLineDash([]);
 
-      // Background
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-      ctx.fillRect(meterX, canvasHeight - 70, meterWidth, 60);
+        // Label (Etched text)
+        ctx.fillStyle = isDarkMode ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.2)';
+        ctx.font = '900 9px "JetBrains Mono", monospace';
+        const labelY = centerY - adaptiveThreshold * centerY - 8;
+        ctx.fillText(`THRSH: ${snrThreshold().toFixed(1)}dB`, 10, labelY);
+      }
 
-      // SNR level
-      ctx.fillStyle = currentMetrics.currentSNR > snrThreshold() ? speakingColor : tickColor;
-      ctx.fillRect(meterX, meterY, meterWidth, snrHeight);
+      // Draw noise floor level (retained original style for clarity)
+      if (currentMetrics.noiseFloor > 0) {
+        const nfColor = isDarkMode ? 'rgba(74, 222, 128, 0.1)' : 'rgba(34, 197, 94, 0.1)';
+        const noiseFloorY = centerY - currentMetrics.noiseFloor * centerY;
+        const noiseFloorYNeg = centerY + currentMetrics.noiseFloor * centerY;
 
-      // Threshold marker
-      const thresholdLineY = canvasHeight - 10 - snrThreshold() * 2;
-      ctx.beginPath();
-      ctx.strokeStyle = thresholdColor;
-      ctx.setLineDash([]);
-      ctx.moveTo(meterX, thresholdLineY);
-      ctx.lineTo(meterX + meterWidth, thresholdLineY);
-      ctx.stroke();
+        ctx.beginPath();
+        ctx.strokeStyle = nfColor;
+        ctx.lineWidth = 1;
+        ctx.moveTo(0, noiseFloorY);
+        ctx.lineTo(width, noiseFloorY);
+        ctx.moveTo(0, noiseFloorYNeg);
+        ctx.lineTo(width, noiseFloorYNeg);
+        ctx.stroke();
+      }
 
-      // Label
-      ctx.fillStyle = textColor;
-      ctx.font = '10px system-ui, sans-serif';
-      ctx.fillText(`SNR: ${currentMetrics.currentSNR.toFixed(1)}dB`, meterX - 5, canvasHeight - 75);
+      // Draw speaking indicator (Neumorphic dot)
+      if (currentMetrics.isSpeaking) {
+        const speakingColor = '#22c55e';
+        const indicatorX = width - 60;
+        const indicatorY = 25;
+        const radius = 6;
+
+        // Glow effect
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = speakingColor;
+
+        ctx.beginPath();
+        ctx.arc(indicatorX, indicatorY, radius, 0, Math.PI * 2);
+        ctx.fillStyle = speakingColor;
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+
+        // Pulse ring
+        const time = performance.now() / 1000;
+        const rippleRadius = radius + (time % 1) * 10;
+        const rippleOpacity = 1 - (time % 1);
+
+        ctx.beginPath();
+        ctx.arc(indicatorX, indicatorY, rippleRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(34, 197, 94, ${rippleOpacity})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // SNR meter on the right side - Etched mechanical gauge
+      if (currentMetrics.currentSNR > 0) {
+        const meterPadding = 15;
+        const meterWidth = 6;
+        const meterX = width - 20;
+        const meterHeight = canvasHeight - (meterPadding * 2);
+
+        // Meter Housing (Inset)
+        ctx.fillStyle = shadowColor;
+        ctx.beginPath();
+        ctx.roundRect(meterX, meterPadding, meterWidth, meterHeight, 3);
+        ctx.fill();
+
+        ctx.strokeStyle = highlightColor;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Gauge Level
+        const maxSNR = 60;
+        const cappedSNR = Math.min(maxSNR, currentMetrics.currentSNR);
+        const fillHeight = (cappedSNR / maxSNR) * meterHeight;
+        const fillY = (meterPadding + meterHeight) - fillHeight;
+
+        // Glow for the active portion
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = currentMetrics.currentSNR >= snrThreshold() ? 'rgba(34, 197, 94, 0.4)' : 'rgba(96, 165, 250, 0.4)';
+
+        ctx.fillStyle = currentMetrics.currentSNR >= snrThreshold() ? '#22c55e' : signalActiveColor;
+        ctx.beginPath();
+        ctx.roundRect(meterX, fillY, meterWidth, fillHeight, 3);
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+
+        // Threshold marker notched in
+        const thresholdMarkerY = (meterPadding + meterHeight) - (Math.min(maxSNR, snrThreshold()) / maxSNR * meterHeight);
+        ctx.beginPath();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.moveTo(meterX - 4, thresholdMarkerY);
+        ctx.lineTo(meterX + meterWidth + 4, thresholdMarkerY);
+        ctx.stroke();
+
+        // Digital Readout
+        ctx.fillStyle = isDarkMode ? '#f8fafc' : '#1e293b';
+        ctx.font = '900 10px "JetBrains Mono", monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${currentMetrics.currentSNR.toFixed(0)}`, meterX - 8, thresholdMarkerY + 4);
+        ctx.textAlign = 'left';
+      }
     }
   };
 
@@ -336,6 +410,27 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
       if (canvasWidth() > 0) {
         setWaveformData(engine.getVisualizationData(canvasWidth()));
       }
+
+      // Subscribe to updates
+      const sub = engine.onVisualizationUpdate((data, newMetrics) => {
+        if (visible()) {
+          // Refetch data for current canvas width (more accurate)
+          if (canvasWidth() > 0) {
+            setWaveformData(engine.getVisualizationData(canvasWidth()));
+          } else {
+            setWaveformData(data);
+          }
+          setMetrics(newMetrics);
+
+          // Fetch segments for visualization
+          setSegments(engine.getSegmentsForVisualization());
+        } else {
+          // Still update metrics even when not visible
+          setMetrics(newMetrics);
+        }
+      });
+
+      onCleanup(() => sub());
     }
   });
 
@@ -351,27 +446,6 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
       resizeObserver.observe(parentRef);
     }
 
-    // Subscribe to visualization updates from AudioEngine
-    if (props.audioEngine) {
-      unsubscribe = props.audioEngine.onVisualizationUpdate((data, newMetrics) => {
-        if (visible()) {
-          // Refetch data for current canvas width (more accurate)
-          if (canvasWidth() > 0) {
-            setWaveformData(props.audioEngine!.getVisualizationData(canvasWidth()));
-          } else {
-            setWaveformData(data);
-          }
-          setMetrics(newMetrics);
-
-          // Fetch segments for visualization
-          setSegments(props.audioEngine!.getSegmentsForVisualization());
-        } else {
-          // Still update metrics even when not visible
-          setMetrics(newMetrics);
-        }
-      });
-    }
-
     // Start animation loop
     animationFrameId = requestAnimationFrame(drawLoop);
   });
@@ -380,9 +454,6 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
       clearTimeout(animationFrameId);
-    }
-    if (unsubscribe) {
-      unsubscribe();
     }
     if (resizeObserver) {
       resizeObserver.disconnect();
@@ -393,8 +464,8 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     <div ref={parentRef} class="w-full relative" style={{ height: `${height()}px` }}>
       <canvas
         ref={canvasRef}
-        class="w-full h-full block"
-        style={{ 'image-rendering': 'crisp-edges' }}
+        class="w-full h-full block liquid-mercury"
+        style={{ 'image-rendering': 'auto' }}
         aria-label="Audio waveform visualization"
       />
     </div>

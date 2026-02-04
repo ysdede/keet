@@ -88,6 +88,162 @@ pre,
   animation-delay: 300ms;
 }
 
+/* Neumorphism Design System (Snippet Optimized) */
+:root {
+  --nm-bg: #e0e5ec;
+  --nm-shadow-light: rgba(255, 255, 255, 0.8);
+  --nm-shadow-dark: rgba(163, 177, 198, 0.6);
+
+  --nm-bg-dark: #2b2e33;
+  --nm-shadow-light-dark: #373a40;
+  --nm-shadow-dark-dark: #1f2226;
+
+  --primary: #FF6B00;
+  --accent-blue: #4FD1C5;
+
+  /* Hardware LED Colors (Mechanical Style) */
+  --led-red-active: var(--primary);
+  --led-red-passive: #4a1d1d;
+  --led-green-active: #4FD1C5;
+  --led-green-passive: #1e291e;
+
+  /* Glow Effects */
+  --led-red-glow: 0 0 15px rgba(255, 107, 0, 0.6), inset 0 0 4px rgba(255, 107, 0, 0.4);
+  --led-green-glow: 0 0 15px rgba(79, 209, 197, 0.6), inset 0 0 4px rgba(79, 209, 197, 0.4);
+}
+
+.nm-flat {
+  background: var(--nm-bg);
+  box-shadow: 9px 9px 16px var(--nm-shadow-dark),
+    -9px -9px 16px var(--nm-shadow-light);
+}
+
+.nm-inset {
+  background: var(--nm-bg);
+  box-shadow: inset 6px 6px 10px var(--nm-shadow-dark),
+    inset -6px -6px 10px var(--nm-shadow-light);
+}
+
+.dark .nm-flat {
+  background: var(--nm-bg-dark);
+  box-shadow: 8px 8px 16px var(--nm-shadow-dark-dark),
+    -8px -8px 16px var(--nm-shadow-light-dark);
+}
+
+.dark .nm-inset {
+  background: var(--nm-bg-dark);
+  box-shadow: inset 5px 5px 10px var(--nm-shadow-dark-dark),
+    inset -5px -5px 10px var(--nm-shadow-light-dark);
+}
+
+/* Button variants */
+.nm-button {
+  background: var(--nm-bg);
+  box-shadow: 5px 5px 10px var(--nm-shadow-dark),
+    -5px -5px 10px var(--nm-shadow-light);
+  transition: all 0.2s ease;
+}
+
+.nm-button:active {
+  box-shadow: inset 3px 3px 6px var(--nm-shadow-dark),
+    inset -3px -3px 6px var(--nm-shadow-light);
+  transform: scale(0.98);
+}
+
+.dark .nm-button {
+  background: var(--nm-bg-dark);
+  box-shadow: 5px 5px 10px var(--nm-shadow-dark-dark),
+    -5px -5px 10px var(--nm-shadow-light-dark);
+}
+
+.dark .nm-button:active {
+  box-shadow: inset 3px 3px 6px var(--nm-shadow-dark-dark),
+    inset -3px -3px 6px var(--nm-shadow-light-dark);
+}
+
+/* LED Indicators */
+.led-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  transition: all 0.3s ease;
+}
+
+.led-red-active {
+  background-color: var(--led-red-active);
+  box-shadow: var(--led-red-glow);
+}
+
+.led-red-passive {
+  background-color: var(--led-red-passive);
+}
+
+.led-green-active {
+  background-color: var(--led-green-active);
+  box-shadow: var(--led-green-glow);
+}
+
+.led-green-passive {
+  background-color: var(--led-green-passive);
+}
+
+.liquid-mercury {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  filter: url(#mercury);
+}
+
+/* Custom Animations */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-from-left {
+  from {
+    transform: translateX(-10px);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-in {
+  animation-duration: 200ms;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+.fade-in {
+  animation-name: fade-in;
+}
+
+.slide-in-from-left-2 {
+  animation-name: slide-in-from-left;
+}
+
 /* Pending text fade transition */
 .pending-text-enter {
   opacity: 0;
