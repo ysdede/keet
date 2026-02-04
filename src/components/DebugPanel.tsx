@@ -24,8 +24,8 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
           <div class="flex items-center gap-1 bg-gray-300 dark:bg-gray-700 rounded-lg p-0.5">
             <button
               class={`px-2 py-0.5 rounded text-xs transition-colors ${appStore.transcriptionMode() === 'v2-utterance'
-                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
-                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
               onClick={() => appStore.setTranscriptionMode('v2-utterance')}
               title="Per-utterance VAD mode"
@@ -34,8 +34,8 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
             </button>
             <button
               class={`px-2 py-0.5 rounded text-xs transition-colors ${appStore.transcriptionMode() === 'v3-streaming'
-                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
-                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
               onClick={() => appStore.setTranscriptionMode('v3-streaming')}
               title="Streaming LCS+PTFA merge"
@@ -48,8 +48,8 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
           {appStore.transcriptionMode() === 'v3-streaming' && (
             <div class="flex items-center gap-2 text-xs">
               <span class={`px-2 py-0.5 rounded ${appStore.mergeInfo().anchorValid
-                  ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400'
-                  : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-400'
+                ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400'
+                : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-400'
                 }`}>
                 LCS: {appStore.mergeInfo().lcsLength} | Chunks: {appStore.mergeInfo().chunkCount}
               </span>
@@ -100,7 +100,7 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
         </div>
 
         {/* System Metrics */}
-        <div class="w-1/3 p-4 flex flex-col">
+        <div class="w-1/3 p-4 flex flex-col overflow-y-auto">
           <h3 class="text-gray-400 uppercase tracking-wider mb-2 font-bold">Metrics</h3>
           <div class="space-y-4">
             <div>
@@ -122,6 +122,46 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
               </div>
             </div>
           </div>
+
+          {appStore.transcriptionMode() === 'v3-streaming' && (
+            <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <h3 class="text-gray-400 uppercase tracking-wider mb-2 font-bold">Streaming Config</h3>
+
+              <div class="space-y-4">
+                <div>
+                  <div class="flex justify-between mb-1">
+                    <span class="text-gray-500">Window</span>
+                    <span class="text-gray-800 dark:text-gray-200">{appStore.streamingWindow().toFixed(1)}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.16"
+                    max="8.0"
+                    step="0.08"
+                    value={appStore.streamingWindow()}
+                    onInput={(e) => appStore.setStreamingWindow(parseFloat(e.currentTarget.value))}
+                    class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                  />
+                </div>
+
+                <div>
+                  <div class="flex justify-between mb-1">
+                    <span class="text-gray-500">Overlap</span>
+                    <span class="text-gray-800 dark:text-gray-200">{appStore.streamingOverlap().toFixed(1)}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.08"
+                    max="6.0"
+                    step="0.08"
+                    value={appStore.streamingOverlap()}
+                    onInput={(e) => appStore.setStreamingOverlap(parseFloat(e.currentTarget.value))}
+                    class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

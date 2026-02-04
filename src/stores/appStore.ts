@@ -77,6 +77,11 @@ function createAppStore() {
     chunkCount: 0,
   });
 
+  // v3 Streaming config
+  const [streamingWindow, setStreamingWindow] = createSignal(5.0);
+  const [streamingOverlap, setStreamingOverlap] = createSignal(1.5);
+
+
   // Network status listeners
   if (typeof window !== 'undefined') {
     const handleOnline = () => setIsOnline(true);
@@ -161,6 +166,8 @@ function createAppStore() {
     errorMessage,
     transcriptionMode,
     mergeInfo,
+    streamingWindow,
+    streamingOverlap,
 
     // Setters (for internal use)
     setRecordingState,
@@ -185,6 +192,8 @@ function createAppStore() {
     setSystemMetrics,
     setTranscriptionMode,
     setMergeInfo,
+    setStreamingWindow,
+    setStreamingOverlap,
 
     // Actions
     startRecording,

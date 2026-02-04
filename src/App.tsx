@@ -7,7 +7,7 @@
  * - v3: Overlapping window streaming with LCS+PTFA merge
  */
 
-import { Component, Show, For, Switch, Match, createSignal, onMount, onCleanup } from 'solid-js';
+import { Component, Show, For, Switch, Match, createSignal, onMount, onCleanup, createEffect } from 'solid-js';
 import { appStore } from './stores/appStore';
 import { CompactWaveform, ModelLoadingOverlay, Sidebar, DebugPanel, StatusBar } from './components';
 import { AudioEngine } from './lib/audio';
@@ -95,8 +95,8 @@ const Header: Component<{ onTabChange: (tab: string) => void }> = (props) => {
             // === v3: Token Stream with LCS+PTFA merge ===
             if (!tokenStreamTranscriber) {
               tokenStreamTranscriber = new TokenStreamTranscriber(modelManager, {
-                windowDuration: 5.0,
-                overlapDuration: 1.5,
+                windowDuration: appStore.streamingWindow(),
+                overlapDuration: appStore.streamingOverlap(),
                 sampleRate: 16000,
                 debug: true,
               }, {
@@ -195,6 +195,33 @@ const Header: Component<{ onTabChange: (tab: string) => void }> = (props) => {
       }
     }
   };
+
+  // Effect: Handle dynamic streaming config changes
+  createEffect(() => {
+    const windowDur = appStore.streamingWindow();
+    const overlapDur = appStore.streamingOverlap();
+    const isRecording = appStore.recordingState() === 'recording';
+    const isV3 = appStore.transcriptionMode() === 'v3-streaming';
+
+    // Only reconfigure if actively recording in v3 mode
+    if (isRecording && isV3 && tokenStreamTranscriber && audioEngine) {
+      console.log(`[App] Reconfiguring stream: window=${windowDur}s, overlap=${overlapDur}s`);
+
+      if (windowUnsubscribe) {
+        windowUnsubscribe();
+        windowUnsubscribe = null;
+      }
+
+      tokenStreamTranscriber.updateConfig({
+        windowDuration: windowDur,
+        overlapDuration: overlapDur
+      });
+
+      tokenStreamTranscriber.reset(); // Reset context to avoid timestamp mismatch
+
+      windowUnsubscribe = tokenStreamTranscriber.connectToAudioEngine(audioEngine);
+    }
+  });
 
   return (
     <header class="flex-none p-4 pb-0">

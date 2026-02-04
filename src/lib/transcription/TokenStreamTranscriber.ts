@@ -137,6 +137,24 @@ export class TokenStreamTranscriber {
     }
 
     /**
+     * Update configuration.
+     * Note: Changing window/overlap requires re-connecting to AudioEngine (or reset).
+     */
+    updateConfig(config: TokenStreamConfig): void {
+        this._config = {
+            ...this._config,
+            ...config,
+            // Ensure sensible defaults if partial config provided
+            windowDuration: config.windowDuration ?? this._config.windowDuration,
+            overlapDuration: config.overlapDuration ?? this._config.overlapDuration,
+        };
+        
+        if (this._config.debug) {
+            console.log('[TokenStreamTranscriber] Config updated:', this._config);
+        }
+    }
+
+    /**
      * Process an audio chunk through the windowed streaming pipeline.
      * 
      * @param audio - Float32Array of audio samples (16kHz mono PCM)
