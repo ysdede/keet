@@ -92,6 +92,8 @@ export interface AudioSegmentProcessorConfig {
     minSnrThreshold: number;
     energyRiseThreshold: number;
     maxSegmentDuration: number;
+    maxSilenceWithinSpeech: number;
+    endingSpeechTolerance: number;
     logger?: (message: string, data?: unknown) => void;
 }
 
@@ -110,7 +112,7 @@ export class AudioSegmentProcessor {
 
         this.options = {
             sampleRate,
-            windowSize,
+
             minSpeechDuration: defaultAudioParams.minSpeechDuration,
             silenceThreshold: defaultAudioParams.silenceLength,
             energyThreshold: defaultAudioParams.audioThreshold,
@@ -126,6 +128,8 @@ export class AudioSegmentProcessor {
             minSnrThreshold: defaultAudioParams.minSnrThreshold,
             energyRiseThreshold: defaultAudioParams.energyRiseThreshold,
             maxSegmentDuration: defaultAudioParams.maxSegmentDuration,
+            maxSilenceWithinSpeech: defaultAudioParams.maxSilenceWithinSpeech,
+            endingSpeechTolerance: defaultAudioParams.endingSpeechTolerance,
             logger: console.log,
             ...options,
             // Ensure windowSize is recalculated if sampleRate was overridden
@@ -228,7 +232,26 @@ export class AudioSegmentProcessor {
             // Transition: Speech -> potentially Silence
             this.state.silenceCounter++;
 
-            if (this.state.silenceCounter >= (this.options.silenceThreshold * 10)) {
+            const chunksNeeded = Math.ceil(this.options.silenceThreshold / (this.options.windowSize / this.options.sampleRate));
+
+            if (this.state.silenceCounter % 5 === 0) {
+                this.log('Silence progressing', {
+                    counter: this.state.silenceCounter,
+                    needed: chunksNeeded,
+                    energy: energy.toFixed(6),
+                    snr: snr.toFixed(2)
+                });
+            }
+
+            // Implement ending speech tolerance and max silence within speech
+            const silenceDuration = this.state.silenceCounter * (this.options.windowSize / this.options.sampleRate);
+            const isConfirmedSilence = this.state.silenceCounter >= chunksNeeded;
+
+            // Check if we should allow some silence within speech
+            if (silenceDuration < this.options.maxSilenceWithinSpeech) {
+                // Not yet enough silence to consider it a break
+                this.state.speechEnergies.push(energy);
+            } else if (isConfirmedSilence) {
                 // Confirmed silence - end speech segment
                 if (this.state.speechStartTime !== null) {
                     const speechDuration = currentTime - this.state.speechStartTime;
@@ -255,6 +278,9 @@ export class AudioSegmentProcessor {
                 }
 
                 this.startSilence(currentTime);
+            } else {
+                // Accumulate silence energies while deciding
+                this.state.silenceEnergies.push(energy);
             }
         } else {
             // Continue in current state
@@ -469,11 +495,12 @@ export class AudioSegmentProcessor {
     /**
      * Get current state info for debugging.
      */
-    getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number } {
+    getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
         return {
             inSpeech: this.state.inSpeech,
             noiseFloor: this.state.noiseFloor,
-            snr: this.state.currentStats.snr
+            snr: this.state.currentStats.snr,
+            speechStartTime: this.state.speechStartTime
         };
     }
 
@@ -570,5 +597,15 @@ export class AudioSegmentProcessor {
     setMinSpeechDuration(duration: number): void {
         this.options.minSpeechDuration = duration;
         this.log('Updated minimum speech duration', duration);
+    }
+
+    setMaxSilenceWithinSpeech(duration: number): void {
+        this.options.maxSilenceWithinSpeech = duration;
+        this.log('Updated max silence within speech', duration);
+    }
+
+    setEndingSpeechTolerance(duration: number): void {
+        this.options.endingSpeechTolerance = duration;
+        this.log('Updated ending speech tolerance', duration);
     }
 }

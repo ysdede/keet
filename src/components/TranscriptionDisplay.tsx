@@ -106,7 +106,7 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
             {/* Main transcript area */}
             <div
                 ref={containerRef}
-                class="flex-1 overflow-y-auto p-6 scroll-smooth"
+                class="flex-1 overflow-y-auto p-4 scroll-smooth"
             >
                 <Show
                     when={hasContent()}

@@ -1,7 +1,6 @@
 import { AudioEngine as IAudioEngine, AudioEngineConfig, AudioSegment, IRingBuffer, AudioMetrics } from './types';
 import { RingBuffer } from './RingBuffer';
-import { EnergyVAD } from '../vad/EnergyVAD';
-import { VADResult } from '../vad/types';
+import { AudioSegmentProcessor, ProcessedSegment } from './AudioSegmentProcessor';
 
 /**
  * Simple linear interpolation resampler for downsampling audio.
@@ -31,14 +30,17 @@ function resampleLinear(input: Float32Array, fromRate: number, toRate: number): 
 const VISUALIZATION_BUFFER_DURATION = 30;
 
 /**
- * AudioEngine implementation for capturing audio, buffering it, and performing basic VAD.
+ * AudioEngine implementation for capturing audio, buffering it, and performing VAD.
+ * Uses AudioSegmentProcessor for robust speech detection (incl. lookback).
  */
 export class AudioEngine implements IAudioEngine {
     private config: AudioEngineConfig;
     private ringBuffer: IRingBuffer;
-    private energyVad: EnergyVAD;
+    private audioProcessor: AudioSegmentProcessor; // Replaces EnergyVAD
     private deviceId: string | null = null;
-    private lastVadResult: VADResult | null = null;
+
+    // Cache last stats for UI
+    private lastProcessorStats: any = null;
 
     private audioContext: AudioContext | null = null;
     private mediaStream: MediaStream | null = null;
@@ -50,9 +52,6 @@ export class AudioEngine implements IAudioEngine {
     private targetSampleRate: number = 16000;
 
     private currentEnergy: number = 0;
-    private speechStartFrame: number = 0;
-    private segmentEnergySum: number = 0;
-    private segmentSampleCount: number = 0;
 
     private segmentCallbacks: Array<(segment: AudioSegment) => void> = [];
 
@@ -64,7 +63,15 @@ export class AudioEngine implements IAudioEngine {
         lastWindowEnd: number; // Frame offset of last window end
     }> = [];
 
-    // Visualization buffer (separate from ring buffer for efficient min/max subsampling)
+    // SMA buffer for energy calculation
+    private energyHistory: number[] = [];
+
+    // Visualization Summary Buffer (Low-Res Min/Max pairs)
+    private visualizationSummary: Float32Array | null = null;
+    private visualizationSummaryPosition: number = 0;
+    private readonly VIS_SUMMARY_SIZE = 2000; // 2000 min/max pairs for 30 seconds = 15ms resolution
+
+    // Raw visualization buffer (still kept for higher-res requests if needed, but summary is preferred)
     private visualizationBuffer: Float32Array | null = null;
     private visualizationBufferPosition: number = 0;
     private visualizationBufferSize: number = 0;
@@ -80,7 +87,9 @@ export class AudioEngine implements IAudioEngine {
     };
 
     // Subscribers for visualization updates
-    private visualizationCallbacks: Array<(data: Float32Array, metrics: AudioMetrics) => void> = [];
+    private visualizationCallbacks: Array<(data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void> = [];
+    private lastVisualizationNotifyTime: number = 0;
+    private readonly VISUALIZATION_NOTIFY_INTERVAL_MS = 33; // ~30fps (approx 3 updates per 80ms chunk window)
 
     // Recent segments for visualization (stores timing info only)
     private recentSegments: Array<{ startTime: number; endTime: number; isProcessed: boolean }> = [];
@@ -90,29 +99,61 @@ export class AudioEngine implements IAudioEngine {
         this.config = {
             sampleRate: 16000,
             bufferDuration: 120,
-            energyThreshold: 0.02,
-            minSpeechDuration: 100,
-            minSilenceDuration: 100, // Fast triggering (100ms silence = end of segment)
-            maxSegmentDuration: 3.0, // Split long utterances after 3s for faster streaming
+            energyThreshold: 0.08, // Match Parakeet-UI 'medium'
+            minSpeechDuration: 240, // Match Parakeet-UI
+            minSilenceDuration: 400, // Match Parakeet-UI
+            maxSegmentDuration: 4.8, // Match Parakeet-UI
+
+            // Advanced VAD defaults
+            lookbackDuration: 0.120,
+            speechHangover: 0.16,
+            minEnergyIntegral: 22,
+            minEnergyPerSecond: 5,
+            useAdaptiveEnergyThresholds: true,
+            adaptiveEnergyIntegralFactor: 25.0,
+            adaptiveEnergyPerSecondFactor: 10.0,
+            minAdaptiveEnergyIntegral: 3,
+            minAdaptiveEnergyPerSecond: 1,
+            maxSilenceWithinSpeech: 0.160,
+            endingSpeechTolerance: 0.240,
             ...config,
         };
 
         this.deviceId = this.config.deviceId || null;
-        this.targetSampleRate = this.config.sampleRate; // 16000 for Parakeet
+        this.targetSampleRate = this.config.sampleRate;
 
-        // RingBuffer and VAD operate at TARGET sample rate (16kHz)
+        // RingBuffer operates at TARGET sample rate (16kHz)
         this.ringBuffer = new RingBuffer(this.targetSampleRate, this.config.bufferDuration);
-        this.energyVad = new EnergyVAD({
+
+        // Initialize AudioSegmentProcessor
+        this.audioProcessor = new AudioSegmentProcessor({
+            sampleRate: this.targetSampleRate,
             energyThreshold: this.config.energyThreshold,
             minSpeechDuration: this.config.minSpeechDuration,
-            minSilenceDuration: this.config.minSilenceDuration,
-            sampleRate: this.targetSampleRate,
+            silenceThreshold: this.config.minSilenceDuration,
+            maxSegmentDuration: this.config.maxSegmentDuration,
+            lookbackDuration: this.config.lookbackDuration,
+            speechHangover: this.config.speechHangover,
+            maxSilenceWithinSpeech: this.config.maxSilenceWithinSpeech,
+            endingSpeechTolerance: this.config.endingSpeechTolerance,
+            snrThreshold: 3.0,
+            minSnrThreshold: 1.0,
+            noiseFloorAdaptationRate: 0.05,
+            fastAdaptationRate: 0.15,
+            minBackgroundDuration: 1.0,
+            energyRiseThreshold: 0.08
         });
 
         // Initialize visualization buffer (30 seconds at target sample rate)
         this.visualizationBufferSize = Math.round(this.targetSampleRate * VISUALIZATION_BUFFER_DURATION);
         this.visualizationBuffer = new Float32Array(this.visualizationBufferSize);
         this.visualizationBufferPosition = 0;
+
+        // Initialize visualization summary (2000 points for 30s)
+        this.visualizationSummary = new Float32Array(this.VIS_SUMMARY_SIZE * 2);
+        this.visualizationSummaryPosition = 0;
+
+        console.log('[AudioEngine] Initialized with config:', this.config);
     }
 
     private isWorkletInitialized = false;
@@ -160,13 +201,16 @@ export class AudioEngine implements IAudioEngine {
             console.log('[AudioEngine] Created AudioContext:', this.audioContext.state, 'sampleRate:', this.audioContext.sampleRate);
         }
 
-        // RingBuffer and VAD operate at TARGET rate (16kHz) - audio will be resampled
+        // Re-initialize components with correct rates
         this.ringBuffer = new RingBuffer(this.targetSampleRate, this.config.bufferDuration);
-        this.energyVad = new EnergyVAD({
+
+        // Update processor config
+        this.audioProcessor = new AudioSegmentProcessor({
+            sampleRate: this.targetSampleRate,
             energyThreshold: this.config.energyThreshold,
             minSpeechDuration: this.config.minSpeechDuration,
-            minSilenceDuration: this.config.minSilenceDuration,
-            sampleRate: this.targetSampleRate,
+            silenceThreshold: this.config.minSilenceDuration,
+            maxSegmentDuration: this.config.maxSegmentDuration,
         });
 
         if (!this.isWorkletInitialized) {
@@ -197,10 +241,10 @@ export class AudioEngine implements IAudioEngine {
                                 this.port.postMessage(this.buffer.slice());
                                 this.index = 0;
                                 
-                                // Debug log every ~5 seconds (roughly every 20 chunks)
+                                // Debug log every ~5 seconds
                                 const now = Date.now();
                                 if (now - this._lastLog > 5000) {
-                                    console.log('[AudioWorklet] Processed 4096 samples');
+                                    this.port.postMessage({ type: 'log', message: '[AudioWorklet] Active' });
                                     this._lastLog = now;
                                 }
                             }
@@ -232,8 +276,12 @@ export class AudioEngine implements IAudioEngine {
         this.workletNode = new AudioWorkletNode(this.audioContext, 'capture-processor', {
             processorOptions: { sampleRate: this.deviceSampleRate },
         });
-        this.workletNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
-            this.handleAudioChunk(event.data);
+        this.workletNode.port.onmessage = (event: MessageEvent<any>) => {
+            if (event.data instanceof Float32Array) {
+                this.handleAudioChunk(event.data);
+            } else if (event.data?.type === 'log') {
+                console.log(event.data.message);
+            }
         };
         this.workletNode.onprocessorerror = (e) => {
             console.error('[AudioEngine] Worklet processor error:', e);
@@ -265,22 +313,60 @@ export class AudioEngine implements IAudioEngine {
         }
     }
 
+    /**
+     * Reset buffers and VAD state for a new session while keeping the audio graph.
+     * Aligns visualization + segment timebase to 0, matching parakeet-ui behavior.
+     */
+    reset(): void {
+        // Reset audio/VAD state
+        this.ringBuffer.reset();
+        this.audioProcessor.reset();
+        this.currentEnergy = 0;
+
+        // Reset metrics
+        this.metrics = {
+            currentEnergy: 0,
+            averageEnergy: 0,
+            peakEnergy: 0,
+            noiseFloor: 0.01,
+            currentSNR: 0,
+            isSpeaking: false,
+        };
+
+        // Clear segment history used by the visualizer
+        this.recentSegments = [];
+
+        // Reset visualization buffer
+        if (this.visualizationBuffer) {
+            this.visualizationBuffer.fill(0);
+        }
+        this.visualizationBufferPosition = 0;
+
+        // Reset windowed streaming cursors
+        for (const entry of this.windowCallbacks) {
+            entry.lastWindowEnd = 0;
+        }
+
+        // Push a blank update so UI clears stale waveform/segments
+        this.notifyVisualizationUpdate();
+    }
+
     getCurrentEnergy(): number {
         return this.currentEnergy;
     }
 
     getSignalMetrics(): { noiseFloor: number; snr: number; threshold: number; snrThreshold: number } {
-        // We cache these from the last processed chunk
+        const stats = this.audioProcessor.getStats();
         return {
-            noiseFloor: this.lastVadResult?.noiseFloor ?? 0.0001,
-            snr: this.lastVadResult?.snr ?? 0,
+            noiseFloor: stats.noiseFloor ?? 0.0001,
+            snr: stats.snr ?? 0,
             threshold: this.config.energyThreshold,
-            snrThreshold: 3.0 // SNR threshold in dB for speech detection
+            snrThreshold: stats.snrThreshold ?? 3.0
         };
     }
 
     isSpeechActive(): boolean {
-        return this.currentEnergy > this.config.energyThreshold;
+        return this.audioProcessor.getStateInfo().inSpeech;
     }
 
     getRingBuffer(): IRingBuffer {
@@ -318,11 +404,21 @@ export class AudioEngine implements IAudioEngine {
 
     updateConfig(config: Partial<AudioEngineConfig>): void {
         this.config = { ...this.config, ...config };
-        this.energyVad.updateConfig({
-            energyThreshold: this.config.energyThreshold,
-            minSpeechDuration: this.config.minSpeechDuration,
-            minSilenceDuration: this.config.minSilenceDuration,
-        });
+
+        // Update processor config
+        if (config.energyThreshold !== undefined) this.audioProcessor.setThreshold(config.energyThreshold);
+        if (config.minSpeechDuration !== undefined) this.audioProcessor.setMinSpeechDuration(config.minSpeechDuration);
+        if (config.minSilenceDuration !== undefined) this.audioProcessor.setSilenceLength(config.minSilenceDuration);
+        if (config.maxSegmentDuration !== undefined) this.audioProcessor.setMaxSegmentDuration(config.maxSegmentDuration);
+
+        // Advanced VAD updates
+        if (config.lookbackDuration !== undefined) this.audioProcessor.setLookbackDuration(config.lookbackDuration);
+        if (config.overlapDuration !== undefined) this.audioProcessor.setOverlapDuration(config.overlapDuration);
+        if (config.maxSilenceWithinSpeech !== undefined) this.audioProcessor.setMaxSilenceWithinSpeech(config.maxSilenceWithinSpeech);
+        if (config.endingSpeechTolerance !== undefined) this.audioProcessor.setEndingSpeechTolerance(config.endingSpeechTolerance);
+
+        if (config.snrThreshold !== undefined) this.audioProcessor.setSnrThreshold(config.snrThreshold);
+        if (config.minSnrThreshold !== undefined) this.audioProcessor.setMinSnrThreshold(config.minSnrThreshold);
     }
 
     async setDevice(deviceId: string): Promise<void> {
@@ -351,78 +447,127 @@ export class AudioEngine implements IAudioEngine {
         // 0. Resample from device rate to target rate (e.g., 48kHz -> 16kHz)
         const chunk = resampleLinear(rawChunk, this.deviceSampleRate, this.targetSampleRate);
 
-        // 1. Process VAD on resampled audio
-        const vadResult = this.energyVad.process(chunk);
-        this.currentEnergy = vadResult.energy;
-        this.lastVadResult = vadResult;
+        // Calculate chunk energy (Peak Amplitude) + SMA for VAD compatibility
+        let maxAbs = 0;
+        for (let i = 0; i < chunk.length; i++) {
+            const abs = Math.abs(chunk[i]);
+            if (abs > maxAbs) maxAbs = abs;
+        }
 
-        // 2. Write resampled audio to ring buffer
+        // SMA Smoothing (matching Parakeet-UI logic)
+        this.energyHistory.push(maxAbs);
+        if (this.energyHistory.length > 6) {
+            this.energyHistory.shift();
+        }
+        const energy = this.energyHistory.reduce((a: number, b: number) => a + b, 0) / this.energyHistory.length;
+
+        this.currentEnergy = energy;
+
+        // Log when energy crosses threshold if state is close to changing
+        const isSpeech = energy > this.config.energyThreshold;
+        const wasSpeaking = this.metrics.isSpeaking;
+        if (isSpeech !== wasSpeaking) {
+            console.debug(`[AudioEngine] Energy threshold crossed: ${energy.toFixed(6)} > ${this.config.energyThreshold} = ${isSpeech}`);
+        }
+
+        // 1. Write resampled audio to ring buffer FIRST
+        // This is crucial so that when the processor detects a segment (possibly with lookback),
+        // the data is already available in the ring buffer.
         const endFrame = this.ringBuffer.getCurrentFrame() + chunk.length;
         this.ringBuffer.write(chunk);
+
+        // 2. Process VAD on resampled audio
+        // The processor uses its own internal history for lookback, but we pull full audio from ring buffer later.
+        const currentTime = this.ringBuffer.getCurrentTime();
+        const segments = this.audioProcessor.processAudioData(chunk, currentTime, energy);
 
         // 2.5 Update visualization buffer
         this.updateVisualizationBuffer(chunk);
 
         // 2.6 Update metrics
-        this.metrics.currentEnergy = vadResult.energy;
-        this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + vadResult.energy * 0.05;
-        this.metrics.peakEnergy = Math.max(this.metrics.peakEnergy * 0.99, vadResult.energy);
-        this.metrics.noiseFloor = vadResult.noiseFloor ?? this.metrics.noiseFloor;
-        this.metrics.currentSNR = vadResult.snr ?? this.metrics.currentSNR;
-        this.metrics.isSpeaking = vadResult.isSpeech;
+        const stats = this.audioProcessor.getStats();
+        const stateInfo = this.audioProcessor.getStateInfo();
+
+        this.metrics.currentEnergy = energy;
+        this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + energy * 0.05;
+        this.metrics.peakEnergy = Math.max(this.metrics.peakEnergy * 0.99, energy);
+        this.metrics.noiseFloor = stats.noiseFloor ?? 0.01;
+        this.metrics.currentSNR = stats.snr ?? 0;
+        this.metrics.isSpeaking = stateInfo.inSpeech;
+
+        // Periodic debug log
+        if (Math.random() < 0.05) {
+            console.debug(`[AudioEngine] Metrics: E=${energy.toFixed(6)}, NF=${this.metrics.noiseFloor.toFixed(6)}, SNR=${this.metrics.currentSNR.toFixed(2)}, Speaking=${this.metrics.isSpeaking}`);
+        }
 
         // 3. Handle segments
-        if (vadResult.speechStart) {
-            this.speechStartFrame = endFrame - chunk.length;
-            this.segmentEnergySum = vadResult.energy * chunk.length;
-            this.segmentSampleCount = chunk.length;
-        } else if (vadResult.isSpeech) {
-            this.segmentEnergySum += vadResult.energy * chunk.length;
-            this.segmentSampleCount += chunk.length;
-        }
+        if (segments.length > 0) {
+            for (const seg of segments) {
+                // Apply lookback and overlap adjustments matching parakeet-ui
+                const lookbackDuration = this.config.lookbackDuration ?? 0.120;
+                const startTime = Math.max(0, seg.startTime - lookbackDuration);
 
-        // 4. Proactive segment splitting for long utterances (from parakeet-ui)
-        // This ensures transcription happens without waiting for silence
-        if (vadResult.isSpeech && this.speechStartFrame > 0) {
-            const currentSpeechDuration = (endFrame - this.speechStartFrame) / this.targetSampleRate;
+                // Calculate the sample positions for audio extraction
+                const startFrame = Math.round(startTime * this.targetSampleRate);
+                const endFrame = Math.round(seg.endTime * this.targetSampleRate);
 
-            if (currentSpeechDuration >= this.config.maxSegmentDuration) {
-                console.log(`[AudioEngine] Splitting long segment at ${currentSpeechDuration.toFixed(2)}s`);
+                // Retrieval with padding (hangover)
+                const speechHangover = this.config.speechHangover ?? 0.16;
+                const paddedEndFrame = Math.min(
+                    this.ringBuffer.getCurrentFrame(),
+                    endFrame + Math.round(speechHangover * this.targetSampleRate)
+                );
 
-                const segment: AudioSegment = {
-                    startFrame: this.speechStartFrame,
-                    endFrame: endFrame,
-                    duration: currentSpeechDuration,
-                    averageEnergy: this.segmentEnergySum / this.segmentSampleCount,
-                    timestamp: Date.now(),
-                };
+                try {
+                    const audioData = this.ringBuffer.read(startFrame, paddedEndFrame);
 
-                this.notifySegment(segment);
+                    // Calculate precise energy metrics for filtering
+                    const metrics = this.calculateSegmentEnergyMetrics(audioData, this.targetSampleRate);
 
-                // Start new segment immediately (continues speech)
-                this.speechStartFrame = endFrame;
-                this.segmentEnergySum = vadResult.energy * chunk.length;
-                this.segmentSampleCount = chunk.length;
-            }
-        }
+                    // Normalize power to 16kHz equivalent
+                    const normalizedPowerAt16k = metrics.averagePower * 16000;
+                    const normalizedEnergyIntegralAt16k = normalizedPowerAt16k * metrics.duration;
 
-        // 5. Handle natural speech end (silence detected)
-        if (vadResult.speechEnd) {
-            const segment: AudioSegment = {
-                startFrame: this.speechStartFrame,
-                endFrame: endFrame - Math.ceil((this.energyVad.getConfig().minSilenceDuration / 1000) * this.targetSampleRate),
-                duration: (endFrame - this.speechStartFrame) / this.targetSampleRate,
-                averageEnergy: this.segmentEnergySum / this.segmentSampleCount,
-                timestamp: Date.now(),
-            };
+                    // Adaptive threshold calculation
+                    let minEnergyIntegralThreshold = this.config.minEnergyIntegral ?? 22;
+                    let minEnergyPerSecondThreshold = this.config.minEnergyPerSecond ?? 5;
 
-            // Adjust endFrame to be more accurate (excluding the silence that triggered the end)
-            const silenceFrames = Math.ceil((this.energyVad.getConfig().minSilenceDuration / 1000) * this.targetSampleRate);
-            segment.endFrame = endFrame - silenceFrames;
-            segment.duration = (segment.endFrame - segment.startFrame) / this.targetSampleRate;
+                    if (this.config.useAdaptiveEnergyThresholds) {
+                        const windowSize = this.config.windowSize ?? Math.round(0.080 * this.targetSampleRate);
+                        const normalizedNoiseFloor = windowSize > 0 ? this.metrics.noiseFloor / windowSize : 0;
+                        const noiseFloorAt16k = normalizedNoiseFloor * 16000;
 
-            if (segment.duration > 0) {
-                this.notifySegment(segment);
+                        const adaptiveMinEnergyIntegral = noiseFloorAt16k * (this.config.adaptiveEnergyIntegralFactor ?? 25.0);
+                        minEnergyIntegralThreshold = Math.max(this.config.minAdaptiveEnergyIntegral ?? 3, adaptiveMinEnergyIntegral);
+
+                        const adaptiveMinEnergyPerSecond = noiseFloorAt16k * (this.config.adaptiveEnergyPerSecondFactor ?? 10.0);
+                        minEnergyPerSecondThreshold = Math.max(this.config.minAdaptiveEnergyPerSecond ?? 1, adaptiveMinEnergyPerSecond);
+                    }
+
+                    const isValidSpeech =
+                        metrics.duration >= (this.config.minSpeechDuration / 1000) &&
+                        normalizedPowerAt16k >= minEnergyPerSecondThreshold &&
+                        normalizedEnergyIntegralAt16k >= minEnergyIntegralThreshold;
+
+                    if (isValidSpeech) {
+                        const audioSegment: AudioSegment = {
+                            startFrame: startFrame,
+                            endFrame: paddedEndFrame,
+                            duration: metrics.duration,
+                            averageEnergy: metrics.averagePower,
+                            timestamp: Date.now(),
+                        };
+                        this.notifySegment(audioSegment);
+                    } else {
+                        console.log('[AudioEngine] Filtered out noise segment:', {
+                            duration: metrics.duration,
+                            power: normalizedPowerAt16k,
+                            integral: normalizedEnergyIntegralAt16k
+                        });
+                    }
+                } catch (err) {
+                    console.warn('[AudioEngine] Failed to extract audio for validation:', err);
+                }
             }
         }
 
@@ -431,6 +576,31 @@ export class AudioEngine implements IAudioEngine {
 
         // 7. Notify visualization subscribers
         this.notifyVisualizationUpdate();
+    }
+
+    /**
+     * Helper to read audio from ring buffer and calculate energy metrics for a detected segment.
+     */
+    private calculateSegmentEnergyMetrics(audioData: Float32Array, sampleRate: number): { averagePower: number; duration: number; numSamples: number } {
+        if (!audioData || audioData.length === 0) {
+            return { averagePower: 0, duration: 0, numSamples: 0 };
+        }
+
+        const numSamples = audioData.length;
+        let sumOfSquares = 0;
+
+        for (let i = 0; i < numSamples; i++) {
+            sumOfSquares += audioData[i] * audioData[i];
+        }
+
+        const duration = numSamples / sampleRate;
+        const averagePower = numSamples > 0 ? sumOfSquares / numSamples : 0;
+
+        return {
+            averagePower,
+            duration,
+            numSamples
+        };
     }
 
     /**
@@ -492,7 +662,19 @@ export class AudioEngine implements IAudioEngine {
      * Get recent segments for visualization.
      */
     getSegmentsForVisualization(): Array<{ startTime: number; endTime: number; isProcessed: boolean }> {
-        return [...this.recentSegments];
+        const segments = [...this.recentSegments];
+
+        // Add pending segment if speech is currently active
+        const vadState = this.audioProcessor.getStateInfo();
+        if (vadState.inSpeech && vadState.speechStartTime !== null) {
+            segments.push({
+                startTime: vadState.speechStartTime,
+                endTime: this.ringBuffer.getCurrentTime(),
+                isProcessed: false // Pending
+            });
+        }
+
+        return segments;
     }
 
     /**
@@ -506,97 +688,130 @@ export class AudioEngine implements IAudioEngine {
     }
 
     /**
-     * Update the visualization buffer with new audio data.
-     * This is a circular buffer that stores the most recent VISUALIZATION_BUFFER_DURATION seconds.
+     * Update the visualization buffer and summary with new audio data.
      */
     private updateVisualizationBuffer(chunk: Float32Array): void {
-        if (!this.visualizationBuffer) return;
+        if (!this.visualizationBuffer || !this.visualizationSummary) return;
 
         const chunkLength = chunk.length;
         const bufferLength = this.visualizationBufferSize;
 
-        // If chunk is larger than buffer, only take the last portion
+        // 1. Update raw circular buffer
         if (chunkLength >= bufferLength) {
             this.visualizationBuffer.set(chunk.subarray(chunkLength - bufferLength));
             this.visualizationBufferPosition = 0;
-            return;
+        } else {
+            const endPosition = this.visualizationBufferPosition + chunkLength;
+            if (endPosition <= bufferLength) {
+                this.visualizationBuffer.set(chunk, this.visualizationBufferPosition);
+                this.visualizationBufferPosition = endPosition % bufferLength;
+            } else {
+                const firstPart = bufferLength - this.visualizationBufferPosition;
+                this.visualizationBuffer.set(chunk.subarray(0, firstPart), this.visualizationBufferPosition);
+                this.visualizationBuffer.set(chunk.subarray(firstPart), 0);
+                this.visualizationBufferPosition = (chunkLength - firstPart) % bufferLength;
+            }
         }
 
-        // Calculate where to write the new chunk
-        const endPosition = this.visualizationBufferPosition + chunkLength;
-        if (endPosition <= bufferLength) {
-            // Simple case: just write the chunk
-            this.visualizationBuffer.set(chunk, this.visualizationBufferPosition);
-            this.visualizationBufferPosition = endPosition;
-        } else {
-            // Split case: wrap around the buffer
-            const firstPart = bufferLength - this.visualizationBufferPosition;
-            const secondPart = chunkLength - firstPart;
+        // 2. Update summary buffer (Low-res min/max pairs)
+        // Each point in VIS_SUMMARY_SIZE represents bufferLength / VIS_SUMMARY_SIZE samples
+        const samplesPerPoint = bufferLength / this.VIS_SUMMARY_SIZE;
+        const numNewPoints = Math.round(chunkLength / samplesPerPoint);
 
-            // Write first part at current position
-            this.visualizationBuffer.set(chunk.subarray(0, firstPart), this.visualizationBufferPosition);
+        for (let i = 0; i < numNewPoints; i++) {
+            const start = Math.floor(i * samplesPerPoint);
+            const end = Math.min(chunkLength, Math.floor((i + 1) * samplesPerPoint));
+            if (start >= end) continue;
 
-            // Write second part at beginning
-            this.visualizationBuffer.set(chunk.subarray(firstPart), 0);
+            let min = chunk[start];
+            let max = chunk[start];
+            for (let s = start + 1; s < end; s++) {
+                const v = chunk[s];
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
 
-            this.visualizationBufferPosition = secondPart;
+            // Write to circular summary
+            const targetIdx = this.visualizationSummaryPosition * 2;
+            this.visualizationSummary[targetIdx] = min;
+            this.visualizationSummary[targetIdx + 1] = max;
+            this.visualizationSummaryPosition = (this.visualizationSummaryPosition + 1) % this.VIS_SUMMARY_SIZE;
         }
     }
 
     /**
      * Get visualization data subsampled to fit the target width.
      * Returns min/max pairs for each pixel to preserve peaks in the waveform.
+     * Zero-allocation except for the returned result.
      * @param targetWidth - The desired number of data points (e.g., canvas width).
      * @returns Float32Array containing alternating min/max values, length targetWidth * 2.
      */
     getVisualizationData(targetWidth: number): Float32Array {
-        if (!this.visualizationBuffer || !targetWidth || targetWidth <= 0) {
+        if (!this.visualizationSummary || !targetWidth || targetWidth <= 0) {
             return new Float32Array(0);
         }
 
-        const bufferLength = this.visualizationBufferSize;
-        if (bufferLength === 0) return new Float32Array(0);
+        // If targetWidth is close to or less than our summary size, use the summary (MUCH faster)
+        if (targetWidth <= this.VIS_SUMMARY_SIZE) {
+            const subsampledBuffer = new Float32Array(targetWidth * 2);
+            const samplesPerTarget = this.VIS_SUMMARY_SIZE / targetWidth;
 
-        // Arrange the circular buffer into chronological order
-        const orderedBuffer = new Float32Array(bufferLength);
-        const pos = this.visualizationBufferPosition;
-        orderedBuffer.set(this.visualizationBuffer.subarray(pos), 0);
-        orderedBuffer.set(this.visualizationBuffer.subarray(0, pos), bufferLength - pos);
+            for (let i = 0; i < targetWidth; i++) {
+                const rangeStart = i * samplesPerTarget;
+                const rangeEnd = (i + 1) * samplesPerTarget;
 
-        // Determine samples per point/pixel
-        const numPoints = Math.floor(targetWidth);
-        if (numPoints <= 0) return new Float32Array(0);
+                let minVal = 0;
+                let maxVal = 0;
+                let first = true;
 
-        const samplesPerPoint = Math.max(1, Math.floor(bufferLength / numPoints));
+                for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
+                    const idx = ((this.visualizationSummaryPosition + s) % this.VIS_SUMMARY_SIZE) * 2;
+                    const vMin = this.visualizationSummary[idx];
+                    const vMax = this.visualizationSummary[idx + 1];
 
-        // Create output buffer (2 values per point: min and max)
-        const outputNumPoints = Math.floor(bufferLength / samplesPerPoint);
-        const subsampledBuffer = new Float32Array(outputNumPoints * 2);
+                    if (first) {
+                        minVal = vMin;
+                        maxVal = vMax;
+                        first = false;
+                    } else {
+                        if (vMin < minVal) minVal = vMin;
+                        if (vMax > maxVal) maxVal = vMax;
+                    }
+                }
 
-        // Process buffer in chunks and find min/max for each chunk
-        let outputIndex = 0;
-        for (let i = 0; i < outputNumPoints; i++) {
-            const startIndex = i * samplesPerPoint;
-            const endIndex = Math.min(startIndex + samplesPerPoint, bufferLength);
-
-            if (startIndex >= endIndex) continue;
-
-            let minVal = orderedBuffer[startIndex];
-            let maxVal = orderedBuffer[startIndex];
-
-            for (let j = startIndex + 1; j < endIndex; j++) {
-                const val = orderedBuffer[j];
-                if (val < minVal) minVal = val;
-                if (val > maxVal) maxVal = val;
+                subsampledBuffer[i * 2] = minVal;
+                subsampledBuffer[i * 2 + 1] = maxVal;
             }
-
-            // Store min and max for this interval
-            subsampledBuffer[outputIndex++] = minVal;
-            subsampledBuffer[outputIndex++] = maxVal;
+            return subsampledBuffer;
         }
 
+        return this.getVisualizationDataFromRaw(targetWidth);
+    }
+
+    private getVisualizationDataFromRaw(targetWidth: number): Float32Array {
+        if (!this.visualizationBuffer) return new Float32Array(0);
+        const bufferLength = this.visualizationBufferSize;
+        const pos = this.visualizationBufferPosition;
+        const samplesPerPoint = bufferLength / targetWidth;
+        const subsampledBuffer = new Float32Array(targetWidth * 2);
+
+        for (let i = 0; i < targetWidth; i++) {
+            const rangeStart = i * samplesPerPoint;
+            const rangeEnd = (i + 1) * samplesPerPoint;
+            let minVal = 0, maxVal = 0, first = true;
+
+            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
+                const circularIdx = (pos + s) % bufferLength;
+                const val = this.visualizationBuffer[circularIdx];
+                if (first) { minVal = val; maxVal = val; first = false; }
+                else { if (val < minVal) minVal = val; if (val > maxVal) maxVal = val; }
+            }
+            subsampledBuffer[i * 2] = minVal;
+            subsampledBuffer[i * 2 + 1] = maxVal;
+        }
         return subsampledBuffer;
     }
+
 
     /**
      * Get current audio metrics for UI visualization.
@@ -623,7 +838,7 @@ export class AudioEngine implements IAudioEngine {
      * Subscribe to visualization updates.
      * Callback is invoked after each audio chunk is processed.
      */
-    onVisualizationUpdate(callback: (data: Float32Array, metrics: AudioMetrics) => void): () => void {
+    onVisualizationUpdate(callback: (data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void): () => void {
         this.visualizationCallbacks.push(callback);
         return () => {
             this.visualizationCallbacks = this.visualizationCallbacks.filter((cb) => cb !== callback);
@@ -632,9 +847,17 @@ export class AudioEngine implements IAudioEngine {
 
     /**
      * Notify visualization subscribers with updated data.
+     * Throttled to ~30fps to avoid UI stuttering.
      */
     private notifyVisualizationUpdate(): void {
-        const data = this.getVisualizationData(800); // Default width for subscribers
-        this.visualizationCallbacks.forEach((cb) => cb(data, this.getMetrics()));
+        const now = performance.now();
+        if (now - this.lastVisualizationNotifyTime < this.VISUALIZATION_NOTIFY_INTERVAL_MS) {
+            return;
+        }
+        this.lastVisualizationNotifyTime = now;
+
+        const data = this.getVisualizationData(400); // 400 points is enough for modern displays and saves CPU
+        const bufferEndTime = this.ringBuffer.getCurrentTime();
+        this.visualizationCallbacks.forEach((cb) => cb(data, this.getMetrics(), bufferEndTime));
     }
 }

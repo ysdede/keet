@@ -1,5 +1,5 @@
 /**
- * BoncukJS - Buffer Visualizer Component
+"""""""""" * BoncukJS - Buffer Visualizer Component
  * Canvas-based real-time audio waveform visualization.
  * Ported from parakeet-ui (Svelte) to SolidJS.
  */
@@ -40,6 +40,8 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     isSpeaking: false,
   });
   const [segments, setSegments] = createSignal<Array<{ startTime: number; endTime: number; isProcessed: boolean }>>([]);
+  // Track the end time of the current waveform snapshot for strict synchronization
+  const [bufferEndTime, setBufferEndTime] = createSignal(0);
 
   const height = () => props.height ?? 80;
   const showThreshold = () => props.showThreshold ?? true;
@@ -63,16 +65,15 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     // Clear canvas
     ctx.clearRect(0, 0, width, canvasHeight);
 
-    // Get CSS variables for theme-aware colors
-    const computedStyle = getComputedStyle(document.documentElement);
+    // Optimized theme detection (no getComputedStyle in loop)
     const isDarkMode = document.documentElement.classList.contains('dark');
 
-    // Colors (Mechanical Etched Palette)
-    const bgColor = isDarkMode ? '#1e293b' : '#f0f2f5';
+    // Colors (Mechanical Etched Palette) - Cached values
+    const bgColor = isDarkMode ? '#1e293b' : '#f1f5f9';
     const highlightColor = isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.8)';
     const shadowColor = isDarkMode ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.1)';
-    const etchColor = isDarkMode ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.05)';
-    const signalActiveColor = '#3b82f6'; // Keep active elements blue but subtle
+    const etchColor = isDarkMode ? '#334155' : '#cbd5e1';
+    const signalActiveColor = '#3b82f6';
 
     // Background
     if (ctx) {
@@ -100,65 +101,65 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
         drawSegments(width, canvasHeight, isDarkMode);
       }
 
-      // Draw waveform using high-fidelity bucketed downsampling - Etched Mercury Line
+      // Draw waveform using Parakeet-UI logic (Etched Mercury Style)
       if (data.length >= 2) {
-        // Higher resolution for a true waveform look (approx 400-500 buckets)
-        const numBuckets = Math.min(500, Math.floor(width / 1.5));
-        const bucketSize = Math.floor(data.length / (numBuckets * 2));
-        const bucketWidth = width / numBuckets;
+        // Data is already subsampled to ~400 points (min, max pairs)
+        const numPoints = data.length / 2;
+        const step = width / numPoints; // Use simple step as points ~ width/2
 
-        // Bucket aggregated data (Max Peaks)
-        const bucketedPeaks: number[] = [];
-        for (let b = 0; b < numBuckets; b++) {
-          let maxVal = 0;
-          for (let s = 0; s < bucketSize; s++) {
-            const idx = (b * bucketSize + s) * 2;
-            if (idx + 1 < data.length) {
-              const val = Math.abs(data[idx + 1]);
-              if (val > maxVal) maxVal = val;
-            }
-          }
-          bucketedPeaks.push(maxVal);
-        }
+        // Helper to draw the full waveform path
+        // Optimized Waveform Path (Consolidated passes)
+        ctx.lineCap = 'round';
 
-        const drawEngravedLines = (offsetX: number, offsetY: number, strokeColor: string, lineWidth: number) => {
+        // Helper to draw the full waveform path
+        const drawPath = (offsetX: number, offsetY: number) => {
           if (!ctx) return;
           ctx.beginPath();
-          ctx.strokeStyle = strokeColor;
-          ctx.lineWidth = lineWidth;
-          ctx.lineCap = 'round';
+          for (let i = 0; i < numPoints; i++) {
+            const x = i * step + offsetX;
+            // Ensure min/max have at least 1px difference for visibility even when silent
+            let minVal = data[i * 2];
+            let maxVal = data[i * 2 + 1];
 
-          for (let i = 0; i < numBuckets; i++) {
-            const x = (i * bucketWidth) + offsetX;
-            const peak = bucketedPeaks[i];
+            // Scaled values
+            let yMin = centerY - (minVal * centerY * 0.9) + offsetY;
+            let yMax = centerY - (maxVal * centerY * 0.9) + offsetY;
 
-            // Draw a symmetrical line
-            const yMin = centerY - (peak * centerY * 0.9) + offsetY;
-            const yMax = centerY + (peak * centerY * 0.9) + offsetY;
-
-            if (peak > 0.005) {
-              ctx.moveTo(x, yMin);
-              ctx.lineTo(x, yMax);
+            // Ensure tiny signals are visible (min 1px height)
+            if (Math.abs(yMax - yMin) < 1) {
+              yMin = centerY - 0.5 + offsetY;
+              yMax = centerY + 0.5 + offsetY;
             }
+
+            ctx.moveTo(x, yMin);
+            ctx.lineTo(x, yMax);
           }
           ctx.stroke();
         };
 
         // 1. Highlight Pass (Sharp top-left edge)
-        drawEngravedLines(-0.3, -0.3, highlightColor, 1.2);
+        ctx.strokeStyle = highlightColor;
+        ctx.lineWidth = 1.0;
+        drawPath(-0.5, -0.5);
 
         // 2. Shadow Pass (Depressed groove)
-        drawEngravedLines(0.6, 0.6, shadowColor, 1.5);
+        ctx.strokeStyle = shadowColor;
+        ctx.lineWidth = 1.2;
+        drawPath(0.5, 0.5);
 
-        // 3. Main Etch Pass (Base material color)
-        drawEngravedLines(0, 0, etchColor, 1.2);
+        // 3. Main Etch Pass (Base material) - Slate color for contrast
+        ctx.strokeStyle = etchColor;
+        ctx.lineWidth = 1.0;
+        drawPath(0, 0);
 
-        // 4. Subtle Active signal glow during speaking
+        // 4. Active signal glow
         if (currentMetrics.isSpeaking) {
           ctx.globalAlpha = 0.5;
           ctx.shadowBlur = 4;
           ctx.shadowColor = signalActiveColor;
-          drawEngravedLines(0, 0, signalActiveColor, 1.0);
+          ctx.strokeStyle = signalActiveColor;
+          ctx.lineWidth = 1.0;
+          drawPath(0, 0);
           ctx.shadowBlur = 0;
           ctx.globalAlpha = 1.0;
         }
@@ -297,28 +298,27 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     if (!ctx || !props.audioEngine) return;
 
     const bufferDuration = props.audioEngine.getVisualizationDuration();
-    const currentTime = props.audioEngine.getCurrentTime();
+    const currentTime = bufferEndTime(); // Use synchronized end time of buffer
     const windowStart = currentTime - bufferDuration;
 
     ctx.fillStyle = textColor;
     ctx.font = '10px system-ui, sans-serif';
 
     const markerInterval = 5; // Every 5 seconds
-    for (let i = 0; i <= bufferDuration; i += markerInterval) {
-      const x = (i / bufferDuration) * width;
-      const time = Math.floor(windowStart + i);
+    const firstMarkerTime = Math.ceil(windowStart / markerInterval) * markerInterval;
 
-      if (time >= 0) {
-        // Draw tick mark
-        ctx.beginPath();
-        ctx.strokeStyle = tickColor;
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, 15);
-        ctx.stroke();
+    for (let time = firstMarkerTime; time <= currentTime; time += markerInterval) {
+      const x = ((time - windowStart) / bufferDuration) * width;
 
-        // Draw time label
-        ctx.fillText(`${time}s`, x + 2, 12);
-      }
+      // Draw tick mark
+      ctx.beginPath();
+      ctx.strokeStyle = tickColor;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 15);
+      ctx.stroke();
+
+      // Draw time label
+      ctx.fillText(`${time}s`, x + 2, 12);
     }
   };
 
@@ -328,7 +328,7 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     if (!context || !props.audioEngine) return;
 
     const bufferDuration = props.audioEngine.getVisualizationDuration();
-    const currentTime = props.audioEngine.getCurrentTime();
+    const currentTime = bufferEndTime(); // Use synchronized end time of buffer
     const windowStart = currentTime - bufferDuration;
     const segmentList = segments();
 
@@ -338,6 +338,9 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     const pendingBorderColor = isDarkMode ? 'rgba(250, 204, 21, 0.5)' : 'rgba(234, 179, 8, 0.5)';
     const processedBorderColor = isDarkMode ? 'rgba(34, 197, 94, 0.5)' : 'rgba(22, 163, 74, 0.5)';
 
+    // Log segment count for debugging
+    // console.log('Drawing segments:', segmentList.length);
+
     segmentList.forEach(segment => {
       // Calculate relative position in visualization window
       const relativeStart = segment.startTime - windowStart;
@@ -345,21 +348,25 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
 
       // Only draw if segment is within visible window
       if (relativeEnd > 0 && relativeStart < bufferDuration) {
-        const startX = Math.max(0, (relativeStart / bufferDuration)) * width;
-        const endX = Math.min(1, (relativeEnd / bufferDuration)) * width;
+        // Pixel-snap boundaries to prevent anti-aliasing jitter/widening
+        const startX = Math.floor(Math.max(0, (relativeStart / bufferDuration)) * width);
+        const endX = Math.ceil(Math.min(1, (relativeEnd / bufferDuration)) * width);
 
-        // Fill segment area
-        context.fillStyle = segment.isProcessed ? processedColor : pendingColor;
+        // Fill segment area - increased opacity for visibility
+        context.fillStyle = segment.isProcessed ?
+          (isDarkMode ? 'rgba(34, 197, 94, 0.3)' : 'rgba(22, 163, 74, 0.3)') :
+          (isDarkMode ? 'rgba(250, 204, 21, 0.3)' : 'rgba(234, 179, 8, 0.3)');
+
         context.fillRect(startX, 0, endX - startX, canvasHeight);
 
-        // Draw segment boundaries
+        // Draw segment boundaries (snap to pixel + 0.5 for sharp 1px lines)
         context.strokeStyle = segment.isProcessed ? processedBorderColor : pendingBorderColor;
         context.lineWidth = 1;
         context.beginPath();
-        context.moveTo(startX, 0);
-        context.lineTo(startX, canvasHeight);
-        context.moveTo(endX, 0);
-        context.lineTo(endX, canvasHeight);
+        context.moveTo(startX + 0.5, 0);
+        context.lineTo(startX + 0.5, canvasHeight);
+        context.moveTo(endX - 0.5, 0);
+        context.lineTo(endX - 0.5, canvasHeight);
         context.stroke();
       }
     });
@@ -397,6 +404,8 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
         // Refetch visualization data for new width
         if (props.audioEngine && visible()) {
           setWaveformData(props.audioEngine.getVisualizationData(newWidth));
+          // Note: can't update bufferEndTime here easily without calling another method on engine,
+          // but next update loop will catch it.
         }
       }
     }
@@ -409,18 +418,15 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
       // Initial data fetch
       if (canvasWidth() > 0) {
         setWaveformData(engine.getVisualizationData(canvasWidth()));
+        setBufferEndTime(engine.getCurrentTime());
       }
 
       // Subscribe to updates
-      const sub = engine.onVisualizationUpdate((data, newMetrics) => {
+      const sub = engine.onVisualizationUpdate((data, newMetrics, endTime) => {
         if (visible()) {
-          // Refetch data for current canvas width (more accurate)
-          if (canvasWidth() > 0) {
-            setWaveformData(engine.getVisualizationData(canvasWidth()));
-          } else {
-            setWaveformData(data);
-          }
+          setWaveformData(data);
           setMetrics(newMetrics);
+          setBufferEndTime(endTime);
 
           // Fetch segments for visualization
           setSegments(engine.getSegmentsForVisualization());
@@ -464,7 +470,7 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     <div ref={parentRef} class="w-full relative" style={{ height: `${height()}px` }}>
       <canvas
         ref={canvasRef}
-        class="w-full h-full block liquid-mercury"
+        class="w-full h-full block"
         style={{ 'image-rendering': 'auto' }}
         aria-label="Audio waveform visualization"
       />

@@ -34,6 +34,22 @@ export interface AudioEngineConfig {
     maxSegmentDuration: number;
     /** Preferred device ID (optional) */
     deviceId?: string;
+
+    // Advanced VAD properties matching parakeet-ui
+    lookbackDuration?: number;
+    speechHangover?: number;
+    minEnergyIntegral?: number;
+    minEnergyPerSecond?: number;
+    useAdaptiveEnergyThresholds?: boolean;
+    adaptiveEnergyIntegralFactor?: number;
+    adaptiveEnergyPerSecondFactor?: number;
+    minAdaptiveEnergyIntegral?: number;
+    minAdaptiveEnergyPerSecond?: number;
+    windowSize?: number;
+    maxSilenceWithinSpeech?: number;
+    endingSpeechTolerance?: number;
+    snrThreshold?: number;
+    minSnrThreshold?: number;
 }
 
 /**
@@ -64,6 +80,11 @@ export interface AudioEngine {
 
     /** Stop capturing audio */
     stop(): void;
+
+    /**
+     * Reset buffers and VAD state for a new session (keeps audio graph).
+     */
+    reset(): void;
 
     /** Get current audio energy level (for visualization) */
     getCurrentEnergy(): number;
@@ -129,7 +150,7 @@ export interface AudioEngine {
      * Subscribe to visualization updates.
      * Callback is invoked after each audio chunk is processed.
      */
-    onVisualizationUpdate(callback: (data: Float32Array, metrics: AudioMetrics) => void): () => void;
+    onVisualizationUpdate(callback: (data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void): () => void;
 
     /**
      * Get recent segments for visualization.
@@ -167,6 +188,12 @@ export interface IRingBuffer {
 
     /** Get global frame offset of the NEXT frame to be written */
     getCurrentFrame(): number;
+
+    /** Get number of valid frames currently in buffer */
+    getFillCount(): number;
+
+    /** Get total capacity in frames */
+    getSize(): number;
 
     /** Get current position in seconds */
     getCurrentTime(): number;

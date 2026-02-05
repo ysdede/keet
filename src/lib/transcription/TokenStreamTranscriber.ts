@@ -32,7 +32,7 @@ export interface TokenStreamConfig {
 export interface TokenStreamCallbacks {
     onConfirmedUpdate?: (text: string, tokens: any[]) => void;
     onPendingUpdate?: (text: string, tokens: any[]) => void;
-    onMergeInfo?: (info: { lcsLength: number; anchorValid: boolean }) => void;
+    onMergeInfo?: (info: { lcsLength: number; anchorValid: boolean; anchorTokens?: string[] }) => void;
     onError?: (error: Error) => void;
 }
 
@@ -49,6 +49,8 @@ export interface TokenStreamResult {
     anchorValid: boolean;
     /** Total chunks processed */
     chunkCount: number;
+    /** Tokens used for anchor match (optional) */
+    anchorTokens?: string[];
 }
 
 /**
@@ -148,7 +150,7 @@ export class TokenStreamTranscriber {
             windowDuration: config.windowDuration ?? this._config.windowDuration,
             overlapDuration: config.overlapDuration ?? this._config.overlapDuration,
         };
-        
+
         if (this._config.debug) {
             console.log('[TokenStreamTranscriber] Config updated:', this._config);
         }
@@ -199,15 +201,19 @@ export class TokenStreamTranscriber {
             this._currentTimestamp += chunkDuration - this._config.overlapDuration;
             this._chunkCount++;
 
-            // Get text representations
+            // Get formatted text from the merger (handles SentencePiece spaces correctly)
             const texts = this._merger.getText(this._tokenizer);
+            const confirmedText = texts.confirmed;
+            const pendingText = texts.pending;
+            const fullText = texts.full;
 
             // Notify callbacks
-            this._callbacks.onConfirmedUpdate?.(texts.confirmed, mergeResult.confirmed);
-            this._callbacks.onPendingUpdate?.(texts.pending, mergeResult.pending);
+            this._callbacks.onConfirmedUpdate?.(confirmedText, mergeResult.confirmed);
+            this._callbacks.onPendingUpdate?.(pendingText, mergeResult.pending);
             this._callbacks.onMergeInfo?.({
                 lcsLength: mergeResult.lcsLength,
-                anchorValid: mergeResult.anchorValid
+                anchorValid: mergeResult.anchorValid,
+                anchorTokens: mergeResult.anchorTokens // Available in v3 merger
             });
 
             if (this._config.debug) {
@@ -215,12 +221,13 @@ export class TokenStreamTranscriber {
             }
 
             return {
-                confirmedText: texts.confirmed,
-                pendingText: texts.pending,
-                fullText: texts.full,
+                confirmedText: confirmedText,
+                pendingText: pendingText,
+                fullText: fullText,
                 lcsLength: mergeResult.lcsLength,
                 anchorValid: mergeResult.anchorValid,
                 chunkCount: this._chunkCount,
+                anchorTokens: mergeResult.anchorTokens,
             };
 
         } catch (error) {

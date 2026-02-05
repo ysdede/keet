@@ -36,6 +36,9 @@ export const StatusBar: Component = () => {
             </div>
 
             <div class="flex items-center gap-8">
+                <div class="flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity cursor-default">
+                    <span class="text-[8px] font-black tracking-[0.2em]">BUILD: 20250828.VAD_REFIX</span>
+                </div>
                 <Show when={appStore.isOfflineReady()}>
                     <div class="flex items-center gap-1.5 text-indigo-500 font-black">
                         <span class="material-icons-round text-sm">offline_bolt</span>

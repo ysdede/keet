@@ -28,6 +28,7 @@ export interface MergeInfo {
   lcsLength: number;
   anchorValid: boolean;
   chunkCount: number;
+  anchorTokens?: string[];
 }
 
 function createAppStore() {
@@ -75,11 +76,20 @@ function createAppStore() {
     lcsLength: 0,
     anchorValid: false,
     chunkCount: 0,
+    anchorTokens: [],
+  });
+
+  // Performance Telemetry
+  const [rtf, setRtf] = createSignal(0); // Real-Time Factor (Inference/AudioDuration)
+  const [bufferMetrics, setBufferMetrics] = createSignal({
+    fillRatio: 0,
+    latencyMs: 0,
   });
 
   // v3 Streaming config
   const [streamingWindow, setStreamingWindow] = createSignal(5.0);
   const [streamingOverlap, setStreamingOverlap] = createSignal(1.5);
+  const [energyThreshold, setEnergyThreshold] = createSignal(0.08);
 
 
   // Network status listeners
@@ -161,6 +171,8 @@ function createAppStore() {
     isOfflineReady,
     isOnline,
     inferenceLatency,
+    rtf,
+    bufferMetrics,
     debugTokens,
     systemMetrics,
     errorMessage,
@@ -168,6 +180,7 @@ function createAppStore() {
     mergeInfo,
     streamingWindow,
     streamingOverlap,
+    energyThreshold,
 
     // Setters (for internal use)
     setRecordingState,
@@ -188,12 +201,15 @@ function createAppStore() {
     setIsSpeechDetected,
     setIsOfflineReady,
     setInferenceLatency,
+    setRtf,
+    setBufferMetrics,
     setDebugTokens,
     setSystemMetrics,
     setTranscriptionMode,
     setMergeInfo,
     setStreamingWindow,
     setStreamingOverlap,
+    setEnergyThreshold,
 
     // Actions
     startRecording,

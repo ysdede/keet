@@ -88,11 +88,11 @@ pre,
   animation-delay: 300ms;
 }
 
-/* Neumorphism Design System (Snippet Optimized) */
+/* Neumorphism Design System (Flatter/Subtle) */
 :root {
   --nm-bg: #e0e5ec;
-  --nm-shadow-light: rgba(255, 255, 255, 0.8);
-  --nm-shadow-dark: rgba(163, 177, 198, 0.6);
+  --nm-shadow-light: rgba(255, 255, 255, 0.9);
+  --nm-shadow-dark: rgba(163, 177, 198, 0.4);
 
   --nm-bg-dark: #2b2e33;
   --nm-shadow-light-dark: #373a40;
@@ -114,51 +114,51 @@ pre,
 
 .nm-flat {
   background: var(--nm-bg);
-  box-shadow: 9px 9px 16px var(--nm-shadow-dark),
-    -9px -9px 16px var(--nm-shadow-light);
+  box-shadow: 3px 3px 6px var(--nm-shadow-dark),
+    -3px -3px 6px var(--nm-shadow-light);
 }
 
 .nm-inset {
   background: var(--nm-bg);
-  box-shadow: inset 6px 6px 10px var(--nm-shadow-dark),
-    inset -6px -6px 10px var(--nm-shadow-light);
+  box-shadow: inset 2px 2px 5px var(--nm-shadow-dark),
+    inset -2px -2px 5px var(--nm-shadow-light);
 }
 
 .dark .nm-flat {
   background: var(--nm-bg-dark);
-  box-shadow: 8px 8px 16px var(--nm-shadow-dark-dark),
-    -8px -8px 16px var(--nm-shadow-light-dark);
+  box-shadow: 3px 3px 6px var(--nm-shadow-dark-dark),
+    -3px -3px 6px var(--nm-shadow-light-dark);
 }
 
 .dark .nm-inset {
   background: var(--nm-bg-dark);
-  box-shadow: inset 5px 5px 10px var(--nm-shadow-dark-dark),
-    inset -5px -5px 10px var(--nm-shadow-light-dark);
+  box-shadow: inset 2px 2px 5px var(--nm-shadow-dark-dark),
+    inset -2px -2px 5px var(--nm-shadow-light-dark);
 }
 
 /* Button variants */
 .nm-button {
   background: var(--nm-bg);
-  box-shadow: 5px 5px 10px var(--nm-shadow-dark),
-    -5px -5px 10px var(--nm-shadow-light);
+  box-shadow: 3px 3px 6px var(--nm-shadow-dark),
+    -3px -3px 6px var(--nm-shadow-light);
   transition: all 0.2s ease;
 }
 
 .nm-button:active {
-  box-shadow: inset 3px 3px 6px var(--nm-shadow-dark),
-    inset -3px -3px 6px var(--nm-shadow-light);
+  box-shadow: inset 2px 2px 4px var(--nm-shadow-dark),
+    inset -2px -2px 4px var(--nm-shadow-light);
   transform: scale(0.98);
 }
 
 .dark .nm-button {
   background: var(--nm-bg-dark);
-  box-shadow: 5px 5px 10px var(--nm-shadow-dark-dark),
-    -5px -5px 10px var(--nm-shadow-light-dark);
+  box-shadow: 3px 3px 6px var(--nm-shadow-dark-dark),
+    -3px -3px 6px var(--nm-shadow-light-dark);
 }
 
 .dark .nm-button:active {
-  box-shadow: inset 3px 3px 6px var(--nm-shadow-dark-dark),
-    inset -3px -3px 6px var(--nm-shadow-light-dark);
+  box-shadow: inset 2px 2px 4px var(--nm-shadow-dark-dark),
+    inset -2px -2px 4px var(--nm-shadow-light-dark);
 }
 
 /* LED Indicators */

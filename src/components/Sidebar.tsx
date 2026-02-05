@@ -3,7 +3,6 @@ import { Component, For, Show, createSignal, onCleanup } from 'solid-js';
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
-  onToggleDebug: () => void;
   // Recording controls
   isRecording: boolean;
   onToggleRecording: () => void;
@@ -24,7 +23,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
   return (
     <div class="flex flex-col h-full gap-4">
-      <nav class="w-20 flex-1 nm-flat rounded-[40px] flex flex-col items-center py-6 gap-3 z-20 transition-all duration-300">
+      <nav class="w-20 flex-1 nm-flat rounded-2xl flex flex-col items-center py-4 gap-3 z-20 transition-all duration-300">
         {/* Power Button - Reflects System Readiness */}
         <div class="relative mb-2">
           <button
@@ -114,13 +113,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         </div>
 
         <div class="mt-auto flex flex-col gap-4">
-          <button
-            class="group relative w-12 h-12 flex items-center justify-center rounded-2xl nm-button text-slate-400 dark:text-slate-500"
-            onClick={() => props.onToggleDebug()}
-          >
-            <span class="material-icons-round text-xl">terminal</span>
-          </button>
-
           <button
             class={`group relative w-12 h-12 flex items-center justify-center rounded-2xl transition-all ${props.activeTab === 'ai' ? 'nm-inset text-[var(--accent-blue)]' : 'nm-button text-slate-400 dark:text-slate-500'
               }`}

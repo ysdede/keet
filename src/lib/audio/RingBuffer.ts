@@ -86,6 +86,14 @@ export class RingBuffer implements IRingBuffer {
         return this.currentFrame;
     }
 
+    getFillCount(): number {
+        return Math.min(this.currentFrame, this.maxFrames);
+    }
+
+    getSize(): number {
+        return this.maxFrames;
+    }
+
     getCurrentTime(): number {
         return this.currentFrame / this.sampleRate;
     }
