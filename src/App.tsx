@@ -161,22 +161,29 @@ const App: Component = () => {
         const mode = appStore.transcriptionMode();
         if (isModelReady() && workerClient) {
           if (mode === 'v3-streaming') {
+            // Calculate optimal overlap for the current trigger frequency
+            // overlap = window - trigger
+            const windowDur = appStore.streamingWindow();
+            const triggerInt = appStore.triggerInterval();
+            const overlapDur = Math.max(1.0, windowDur - triggerInt);
+
             await workerClient.initV3Service({
-              windowDuration: appStore.streamingWindow(),
-              overlapDuration: appStore.streamingOverlap(),
+              windowDuration: windowDur,
+              overlapDuration: overlapDur,
               sampleRate: 16000,
             });
 
             windowUnsubscribe = audioEngine.onWindowChunk(
-              appStore.streamingWindow(),
-              appStore.streamingOverlap(),
-              async (audio) => {
+              windowDur,
+              overlapDur,
+              triggerInt,
+              async (audio, startTime) => {
                 if (!workerClient) return;
                 const start = performance.now();
-                const result = await workerClient.processV3Chunk(audio);
+                const result = await workerClient.processV3Chunk(audio, startTime);
                 const duration = performance.now() - start;
 
-                const stride = appStore.streamingWindow() - appStore.streamingOverlap();
+                const stride = appStore.triggerInterval();
                 appStore.setRtf(duration / (stride * 1000));
                 appStore.setInferenceLatency(duration);
 

@@ -87,8 +87,9 @@ function createAppStore() {
   });
 
   // v3 Streaming config
-  const [streamingWindow, setStreamingWindow] = createSignal(5.0);
-  const [streamingOverlap, setStreamingOverlap] = createSignal(1.5);
+  const [streamingWindow, setStreamingWindow] = createSignal(7.0);
+  const [streamingOverlap, setStreamingOverlap] = createSignal(5.5);
+  const [triggerInterval, setTriggerInterval] = createSignal(1.0);
   const [energyThreshold, setEnergyThreshold] = createSignal(0.08);
 
 
@@ -180,6 +181,7 @@ function createAppStore() {
     mergeInfo,
     streamingWindow,
     streamingOverlap,
+    triggerInterval,
     energyThreshold,
 
     // Setters (for internal use)
@@ -209,6 +211,7 @@ function createAppStore() {
     setMergeInfo,
     setStreamingWindow,
     setStreamingOverlap,
+    setTriggerInterval,
     setEnergyThreshold,
 
     // Actions

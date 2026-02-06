@@ -101,7 +101,7 @@ self.onmessage = async (e: MessageEvent) => {
                 if (!tokenStreamTranscriber) {
                     throw new Error('TokenStreamTranscriber not initialized');
                 }
-                const v3Result = await tokenStreamTranscriber.processChunk(payload);
+                const v3Result = await tokenStreamTranscriber.processChunk(payload.audio, payload.startTime);
                 // Return result AND current state for UI
                 const state = tokenStreamTranscriber.getState();
                 postMessage({

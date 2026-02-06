@@ -98,8 +98,8 @@ export class TranscriptionWorkerClient {
         return this.sendRequest('PROCESS_CHUNK', audio);
     }
 
-    async processV3Chunk(audio: Float32Array): Promise<TokenStreamResult> {
-        return this.sendRequest('PROCESS_V3_CHUNK', audio);
+    async processV3Chunk(audio: Float32Array, startTime?: number): Promise<TokenStreamResult> {
+        return this.sendRequest('PROCESS_V3_CHUNK', { audio, startTime });
     }
 
     async transcribeSegment(audio: Float32Array): Promise<TranscriptionResult> {

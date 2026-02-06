@@ -59,6 +59,7 @@ export class AudioEngine implements IAudioEngine {
     private windowCallbacks: Array<{
         windowDuration: number;
         overlapDuration: number;
+        triggerInterval: number;
         callback: (audio: Float32Array, startTime: number) => void;
         lastWindowEnd: number; // Frame offset of last window end
     }> = [];
@@ -382,16 +383,18 @@ export class AudioEngine implements IAudioEngine {
 
     /**
      * Subscribe to fixed-window chunks for token streaming mode.
-     * Fires every (windowDuration - overlapDuration) seconds with windowDuration of audio.
+     * Fires every triggerInterval seconds with windowDuration of audio.
      */
     onWindowChunk(
         windowDuration: number,
         overlapDuration: number,
+        triggerInterval: number,
         callback: (audio: Float32Array, startTime: number) => void
     ): () => void {
         const entry = {
             windowDuration,
             overlapDuration,
+            triggerInterval,
             callback,
             lastWindowEnd: 0, // Will be set on first chunk
         };
@@ -610,7 +613,7 @@ export class AudioEngine implements IAudioEngine {
     private processWindowCallbacks(currentFrame: number): void {
         for (const entry of this.windowCallbacks) {
             const windowFrames = Math.floor(entry.windowDuration * this.targetSampleRate);
-            const stepFrames = Math.floor((entry.windowDuration - entry.overlapDuration) * this.targetSampleRate);
+            const stepFrames = Math.floor(entry.triggerInterval * this.targetSampleRate);
 
             // Initialize lastWindowEnd on first call
             if (entry.lastWindowEnd === 0) {

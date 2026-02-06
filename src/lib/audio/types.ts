@@ -103,14 +103,16 @@ export interface AudioEngine {
 
     /** 
      * Subscribe to fixed-window chunks for token streaming mode.
-     * Fires every (windowDuration - overlapDuration) seconds with windowDuration of audio.
+     * Fires every triggerInterval seconds with windowDuration of audio.
      * @param windowDuration - Window size in seconds (default 5.0)
      * @param overlapDuration - Overlap with previous window in seconds (default 1.5)
+     * @param triggerInterval - How often to fire in seconds (default window - overlap)
      * @param callback - Receives audio samples and window timestamp
      */
     onWindowChunk?(
         windowDuration: number,
         overlapDuration: number,
+        triggerInterval: number,
         callback: (audio: Float32Array, startTime: number) => void
     ): () => void;
 

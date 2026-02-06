@@ -160,9 +160,10 @@ export class TokenStreamTranscriber {
      * Process an audio chunk through the windowed streaming pipeline.
      * 
      * @param audio - Float32Array of audio samples (16kHz mono PCM)
+     * @param startTime - The absolute start time of this chunk in seconds
      * @returns TokenStreamResult with confirmed/pending text
      */
-    async processChunk(audio: Float32Array): Promise<TokenStreamResult> {
+    async processChunk(audio: Float32Array, startTime?: number): Promise<TokenStreamResult> {
         if (!this._merger) {
             throw new Error('TokenStreamTranscriber not initialized. Call initialize() first.');
         }
@@ -180,25 +181,43 @@ export class TokenStreamTranscriber {
                 throw new Error('Model not available');
             }
 
+            // Use provided startTime or fall back to internal tracking
+            const chunkStartTime = startTime !== undefined ? startTime : this._currentTimestamp;
+            
+            // Calculate actual overlap based on previous chunk end
+            let actualOverlap = 0;
+            if (this._chunkCount > 0) {
+                const prevChunkEnd = this._currentTimestamp + (this._config.windowDuration - this._config.overlapDuration);
+                // In v3, _currentTimestamp is the start of the current window.
+                // Wait, the logic in v3 (OLD) was:
+                // this._currentTimestamp += chunkDuration - this._config.overlapDuration;
+                // This meant _currentTimestamp was always the START of the window.
+                
+                // If we use explicit startTime, we can calculate overlap precisely:
+                // overlap = previousWindowEnd - currentWindowStart
+                const previousWindowEnd = this._currentTimestamp + (audio.length / this._config.sampleRate);
+                actualOverlap = Math.max(0, previousWindowEnd - chunkStartTime);
+            }
+
             // Transcribe with all metadata needed for merging
             const result = await model.transcribe(audio, this._config.sampleRate, {
                 returnTimestamps: true,
                 returnTokenIds: true,
                 returnFrameIndices: true,
                 returnLogProbs: true,
-                timeOffset: this._currentTimestamp,
+                timeOffset: chunkStartTime,
             });
 
             // Merge using LCSPTFAMerger
+            // We use the provided overlap or calculated one
             const mergeResult = this._merger.processChunk(
                 result,
-                this._currentTimestamp,
-                this._chunkCount > 0 ? this._config.overlapDuration : 0
+                chunkStartTime,
+                this._chunkCount > 0 ? (startTime !== undefined ? actualOverlap : this._config.overlapDuration) : 0
             );
 
-            // Update timestamp for next chunk
-            const chunkDuration = audio.length / this._config.sampleRate;
-            this._currentTimestamp += chunkDuration - this._config.overlapDuration;
+            // Update state for next chunk
+            this._currentTimestamp = chunkStartTime;
             this._chunkCount++;
 
             // Get formatted text from the merger (handles SentencePiece spaces correctly)
@@ -217,7 +236,7 @@ export class TokenStreamTranscriber {
             });
 
             if (this._config.debug) {
-                console.log(`[TokenStreamTranscriber] Chunk ${this._chunkCount}: LCS=${mergeResult.lcsLength}, anchor=${mergeResult.anchorValid}`);
+                console.log(`[TokenStreamTranscriber] Chunk ${this._chunkCount}: start=${chunkStartTime.toFixed(2)}s, overlap=${actualOverlap.toFixed(2)}s, LCS=${mergeResult.lcsLength}, anchor=${mergeResult.anchorValid}`);
             }
 
             return {
@@ -324,9 +343,10 @@ export class TokenStreamTranscriber {
         return audioEngine.onWindowChunk(
             this._config.windowDuration,
             this._config.overlapDuration,
-            async (audio: Float32Array, _startTime: number) => {
+            this._config.windowDuration - this._config.overlapDuration, // Default trigger interval
+            async (audio: Float32Array, startTime: number) => {
                 try {
-                    await this.processChunk(audio);
+                    await this.processChunk(audio, startTime);
                 } catch (e) {
                     console.error('[TokenStreamTranscriber] Window processing error:', e);
                 }

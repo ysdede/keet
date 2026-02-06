@@ -182,6 +182,44 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
             />
           </div>
 
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-[9px] text-slate-500 font-bold uppercase">
+              <span>TRIGGER_INT</span>
+              <span class="text-blue-500">{appStore.triggerInterval().toFixed(1)}s</span>
+            </div>
+            <input
+              type="range"
+              min="0.2"
+              max="5.0"
+              step="0.1"
+              value={appStore.triggerInterval()}
+              onInput={(e) => {
+                const val = parseFloat(e.currentTarget.value);
+                appStore.setTriggerInterval(val);
+              }}
+              class="w-full accent-blue-600 h-1 bg-slate-800 rounded-full appearance-none cursor-pointer"
+            />
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-[9px] text-slate-500 font-bold uppercase">
+              <span>WINDOW_SIZE</span>
+              <span class="text-blue-500">{appStore.streamingWindow().toFixed(1)}s</span>
+            </div>
+            <input
+              type="range"
+              min="2.0"
+              max="15.0"
+              step="0.5"
+              value={appStore.streamingWindow()}
+              onInput={(e) => {
+                const val = parseFloat(e.currentTarget.value);
+                appStore.setStreamingWindow(val);
+              }}
+              class="w-full accent-blue-600 h-1 bg-slate-800 rounded-full appearance-none cursor-pointer"
+            />
+          </div>
+
           <div class="grid grid-cols-2 gap-2">
             <div class="p-1 px-2 border border-slate-800 rounded bg-slate-950">
               <div class="text-[8px] text-slate-600 font-bold uppercase">VAD_STATE</div>
