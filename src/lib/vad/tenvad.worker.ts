@@ -144,7 +144,9 @@ async function handleInit(id: number, cfg: { hopSize: number; threshold: number;
 
         respond({ type: 'INIT', id, payload: { success: true, version } });
     } catch (err) {
-        console.error('[TenVAD Worker] Init failed:', err);
+        // Initialization failures are handled by the main thread (client rejects promise).
+        // Log as warn instead of error to reduce noise during tests where failure is expected.
+        console.warn('[TenVAD Worker] Init failed:', err);
         respond({ type: 'ERROR', id, payload: `TEN-VAD init failed: ${err}` });
     }
 }
