@@ -45,7 +45,11 @@ export class AudioEngine implements IAudioEngine {
     private audioProcessor: AudioSegmentProcessor; // Replaces EnergyVAD
     private deviceId: string | null = null;
 
-    private resampleBuffer: Float32Array | null = null;
+    // Buffer pool for resampled chunks
+    // 4 buffers * 80ms = 320ms safety margin against async readers
+    private bufferPool: Float32Array[] = [];
+    private poolIndex: number = 0;
+    private readonly POOL_SIZE = 4;
 
     // Cache last stats for UI
     private lastProcessorStats: any = null;
@@ -474,14 +478,29 @@ export class AudioEngine implements IAudioEngine {
         const ratio = this.deviceSampleRate / this.targetSampleRate;
         const neededSize = Math.floor(rawChunk.length / ratio);
 
-        // Resize buffer if needed (e.g. initial or rate change)
-        if (!this.resampleBuffer || this.resampleBuffer.length < neededSize) {
+        // Ensure pool is initialized
+        if (this.bufferPool.length < this.POOL_SIZE) {
+            for (let i = 0; i < this.POOL_SIZE; i++) {
+                this.bufferPool.push(new Float32Array(0));
+            }
+        }
+
+        // Get buffer from pool
+        let buffer = this.bufferPool[this.poolIndex];
+
+        // Check if buffer is usable (not detached) and large enough
+        // If buffer was transferred, byteLength becomes 0
+        if (buffer.byteLength === 0 || buffer.length < neededSize) {
             // Allocate slightly more (20% buffer) to avoid frequent reallocs if size fluctuates slightly
-            this.resampleBuffer = new Float32Array(Math.ceil(neededSize * 1.2));
+            buffer = new Float32Array(Math.ceil(neededSize * 1.2));
+            this.bufferPool[this.poolIndex] = buffer;
         }
 
         // 0. Resample from device rate to target rate (e.g., 48kHz -> 16kHz)
-        const chunk = resampleLinear(rawChunk, this.deviceSampleRate, this.targetSampleRate, this.resampleBuffer);
+        const chunk = resampleLinear(rawChunk, this.deviceSampleRate, this.targetSampleRate, buffer);
+
+        // Advance pool index
+        this.poolIndex = (this.poolIndex + 1) % this.POOL_SIZE;
 
         // 0.5. Notify audio chunk subscribers (e.g., mel worker)
         for (const cb of this.audioChunkCallbacks) {
