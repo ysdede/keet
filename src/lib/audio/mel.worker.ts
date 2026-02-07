@@ -23,6 +23,7 @@ import {
     fft,
     normalizeMelFeatures,
     sampleToFrame,
+    computeMelFrame,
 } from './mel-math';
 
 const { N_FFT, HOP_LENGTH, N_FREQ_BINS, PREEMPH, LOG_ZERO_GUARD } = MEL_CONSTANTS;
@@ -48,6 +49,7 @@ let computedFrames = 0;
 let fftRe: Float64Array;
 let fftIm: Float64Array;
 let powerBuf: Float32Array;
+let melFrameBuf: Float32Array;
 
 // Pre-computed constants
 let melFilterbank: Float32Array;
@@ -71,6 +73,7 @@ function init(config: { nMels?: number }) {
     fftRe = new Float64Array(N_FFT);
     fftIm = new Float64Array(N_FFT);
     powerBuf = new Float32Array(N_FREQ_BINS);
+    melFrameBuf = new Float32Array(nMels);
 
     // Pre-allocate raw mel buffer for ~120 seconds (12000 frames at 100 fps)
     maxFrames = 12000;
@@ -135,35 +138,29 @@ function pushAudio(chunk: Float32Array) {
     }
 
     // 3. Compute each new frame
-    const pad = N_FFT >> 1; // 256
-
     for (let t = computedFrames; t < newTotalFrames; t++) {
-        const frameStart = t * HOP_LENGTH - pad;
-
-        // a) Window the frame
-        for (let k = 0; k < N_FFT; k++) {
-            const idx = frameStart + k;
-            const sample = (idx >= 0 && idx < preemphLen) ? preemphBuffer[idx] : 0;
-            fftRe[k] = sample * hannWindow[k];
-            fftIm[k] = 0;
-        }
-
-        // b) 512-point FFT
-        fft(fftRe, fftIm, N_FFT, twiddles);
-
-        // c) Power spectrum
-        for (let k = 0; k < N_FREQ_BINS; k++) {
-            powerBuf[k] = fftRe[k] * fftRe[k] + fftIm[k] * fftIm[k];
-        }
-
-        // d) Mel filterbank multiply + log
-        for (let m = 0; m < nMels; m++) {
-            let melVal = 0;
-            const fbOff = m * N_FREQ_BINS;
-            for (let k = 0; k < N_FREQ_BINS; k++) {
-                melVal += powerBuf[k] * melFilterbank[fbOff + k];
+        // Compute frame using shared buffers (zero allocation)
+        // Note: computeMelFrame handles the math but not the storage layout
+        // We provide 'melFrameBuf' as a scratch buffer for the result
+        const frame = computeMelFrame(
+            preemphBuffer,
+            t,
+            hannWindow,
+            twiddles,
+            melFilterbank,
+            nMels,
+            {
+                fftRe,
+                fftIm,
+                power: powerBuf,
+                melFrame: melFrameBuf
             }
-            rawMelBuffer![m * maxFrames + t] = Math.log(melVal + LOG_ZERO_GUARD);
+        );
+
+        // Copy result to our mel-major buffer (column-major storage)
+        // rawMelBuffer is [nMels * maxFrames], accessed as [m * maxFrames + t]
+        for (let m = 0; m < nMels; m++) {
+            rawMelBuffer![m * maxFrames + t] = frame[m];
         }
     }
 
