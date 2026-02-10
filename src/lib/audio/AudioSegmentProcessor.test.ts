@@ -67,7 +67,7 @@ describe('AudioSegmentProcessor', () => {
         expect(state.speechStartTime).toBeNull();
     });
 
-    it('should split long segments proactively', () => {
+    it('should proactively split segments exceeding maxDuration', () => {
         // Configure processor with a short max segment duration
         const sampleRate = 16000;
         const maxDuration = 0.5; // 500ms
