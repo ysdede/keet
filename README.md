@@ -8,7 +8,7 @@ Real-time speech-to-text transcription in the browser, powered by [Parakeet.js](
 
 Boncuk.js is a real-time speech-to-text application built with SolidJS, Vite, and Tailwind CSS. It runs NVIDIA NeMo Parakeet TDT models in the browser via WebGPU/WASM through Parakeet.js, with no backend required.
 
-**Default pipeline (v4):** Utterance-based streaming with a centralized BufferWorker (multi-layer time-aligned buffer), TEN-VAD (WASM) for inference VAD, and HybridVAD (energy-based) for UI. WindowBuilder and UtteranceBasedMerger handle sentence finalization and mature/immature text. Legacy per-utterance (VAD-defined segments) mode is still available. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [.serena/memories/v4-utterance-pipeline-refactor.md](.serena/memories/v4-utterance-pipeline-refactor.md) for details.
+**Default pipeline (v4):** Utterance-based streaming with a centralized BufferWorker (multi-layer time-aligned buffer), TEN-VAD (WASM) for inference VAD, and HybridVAD (energy-based) for UI. WindowBuilder and UtteranceBasedMerger handle sentence finalization and mature/immature text. Legacy per-utterance (VAD-defined segments) mode is still available. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 ### What's new in 1.0
 
@@ -27,7 +27,6 @@ Boncuk.js is a real-time speech-to-text application built with SolidJS, Vite, an
 - **Incremental decoder cache** – Skips re-decoding overlapping prefix frames
 - **Live UI** – Canvas waveform, mel heatmap in debug panel, SNR meter, auto-scroll for finalized sentences
 - **Model management** – WebGPU/WASM backend selection, sideloading from HuggingFace
-- **Gemini integration** – Post-processing and analysis of transcribed text
 
 ---
 
@@ -87,7 +86,7 @@ Inference worker
 4. **Streaming window** – 5.0 s window / 3.5 s overlap / 1.5 s trigger (~30% less work per chunk).
 5. **Queue-based chunk processing** – Latest-only queue when inference is busy.
 6. **Optional log probs** – `returnLogProbs` off by default to save softmax cost.
-7. **v4 pipeline** – BufferWorker, TEN-VAD, WindowBuilder, UtteranceBasedMerger; see [.serena/memories/v4-utterance-pipeline-refactor.md](.serena/memories/v4-utterance-pipeline-refactor.md).
+7. **v4 pipeline** – BufferWorker, TEN-VAD, WindowBuilder, UtteranceBasedMerger.
 8. **Canvas waveform** – Single canvas instead of DOM bars; fixed gain and clamp.
 9. **Zero-allocation reads** – RingBuffer `readInto()`, pre-allocated waveform and ImageData for visualizers.
 10. **ResizeObserver cache** – Replaces per-frame `getBoundingClientRect()` to avoid reflows.
@@ -131,7 +130,7 @@ npm run serve        # Preview production build
 
 ## Test suite
 
-About 116 tests across 10 files for mel processing, v4 pipeline, and workers. Run: `npm test -- --run`. See [.serena/memories/v4-test-suite.md](.serena/memories/v4-test-suite.md) for v4 coverage.
+About 116 tests across 10 files for mel processing, v4 pipeline, and workers. Run: `npm test -- --run`.
 
 | Test file | Scope | Description |
 |-----------|--------|-------------|
@@ -194,19 +193,3 @@ npm run build
 ```
 
 The app is fully client-side; no server is required for transcription.
-
----
-
-## Documentation and context
-
-| Doc | Description |
-|-----|-------------|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Per-utterance vs v4 streaming; VAD and audio flow |
-| [docs/mel-worker-architecture.md](docs/mel-worker-architecture.md) | Mel worker pipeline and performance |
-| [PROJECT_MEMORY.md](PROJECT_MEMORY.md) | Decisions and agent context (Serena MCP) |
-| [LOCAL_DEV_SETUP.md](LOCAL_DEV_SETUP.md) | Local Parakeet.js source for development |
-| [GEMINI.md](GEMINI.md) | Project context for Gemini |
-| [MULTI_AGENT_SETUP.md](MULTI_AGENT_SETUP.md) | Multi-agent and Cursor/Serena setup |
-| [AGENTS.md](AGENTS.md) | Available skills and agent usage |
-
-**Serena memories** (`.serena/memories/`): [v4-utterance-pipeline-refactor.md](.serena/memories/v4-utterance-pipeline-refactor.md), [v4-test-suite.md](.serena/memories/v4-test-suite.md), [boncukjs-implementation-status.md](.serena/memories/boncukjs-implementation-status.md), [waveform-optimization.md](.serena/memories/waveform-optimization.md), [visualization-fixes.md](.serena/memories/visualization-fixes.md), [mel-producer-architecture.md](.serena/memories/mel-producer-architecture.md), [preprocessing-optimization.md](.serena/memories/preprocessing-optimization.md), [synchronization-fix.md](.serena/memories/synchronization-fix.md), [vad-correction-peak-energy.md](.serena/memories/vad-correction-peak-energy.md).
