@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js';
+import { createSignal, createRoot } from 'solid-js';
 import { appStore } from '../../stores/appStore';
 import { AudioEngine } from '../audio';
 import { MelWorkerClient } from '../audio/MelWorkerClient';
@@ -10,179 +10,162 @@ import { TenVADWorkerClient } from '../vad/TenVADWorkerClient';
 import type { V4ProcessResult } from '../transcription/TranscriptionWorkerClient';
 import type { BufferWorkerConfig, TenVADResult } from '../buffer/types';
 
-// Export signals for UI binding
-export const [audioEngineSignal, setAudioEngineSignal] = createSignal<AudioEngine | null>(null);
-export const [melClientSignal, setMelClientSignal] = createSignal<MelWorkerClient | null>(null);
+function createRecordingManager() {
+  // Signals for UI binding
+  const [audioEngine, setAudioEngine] = createSignal<AudioEngine | null>(null);
+  const [melClient, setMelClient] = createSignal<MelWorkerClient | null>(null);
 
-export class RecordingManager {
-  private static instance: RecordingManager;
-
-  // Singleton instances
-  private audioEngine: AudioEngine | null = null;
-  private workerClient: TranscriptionWorkerClient | null = null;
-  private melClient: MelWorkerClient | null = null;
-
-  private segmentUnsubscribe: (() => void) | null = null;
-  private windowUnsubscribe: (() => void) | null = null;
-  private melChunkUnsubscribe: (() => void) | null = null;
-  private energyPollInterval: number | undefined;
+  // Internal state (not reactive)
+  let workerClient: TranscriptionWorkerClient | null = null;
+  let segmentUnsubscribe: (() => void) | null = null;
+  let windowUnsubscribe: (() => void) | null = null;
+  let melChunkUnsubscribe: (() => void) | null = null;
+  let energyPollInterval: number | undefined;
 
   // v4 pipeline instances
-  private hybridVAD: HybridVAD | null = null;
-  private bufferClient: BufferWorkerClient | null = null;
-  private tenVADClient: TenVADWorkerClient | null = null;
-  private windowBuilder: WindowBuilder | null = null;
-  private v4TickTimeout: number | undefined;
-  private v4TickRunning = false;
-  private v4AudioChunkUnsubscribe: (() => void) | null = null;
-  private v4MelChunkUnsubscribe: (() => void) | null = null;
-  private v4InferenceBusy = false;
-  private v4LastInferenceTime = 0;
+  let hybridVAD: HybridVAD | null = null;
+  let bufferClient: BufferWorkerClient | null = null;
+  let tenVADClient: TenVADWorkerClient | null = null;
+  let windowBuilder: WindowBuilder | null = null;
+  let v4TickTimeout: number | undefined;
+  let v4TickRunning = false;
+  let v4AudioChunkUnsubscribe: (() => void) | null = null;
+  let v4MelChunkUnsubscribe: (() => void) | null = null;
+  let v4InferenceBusy = false;
+  let v4LastInferenceTime = 0;
 
   // Global sample counter for audio chunks (tracks total samples written to BufferWorker)
-  private v4GlobalSampleOffset = 0;
+  let v4GlobalSampleOffset = 0;
 
   // Throttle UI updates from TEN-VAD to at most once per frame
-  private pendingSileroProb: number | null = null;
-  private sileroUpdateScheduled = false;
-  private pendingVadState: {
+  let pendingSileroProb: number | null = null;
+  let sileroUpdateScheduled = false;
+  let pendingVadState: {
     isSpeech: boolean;
     energy: number;
     snr: number;
     hybridState: string;
     sileroProbability?: number;
   } | null = null;
-  private vadUpdateScheduled = false;
+  let vadUpdateScheduled = false;
 
-  private v4TickCount = 0;
-  private v4ModelNotReadyLogged = false;
+  let v4TickCount = 0;
+  let v4ModelNotReadyLogged = false;
 
-  public static getInstance(): RecordingManager {
-    if (!RecordingManager.instance) {
-      RecordingManager.instance = new RecordingManager();
-    }
-    return RecordingManager.instance;
-  }
+  const initialize = () => {
+    workerClient = new TranscriptionWorkerClient();
 
-  public initialize() {
-    this.workerClient = new TranscriptionWorkerClient();
-
-    this.workerClient.onModelProgress = (p) => {
+    workerClient.onModelProgress = (p) => {
       appStore.setModelProgress(p.progress);
       appStore.setModelMessage(p.message || '');
       if (p.file) appStore.setModelFile(p.file);
     };
 
-    this.workerClient.onModelStateChange = (s) => {
+    workerClient.onModelStateChange = (s) => {
       appStore.setModelState(s);
     };
 
-    this.workerClient.onV3Confirmed = (text) => {
+    workerClient.onV3Confirmed = (text) => {
       appStore.setTranscript(text);
     };
 
-    this.workerClient.onV3Pending = (text) => {
+    workerClient.onV3Pending = (text) => {
       appStore.setPendingText(text);
     };
 
-    this.workerClient.onError = (msg) => {
+    workerClient.onError = (msg) => {
       appStore.setErrorMessage(msg);
     };
 
     appStore.refreshDevices();
-  }
+  };
 
-  public dispose() {
-    if (this.energyPollInterval) clearInterval(this.energyPollInterval);
-    this.cleanupV4Pipeline();
-    this.melClient?.dispose();
-    this.workerClient?.dispose();
-  }
-
-  private scheduleSileroUpdate(prob: number) {
-    this.pendingSileroProb = prob;
-    if (this.sileroUpdateScheduled) return;
-    this.sileroUpdateScheduled = true;
+  const scheduleSileroUpdate = (prob: number) => {
+    pendingSileroProb = prob;
+    if (sileroUpdateScheduled) return;
+    sileroUpdateScheduled = true;
     requestAnimationFrame(() => {
-      this.sileroUpdateScheduled = false;
-      if (this.pendingSileroProb === null) return;
+      sileroUpdateScheduled = false;
+      if (pendingSileroProb === null) return;
       const currentState = appStore.vadState();
       appStore.setVadState({
         ...currentState,
-        sileroProbability: this.pendingSileroProb,
+        sileroProbability: pendingSileroProb,
       });
     });
-  }
+  };
 
-  private scheduleVadStateUpdate(next: {
+  const scheduleVadStateUpdate = (next: {
     isSpeech: boolean;
     energy: number;
     snr: number;
     hybridState: string;
     sileroProbability?: number;
-  }) {
-    this.pendingVadState = next;
-    if (this.vadUpdateScheduled) return;
-    this.vadUpdateScheduled = true;
+  }) => {
+    pendingVadState = next;
+    if (vadUpdateScheduled) return;
+    vadUpdateScheduled = true;
     requestAnimationFrame(() => {
-      this.vadUpdateScheduled = false;
-      if (!this.pendingVadState) return;
+      vadUpdateScheduled = false;
+      if (!pendingVadState) return;
       const currentState = appStore.vadState();
       const sileroProbability =
-        this.pendingVadState.sileroProbability !== undefined
-          ? this.pendingVadState.sileroProbability
+        pendingVadState.sileroProbability !== undefined
+          ? pendingVadState.sileroProbability
           : currentState.sileroProbability;
       appStore.setVadState({
         ...currentState,
-        ...this.pendingVadState,
+        ...pendingVadState,
         sileroProbability,
       });
-      appStore.setIsSpeechDetected(this.pendingVadState.isSpeech);
-      this.pendingVadState = null;
+      appStore.setIsSpeechDetected(pendingVadState.isSpeech);
+      pendingVadState = null;
     });
-  }
+  };
 
   // ---- v4 pipeline tick: periodic window building + inference ----
-  private v4Tick = async () => {
-    if (!this.workerClient || !this.windowBuilder || !this.audioEngine || !this.bufferClient || this.v4InferenceBusy) return;
+  const v4Tick = async () => {
+    // Access current signal value
+    const engine = audioEngine();
+    if (!workerClient || !windowBuilder || !engine || !bufferClient || v4InferenceBusy) return;
 
     // Skip inference if model is not ready (but still allow audio/mel/VAD to process)
     if (appStore.modelState() !== 'ready') {
-      if (!this.v4ModelNotReadyLogged) {
+      if (!v4ModelNotReadyLogged) {
         console.log('[v4Tick] Model not ready yet - audio is being captured and preprocessed');
-        this.v4ModelNotReadyLogged = true;
+        v4ModelNotReadyLogged = true;
       }
       return;
     }
     // Reset the flag once model becomes ready
-    if (this.v4ModelNotReadyLogged) {
+    if (v4ModelNotReadyLogged) {
       console.log('[v4Tick] Model is now ready - starting inference');
-      this.v4ModelNotReadyLogged = false;
+      v4ModelNotReadyLogged = false;
       // Initialize the v4 service now that model is ready
-      await this.workerClient.initV4Service({ debug: false });
+      await workerClient.initV4Service({ debug: false });
     }
 
-    this.v4TickCount++;
+    v4TickCount++;
     const now = performance.now();
     // Use the store's configurable inference interval (minus a small margin for the tick jitter)
     const minInterval = Math.max(200, appStore.v4InferenceIntervalMs() - 100);
-    if (now - this.v4LastInferenceTime < minInterval) return;
+    if (now - v4LastInferenceTime < minInterval) return;
 
     // Check if there is speech via the BufferWorker (async query).
     // We check both energy and inference VAD layers; either one detecting speech triggers inference.
-    const cursorSample = this.windowBuilder.getMatureCursorFrame(); // frame === sample in our pipeline
-    const currentSample = this.v4GlobalSampleOffset;
+    const cursorSample = windowBuilder.getMatureCursorFrame(); // frame === sample in our pipeline
+    const currentSample = v4GlobalSampleOffset;
     const startSample = cursorSample > 0 ? cursorSample : 0;
 
     let hasSpeech = false;
     if (currentSample > startSample) {
       // Check energy VAD first (always available, low latency)
-      const energyResult = await this.bufferClient.hasSpeech('energyVad', startSample, currentSample, 0.3);
+      const energyResult = await bufferClient.hasSpeech('energyVad', startSample, currentSample, 0.3);
 
       // When inference VAD is ready, require BOTH energy AND inference to agree
       // This prevents false positives from music/noise that has high energy but no speech
-      if (this.tenVADClient?.isReady()) {
-        const inferenceResult = await this.bufferClient.hasSpeech('inferenceVad', startSample, currentSample, 0.5);
+      if (tenVADClient?.isReady()) {
+        const inferenceResult = await bufferClient.hasSpeech('inferenceVad', startSample, currentSample, 0.5);
         // Require both energy and inference VAD to agree (AND logic)
         hasSpeech = energyResult.hasSpeech && inferenceResult.hasSpeech;
       } else {
@@ -191,13 +174,13 @@ export class RecordingManager {
       }
     }
 
-    if (this.v4TickCount <= 5 || this.v4TickCount % 20 === 0) {
+    if (v4TickCount <= 5 || v4TickCount % 20 === 0) {
       const vadState = appStore.vadState();
-      const rb = this.audioEngine.getRingBuffer();
+      const rb = engine.getRingBuffer();
       const rbFrame = rb.getCurrentFrame();
       const rbBase = rb.getBaseFrameOffset();
       console.log(
-        `[v4Tick #${this.v4TickCount}] hasSpeech=${hasSpeech}, vadState=${vadState.hybridState}, ` +
+        `[v4Tick #${v4TickCount}] hasSpeech=${hasSpeech}, vadState=${vadState.hybridState}, ` +
         `energy=${vadState.energy.toFixed(4)}, inferenceVAD=${(vadState.sileroProbability || 0).toFixed(2)}, ` +
         `samples=[${startSample}:${currentSample}], ` +
         `ringBuf=[base=${rbBase}, head=${rbFrame}, avail=${rbFrame - rbBase}]`
@@ -205,30 +188,30 @@ export class RecordingManager {
     }
 
     // Periodic buffer worker state dump (every 40 ticks)
-    if (this.v4TickCount % 40 === 0 && this.bufferClient) {
+    if (v4TickCount % 40 === 0 && bufferClient) {
       try {
-        const state = await this.bufferClient.getState();
+        const state = await bufferClient.getState();
         const layerSummary = Object.entries(state.layers)
           .map(([id, l]) => `${id}:${l.fillCount}/${l.maxEntries}@${l.currentSample}`)
           .join(', ');
-        console.log(`[v4Tick #${this.v4TickCount}] BufferState: ${layerSummary}`);
+        console.log(`[v4Tick #${v4TickCount}] BufferState: ${layerSummary}`);
       } catch (_) { /* ignore state query errors */ }
     }
 
     if (!hasSpeech) {
       // Check for silence-based flush using BufferWorker
-      const silenceDuration = await this.bufferClient.getSilenceTailDuration('energyVad', 0.3);
+      const silenceDuration = await bufferClient.getSilenceTailDuration('energyVad', 0.3);
       if (silenceDuration >= appStore.v4SilenceFlushSec()) {
         // Flush pending sentence via timeout finalization
         try {
-          const flushResult = await this.workerClient.v4FinalizeTimeout();
+          const flushResult = await workerClient.v4FinalizeTimeout();
           if (flushResult) {
             appStore.setMatureText(flushResult.matureText);
             appStore.setImmatureText(flushResult.immatureText);
             appStore.setMatureCursorTime(flushResult.matureCursorTime);
             appStore.setTranscript(flushResult.fullText);
             // Advance window builder cursor
-            this.windowBuilder.advanceMatureCursorByTime(flushResult.matureCursorTime);
+            windowBuilder.advanceMatureCursorByTime(flushResult.matureCursorTime);
           }
         } catch (err) {
           console.error('[v4Tick] Flush error:', err);
@@ -238,37 +221,38 @@ export class RecordingManager {
     }
 
     // Build window from cursor to current position
-    const window = this.windowBuilder.buildWindow();
+    const window = windowBuilder.buildWindow();
     if (!window) {
-      if (this.v4TickCount <= 10 || this.v4TickCount % 20 === 0) {
-        const rb = this.audioEngine.getRingBuffer();
+      if (v4TickCount <= 10 || v4TickCount % 20 === 0) {
+        const rb = engine.getRingBuffer();
         const rbHead = rb.getCurrentFrame();
         const rbBase = rb.getBaseFrameOffset();
         console.log(
-          `[v4Tick #${this.v4TickCount}] buildWindow=null, ` +
+          `[v4Tick #${v4TickCount}] buildWindow=null, ` +
           `ringBuf=[base=${rbBase}, head=${rbHead}, avail=${rbHead - rbBase}], ` +
-          `cursor=${this.windowBuilder.getMatureCursorFrame()}`
+          `cursor=${windowBuilder.getMatureCursorFrame()}`
         );
       }
       return;
     }
 
-    console.log(`[v4Tick #${this.v4TickCount}] Window [${window.startFrame}:${window.endFrame}] ${window.durationSeconds.toFixed(2)}s (initial=${window.isInitial})`);
+    console.log(`[v4Tick #${v4TickCount}] Window [${window.startFrame}:${window.endFrame}] ${window.durationSeconds.toFixed(2)}s (initial=${window.isInitial})`);
 
-    this.v4InferenceBusy = true;
-    this.v4LastInferenceTime = now;
+    v4InferenceBusy = true;
+    v4LastInferenceTime = now;
 
     try {
       const inferenceStart = performance.now();
 
       // Get mel features for the window
       let features: { features: Float32Array; T: number; melBins: number } | null = null;
-      if (this.melClient) {
-        features = await this.melClient.getFeatures(window.startFrame, window.endFrame);
+      const mel = melClient();
+      if (mel) {
+        features = await mel.getFeatures(window.startFrame, window.endFrame);
       }
 
       if (!features) {
-        this.v4InferenceBusy = false;
+        v4InferenceBusy = false;
         return;
       }
 
@@ -276,10 +260,10 @@ export class RecordingManager {
       const timeOffset = window.startFrame / 16000;
 
       // Calculate incremental cache parameters
-      const cursorFrame = this.windowBuilder.getMatureCursorFrame();
+      const cursorFrame = windowBuilder.getMatureCursorFrame();
       const prefixSeconds = cursorFrame > 0 ? (window.startFrame - cursorFrame) / 16000 : 0;
 
-      const result: V4ProcessResult = await this.workerClient.processV4ChunkWithFeatures({
+      const result: V4ProcessResult = await workerClient.processV4ChunkWithFeatures({
         features: features.features,
         T: features.T,
         melBins: features.melBins,
@@ -306,10 +290,10 @@ export class RecordingManager {
       appStore.setRtf(inferenceMs / audioDurationMs);
 
       // Advance cursor if merger advanced it
-      if (result.matureCursorTime > this.windowBuilder.getMatureCursorTime()) {
+      if (result.matureCursorTime > windowBuilder.getMatureCursorTime()) {
         appStore.setMatureCursorTime(result.matureCursorTime);
-        this.windowBuilder.advanceMatureCursorByTime(result.matureCursorTime);
-        this.windowBuilder.markSentenceEnd(Math.round(result.matureCursorTime * 16000));
+        windowBuilder.advanceMatureCursorByTime(result.matureCursorTime);
+        windowBuilder.markSentenceEnd(Math.round(result.matureCursorTime * 16000));
       }
 
       // Update stats
@@ -320,7 +304,7 @@ export class RecordingManager {
       });
 
       // Update buffer metrics
-      const ring = this.audioEngine.getRingBuffer();
+      const ring = engine.getRingBuffer();
       appStore.setBufferMetrics({
         fillRatio: ring.getFillCount() / ring.getSize(),
         latencyMs: (ring.getFillCount() / 16000) * 1000,
@@ -336,81 +320,89 @@ export class RecordingManager {
     } catch (err: any) {
       console.error('[v4Tick] Inference error:', err);
     } finally {
-      this.v4InferenceBusy = false;
+      v4InferenceBusy = false;
     }
   };
 
-  private cleanupV4Pipeline() {
-    this.v4TickRunning = false;
-    if (this.v4TickTimeout) {
-      clearTimeout(this.v4TickTimeout);
-      this.v4TickTimeout = undefined;
+  const cleanupV4Pipeline = () => {
+    v4TickRunning = false;
+    if (v4TickTimeout) {
+      clearTimeout(v4TickTimeout);
+      v4TickTimeout = undefined;
     }
-    if (this.v4AudioChunkUnsubscribe) {
-      this.v4AudioChunkUnsubscribe();
-      this.v4AudioChunkUnsubscribe = null;
+    if (v4AudioChunkUnsubscribe) {
+      v4AudioChunkUnsubscribe();
+      v4AudioChunkUnsubscribe = null;
     }
-    if (this.v4MelChunkUnsubscribe) {
-      this.v4MelChunkUnsubscribe();
-      this.v4MelChunkUnsubscribe = null;
+    if (v4MelChunkUnsubscribe) {
+      v4MelChunkUnsubscribe();
+      v4MelChunkUnsubscribe = null;
     }
-    this.hybridVAD = null;
-    if (this.tenVADClient) {
-      this.tenVADClient.dispose();
-      this.tenVADClient = null;
+    hybridVAD = null;
+    if (tenVADClient) {
+      tenVADClient.dispose();
+      tenVADClient = null;
     }
-    if (this.bufferClient) {
-      this.bufferClient.dispose();
-      this.bufferClient = null;
+    if (bufferClient) {
+      bufferClient.dispose();
+      bufferClient = null;
     }
-    this.windowBuilder = null;
-    this.v4InferenceBusy = false;
-    this.v4LastInferenceTime = 0;
-    this.v4GlobalSampleOffset = 0;
-  }
+    windowBuilder = null;
+    v4InferenceBusy = false;
+    v4LastInferenceTime = 0;
+    v4GlobalSampleOffset = 0;
+  };
 
-  public async toggleRecording() {
+  const dispose = () => {
+    if (energyPollInterval) clearInterval(energyPollInterval);
+    cleanupV4Pipeline();
+    melClient()?.dispose();
+    workerClient?.dispose();
+  };
+
+  const toggleRecording = async () => {
     const isRecording = () => appStore.recordingState() === 'recording';
     const isModelReady = () => appStore.modelState() === 'ready';
 
     if (isRecording()) {
-      if (this.energyPollInterval) {
-        clearInterval(this.energyPollInterval);
-        this.energyPollInterval = undefined;
+      if (energyPollInterval) {
+        clearInterval(energyPollInterval);
+        energyPollInterval = undefined;
       }
-      this.audioEngine?.stop();
+      audioEngine()?.stop();
 
-      if (this.segmentUnsubscribe) this.segmentUnsubscribe();
-      if (this.windowUnsubscribe) this.windowUnsubscribe();
-      if (this.melChunkUnsubscribe) this.melChunkUnsubscribe();
-      this.cleanupV4Pipeline();
+      if (segmentUnsubscribe) segmentUnsubscribe();
+      if (windowUnsubscribe) windowUnsubscribe();
+      if (melChunkUnsubscribe) melChunkUnsubscribe();
+      cleanupV4Pipeline();
 
-      if (this.workerClient) {
-        const final = await this.workerClient.finalize();
+      if (workerClient) {
+        const final = await workerClient.finalize();
         const text = (final as any).text || (final as any).fullText || '';
         appStore.setTranscript(text);
         appStore.setPendingText('');
       }
 
-      this.melClient?.reset();
+      melClient()?.reset();
       // Don't nullify melClient here, just reset it, but if needed we can set null
       // Actually we keep the instance if possible, but let's see.
       // The current logic doesn't clear melClient variable here, only calls .reset()
       // So signal should remain valid.
-      this.audioEngine?.reset();
+      audioEngine()?.reset();
       appStore.setAudioLevel(0);
       appStore.stopRecording();
     } else {
       try {
-        if (!this.audioEngine) {
-          this.audioEngine = new AudioEngine({
+        let engine = audioEngine();
+        if (!engine) {
+          engine = new AudioEngine({
             sampleRate: 16000,
             deviceId: appStore.selectedDeviceId(),
           });
-          setAudioEngineSignal(this.audioEngine);
+          setAudioEngine(engine);
         } else {
-          this.audioEngine.updateConfig({ deviceId: appStore.selectedDeviceId() });
-          this.audioEngine.reset();
+          engine.updateConfig({ deviceId: appStore.selectedDeviceId() });
+          engine.reset();
         }
 
         const mode = appStore.transcriptionMode();
@@ -421,25 +413,25 @@ export class RecordingManager {
           // ---- v4: Utterance-based pipeline with BufferWorker + TEN-VAD ----
 
           // Initialize merger in worker only if model is ready
-          if (isModelReady() && this.workerClient) {
-            await this.workerClient.initV4Service({ debug: false });
+          if (isModelReady() && workerClient) {
+            await workerClient.initV4Service({ debug: false });
           }
 
           // Initialize mel worker (always needed for preprocessing)
-          if (!this.melClient) {
-            this.melClient = new MelWorkerClient();
-            setMelClientSignal(this.melClient);
+          let mel = melClient();
+          if (!mel) {
+            mel = new MelWorkerClient();
+            setMelClient(mel);
           }
           try {
-            await this.melClient.init({ nMels: 128 });
+            await mel.init({ nMels: 128 });
           } catch (e) {
-            this.melClient.dispose();
-            this.melClient = null;
-            setMelClientSignal(null);
+            mel.dispose();
+            setMelClient(null);
           }
 
           // Initialize BufferWorker (centralized multi-layer data store)
-          this.bufferClient = new BufferWorkerClient();
+          bufferClient = new BufferWorkerClient();
           const bufferConfig: BufferWorkerConfig = {
             sampleRate: 16000,
             layers: {
@@ -449,32 +441,32 @@ export class RecordingManager {
               inferenceVad: { hopSamples: 256, entryDimension: 1, maxDurationSec: 120 },
             },
           };
-          await this.bufferClient.init(bufferConfig);
+          await bufferClient.init(bufferConfig);
 
           // Initialize TEN-VAD worker (inference-based VAD)
-          this.tenVADClient = new TenVADWorkerClient();
-          this.tenVADClient.onResult((result: TenVADResult) => {
-            if (!this.bufferClient) return;
+          tenVADClient = new TenVADWorkerClient();
+          tenVADClient.onResult((result: TenVADResult) => {
+            if (!bufferClient) return;
             // Batch-write hop probabilities to inferenceVad (single worker message)
             if (result.hopCount > 0) {
               const lastProb = result.probabilities[result.hopCount - 1];
-              if (this.bufferClient.writeBatchTransfer) {
-                this.bufferClient.writeBatchTransfer('inferenceVad', result.probabilities, result.globalSampleOffset);
+              if (bufferClient.writeBatchTransfer) {
+                bufferClient.writeBatchTransfer('inferenceVad', result.probabilities, result.globalSampleOffset);
               } else {
-                this.bufferClient.writeBatch('inferenceVad', result.probabilities, result.globalSampleOffset);
+                bufferClient.writeBatch('inferenceVad', result.probabilities, result.globalSampleOffset);
               }
 
               // Update UI at most once per frame with the latest probability
-              this.scheduleSileroUpdate(lastProb);
+              scheduleSileroUpdate(lastProb);
             }
           });
           // TEN-VAD init is non-blocking; falls back gracefully if WASM fails
-          this.tenVADClient.init({ hopSize: 256, threshold: 0.5 }).catch((err) => {
+          tenVADClient.init({ hopSize: 256, threshold: 0.5 }).catch((err) => {
             console.warn('[v4] TEN-VAD init failed, using energy-only:', err);
           });
 
           // Initialize hybrid VAD for energy-based detection (always runs, fast)
-          this.hybridVAD = new HybridVAD({
+          hybridVAD = new HybridVAD({
             sileroThreshold: 0.5,
             onsetConfirmations: 2,
             offsetConfirmations: 3,
@@ -486,36 +478,36 @@ export class RecordingManager {
           // because start() may re-create the internal RingBuffer.
 
           // Reset global sample counter
-          this.v4GlobalSampleOffset = 0;
+          v4GlobalSampleOffset = 0;
 
           // Feed audio chunks to mel worker from the main v4 audio handler below
-          this.v4MelChunkUnsubscribe = null;
+          v4MelChunkUnsubscribe = null;
 
           // Process each audio chunk: energy VAD + write to BufferWorker + forward to TEN-VAD
-          this.v4AudioChunkUnsubscribe = this.audioEngine.onAudioChunk((chunk) => {
-            if (!this.hybridVAD || !this.bufferClient) return;
+          v4AudioChunkUnsubscribe = engine.onAudioChunk((chunk) => {
+            if (!hybridVAD || !bufferClient) return;
 
-            const chunkOffset = this.v4GlobalSampleOffset;
-            this.v4GlobalSampleOffset += chunk.length;
+            const chunkOffset = v4GlobalSampleOffset;
+            v4GlobalSampleOffset += chunk.length;
 
             // 1. Run energy VAD (synchronous, fast) and write to BufferWorker
-            const vadResult = this.hybridVAD.processEnergyOnly(chunk);
+            const vadResult = hybridVAD.processEnergyOnly(chunk);
             const energyProb = vadResult.isSpeech ? 0.9 : 0.1;
-            this.bufferClient.writeScalar('energyVad', energyProb);
+            bufferClient.writeScalar('energyVad', energyProb);
 
             // 2. Forward audio to mel worker (copy, keep chunk for TEN-VAD transfer)
-            this.melClient?.pushAudioCopy(chunk);
+            melClient()?.pushAudioCopy(chunk);
 
             // 3. Forward audio to TEN-VAD worker for inference-based VAD (transfer, no copy)
-            if (this.tenVADClient?.isReady()) {
-              this.tenVADClient.processTransfer(chunk, chunkOffset);
+            if (tenVADClient?.isReady()) {
+              tenVADClient.processTransfer(chunk, chunkOffset);
             }
 
             // 4. Update VAD state for UI
-            const sileroProbability = this.tenVADClient?.isReady()
+            const sileroProbability = tenVADClient?.isReady()
               ? undefined
               : (vadResult.sileroProbability || 0);
-            this.scheduleVadStateUpdate({
+            scheduleVadStateUpdate({
               isSpeech: vadResult.isSpeech,
               energy: vadResult.energy,
               snr: vadResult.snr || 0,
@@ -526,18 +518,18 @@ export class RecordingManager {
 
           // Start adaptive inference tick loop (reads interval from appStore)
           // Note: v4Tick internally checks if model is ready before running inference
-          this.v4TickRunning = true;
+          v4TickRunning = true;
           const scheduleNextTick = () => {
-            if (!this.v4TickRunning) return;
-            this.v4TickTimeout = window.setTimeout(async () => {
-              if (!this.v4TickRunning) return;
-              await this.v4Tick();
+            if (!v4TickRunning) return;
+            v4TickTimeout = window.setTimeout(async () => {
+              if (!v4TickRunning) return;
+              await v4Tick();
               scheduleNextTick();
             }, appStore.v4InferenceIntervalMs());
           };
           scheduleNextTick();
 
-        } else if (isModelReady() && this.workerClient) {
+        } else if (isModelReady() && workerClient) {
           // v3 and v2 modes still require model to be ready
           if (mode === 'v3-streaming') {
             // ---- v3: Fixed-window token streaming (existing) ----
@@ -545,45 +537,46 @@ export class RecordingManager {
             const triggerInt = appStore.triggerInterval();
             const overlapDur = Math.max(1.0, windowDur - triggerInt);
 
-            await this.workerClient.initV3Service({
+            await workerClient.initV3Service({
               windowDuration: windowDur,
               overlapDuration: overlapDur,
               sampleRate: 16000,
               frameStride: appStore.frameStride(),
             });
 
-            if (!this.melClient) {
-              this.melClient = new MelWorkerClient();
-              setMelClientSignal(this.melClient);
+            let mel = melClient();
+            if (!mel) {
+              mel = new MelWorkerClient();
+              setMelClient(mel);
             }
             try {
-              await this.melClient.init({ nMels: 128 });
+              await mel.init({ nMels: 128 });
             } catch (e) {
-              this.melClient.dispose();
-              this.melClient = null;
-              setMelClientSignal(null);
+              mel.dispose();
+              setMelClient(null);
             }
 
-            this.melChunkUnsubscribe = this.audioEngine.onAudioChunk((chunk) => {
-              this.melClient?.pushAudioCopy(chunk);
+            melChunkUnsubscribe = engine.onAudioChunk((chunk) => {
+              melClient()?.pushAudioCopy(chunk);
             });
 
-            this.windowUnsubscribe = this.audioEngine.onWindowChunk(
+            windowUnsubscribe = engine.onWindowChunk(
               windowDur,
               overlapDur,
               triggerInt,
               async (audio, startTime) => {
-                if (!this.workerClient) return;
+                if (!workerClient) return;
                 const start = performance.now();
 
                 let result;
-                if (this.melClient) {
+                const mel = melClient();
+                if (mel) {
                   const startSample = Math.round(startTime * 16000);
                   const endSample = startSample + audio.length;
-                  const melFeatures = await this.melClient.getFeatures(startSample, endSample);
+                  const melFeatures = await mel.getFeatures(startSample, endSample);
 
                   if (melFeatures) {
-                    result = await this.workerClient.processV3ChunkWithFeatures(
+                    result = await workerClient.processV3ChunkWithFeatures(
                       melFeatures.features,
                       melFeatures.T,
                       melFeatures.melBins,
@@ -591,10 +584,10 @@ export class RecordingManager {
                       overlapDur,
                     );
                   } else {
-                    result = await this.workerClient.processV3Chunk(audio, startTime);
+                    result = await workerClient.processV3Chunk(audio, startTime);
                   }
                 } else {
-                  result = await this.workerClient.processV3Chunk(audio, startTime);
+                  result = await workerClient.processV3Chunk(audio, startTime);
                 }
 
                 const duration = performance.now() - start;
@@ -602,8 +595,10 @@ export class RecordingManager {
                 appStore.setRtf(duration / (stride * 1000));
                 appStore.setInferenceLatency(duration);
 
-                if (this.audioEngine) {
-                  const ring = this.audioEngine.getRingBuffer();
+                // Use current engine variable
+                const engine = audioEngine();
+                if (engine) {
+                  const ring = engine.getRingBuffer();
                   appStore.setBufferMetrics({
                     fillRatio: ring.getFillCount() / ring.getSize(),
                     latencyMs: (ring.getFillCount() / 16000) * 1000,
@@ -620,12 +615,15 @@ export class RecordingManager {
             );
           } else {
             // ---- v2: Per-utterance (existing) ----
-            await this.workerClient.initService({ sampleRate: 16000 });
-            this.segmentUnsubscribe = this.audioEngine.onSpeechSegment(async (segment) => {
-              if (this.workerClient) {
+            await workerClient.initService({ sampleRate: 16000 });
+            segmentUnsubscribe = engine.onSpeechSegment(async (segment) => {
+              if (workerClient) {
                 const start = Date.now();
-                const samples = this.audioEngine!.getRingBuffer().read(segment.startFrame, segment.endFrame);
-                const result = await this.workerClient.transcribeSegment(samples);
+                // Use current engine variable
+                const engine = audioEngine();
+                if (!engine) return;
+                const samples = engine.getRingBuffer().read(segment.startFrame, segment.endFrame);
+                const result = await workerClient.transcribeSegment(samples);
                 if (result.text) appStore.appendTranscript(result.text + ' ');
                 appStore.setInferenceLatency(Date.now() - start);
               }
@@ -633,13 +631,13 @@ export class RecordingManager {
           }
         }
 
-        await this.audioEngine.start();
+        await engine.start();
 
         // Create WindowBuilder AFTER start() so we get the final RingBuffer reference
         // (AudioEngine.init() re-creates the RingBuffer internally)
         if (mode === 'v4-utterance') {
-          this.windowBuilder = new WindowBuilder(
-            this.audioEngine.getRingBuffer(),
+          windowBuilder = new WindowBuilder(
+            engine.getRingBuffer(),
             null, // No VADRingBuffer; hasSpeech now goes through BufferWorker
             {
               sampleRate: 16000,
@@ -655,12 +653,13 @@ export class RecordingManager {
 
         appStore.startRecording();
 
-        this.energyPollInterval = window.setInterval(() => {
-          if (this.audioEngine) {
-            appStore.setAudioLevel(this.audioEngine.getCurrentEnergy());
+        energyPollInterval = window.setInterval(() => {
+          const engine = audioEngine();
+          if (engine) {
+            appStore.setAudioLevel(engine.getCurrentEnergy());
             // Only set speech detected here for non-v4 modes (v4 handles it in VAD callback)
             if (appStore.transcriptionMode() !== 'v4-utterance') {
-              appStore.setIsSpeechDetected(this.audioEngine.isSpeechActive());
+              appStore.setIsSpeechDetected(engine.isSpeechActive());
             }
           }
         }, 100);
@@ -668,17 +667,27 @@ export class RecordingManager {
         appStore.setErrorMessage(err.message);
       }
     }
-  }
+  };
 
-  public async loadModel(modelId: string) {
-    if (!this.workerClient) return;
-    return this.workerClient.initModel(modelId);
-  }
+  const loadModel = async (modelId: string) => {
+    if (!workerClient) return;
+    return workerClient.initModel(modelId);
+  };
 
-  public async loadLocalModel(files: FileList) {
-    if (!this.workerClient) return;
-    return this.workerClient.initLocalModel(files);
-  }
+  const loadLocalModel = async (files: FileList) => {
+    if (!workerClient) return;
+    return workerClient.initLocalModel(files);
+  };
+
+  return {
+    audioEngine,
+    melClient,
+    initialize,
+    dispose,
+    toggleRecording,
+    loadModel,
+    loadLocalModel
+  };
 }
 
-export const recordingManager = RecordingManager.getInstance();
+export const recordingManager = createRoot(createRecordingManager);

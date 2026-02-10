@@ -1,7 +1,7 @@
 import { Component, Show, For, Switch, Match, createSignal, onMount, onCleanup, createEffect } from 'solid-js';
 import { appStore } from './stores/appStore';
 import { CompactWaveform, BufferVisualizer, ModelLoadingOverlay, Sidebar, DebugPanel, StatusBar, TranscriptionDisplay } from './components';
-import { recordingManager, audioEngineSignal, melClientSignal } from './lib/recording/RecordingManager';
+import { recordingManager } from './lib/recording/RecordingManager';
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -138,7 +138,7 @@ const App: Component = () => {
         selectedDeviceId={appStore.selectedDeviceId()}
         onDeviceSelect={(id: string) => {
           appStore.setSelectedDeviceId(id);
-          const engine = audioEngineSignal();
+          const engine = recordingManager.audioEngine();
           if (engine) {
             engine.updateConfig({ deviceId: id });
           }
@@ -208,8 +208,8 @@ const App: Component = () => {
 
         <Show when={appStore.showDebugPanel()}>
           <DebugPanel
-            audioEngine={audioEngineSignal() ?? undefined}
-            melClient={melClientSignal() ?? undefined}
+            audioEngine={recordingManager.audioEngine() ?? undefined}
+            melClient={recordingManager.melClient() ?? undefined}
           />
         </Show>
       </main>
