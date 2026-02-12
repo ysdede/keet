@@ -53,34 +53,28 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                 <Show
                     when={hasContent()}
                     fallback={
-                        <div class="flex flex-col items-center justify-center h-full opacity-40">
-                            <span class="material-symbols-outlined text-6xl mb-4">graphic_eq</span>
-                            <p class="text-xl italic font-medium">
+                        <div class="flex flex-col items-center justify-center h-full opacity-50 story-font">
+                            <span class="material-symbols-outlined text-5xl mb-4 text-[var(--color-earthy-soft-brown)]">graphic_eq</span>
+                            <p class="text-2xl md:text-3xl leading-[1.6] text-[var(--color-earthy-muted-green)] italic">
                                 {props.placeholder ?? 'Ready to transcribe...'}
                             </p>
                         </div>
                     }
                 >
-                    <div class="space-y-10 py-4">
-                        {/* Primary Message Block */}
+                    <div class="story-font space-y-12 py-4">
                         <div class="group">
-                            <div class="flex items-center gap-3 mb-4">
-                                <span class="px-2.5 py-1 bg-blue-50 text-primary rounded text-[11px] font-extrabold uppercase tracking-wider">Speaker</span>
-                                <span class="text-xs text-slate-400 font-medium">Real-time Session</span>
-                            </div>
-
-                            <div class="pl-4 border-l-2 border-slate-100 group-hover:border-blue-100 transition-colors duration-300">
+                            <div class="pl-4 border-l-2 border-[var(--color-earthy-coral)]/30 group-hover:border-[var(--color-earthy-coral)]/50 transition-colors duration-300">
                                 {/* Confirmed text */}
-                                <p class="text-[18px] leading-relaxed text-slate-700 font-normal inline">
+                                <p class="text-2xl md:text-3xl leading-[1.6] text-[var(--color-earthy-dark-brown)] font-normal inline">
                                     {props.confirmedText}
                                 </p>
 
                                 {/* Pending text */}
                                 <Show when={props.pendingText}>
-                                    <p class="text-[18px] leading-relaxed text-primary/60 font-medium italic inline ml-1 transition-all duration-300">
+                                    <span class="text-2xl md:text-3xl leading-[1.6] text-[var(--color-earthy-coral)] font-medium italic ml-1 transition-all duration-300">
                                         {props.pendingText}
-                                        <span class="inline-block w-[2px] h-[18px] bg-primary align-middle ml-1 animate-pulse"></span>
-                                    </p>
+                                        <span class="inline-block w-[3px] h-8 bg-[var(--color-earthy-coral)] align-middle ml-1 opacity-60 animate-pulse" />
+                                    </span>
                                 </Show>
                             </div>
                         </div>
@@ -88,11 +82,12 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                         {/* Listening indicator when idle but recording */}
                         <Show when={props.isRecording && !props.pendingText && !props.confirmedText}>
                             <div class="flex items-center gap-3">
-                                <span class="px-2.5 py-1 bg-slate-900 text-white rounded text-[10px] font-extrabold uppercase tracking-widest">Live</span>
+                                <div class="w-2 h-2 rounded-full bg-[var(--color-earthy-coral)] animate-pulse" />
+                                <span class="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Listening...</span>
                                 <div class="flex gap-1">
-                                    <div class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div>
-                                    <div class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.2s]"></div>
-                                    <div class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                                    <div class="w-1.5 h-1.5 bg-[var(--color-earthy-muted-green)] rounded-full animate-bounce opacity-60" />
+                                    <div class="w-1.5 h-1.5 bg-[var(--color-earthy-muted-green)] rounded-full animate-bounce opacity-80 [animation-delay:0.2s]" />
+                                    <div class="w-1.5 h-1.5 bg-[var(--color-earthy-muted-green)] rounded-full animate-bounce [animation-delay:0.4s]" />
                                 </div>
                             </div>
                         </Show>
@@ -102,16 +97,13 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
 
             {/* Merge Stats / Legend (Floating style inside container) */}
             <Show when={props.showConfidence && props.isRecording && (props.lcsLength !== undefined)}>
-                <div class="mt-4 flex items-center gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white/50 backdrop-blur-sm self-start px-4 py-2 rounded-full border border-slate-100 shadow-sm">
+                <div class="mt-4 flex items-center gap-4 text-[10px] font-bold text-[var(--color-earthy-soft-brown)] uppercase tracking-widest bg-[var(--color-earthy-bg)]/80 backdrop-blur-sm self-start px-4 py-2 rounded-full border border-[var(--color-earthy-sage)]/50">
                     <div class="flex items-center gap-1.5">
-                        <span class={`w-2 h-2 rounded-full ${props.anchorValid ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                        <span class={`w-2 h-2 rounded-full ${props.anchorValid ? 'bg-[var(--color-earthy-muted-green)]' : 'bg-[var(--color-earthy-coral)]'}`} />
                         <span>LCS: {props.lcsLength}</span>
                     </div>
-                    <div class="w-px h-3 bg-slate-200"></div>
-                    <div class="flex items-center gap-1.5 grayscale opacity-60">
-                        <span class="material-symbols-outlined text-xs">merging_cells</span>
-                        <span>PTFA Merged</span>
-                    </div>
+                    <div class="w-px h-3 bg-[var(--color-earthy-sage)]" />
+                    <span class="opacity-60">PTFA Merged</span>
                 </div>
             </Show>
         </div>

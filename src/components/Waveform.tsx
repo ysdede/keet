@@ -72,12 +72,13 @@ export const Waveform: Component<WaveformProps> = (props) => {
       bars.fill(0.1);
     }
 
-    // Update bar heights in-place
+    // Update bar heights in-place: use true amplitude (level in 0..1 from getCurrentEnergy).
+    // No display amplification so bars reflect actual level; ASR pipeline unchanged.
     if (props.isRecording) {
       const level = props.audioLevel;
       for (let i = 0; i < n; i++) {
-        const base = level * 15.0 + Math.random() * 0.2;
-        bars[i] = Math.min(1, Math.max(0.1, base));
+        const base = Math.min(1, level + Math.random() * 0.05);
+        bars[i] = Math.max(0.05, base);
       }
     } else {
       for (let i = 0; i < n; i++) {
