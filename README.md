@@ -2,6 +2,8 @@
 
 Real-time speech-to-text transcription in the browser, powered by [Parakeet.js](https://github.com/ysdede/parakeet.js).
 
+**[Live app](https://ysdede.github.io/keet/)** – available for testing on GitHub Pages.
+
 ![Streaming preview](public/img/streaming-preview.jpg)
 
 ## Overview
