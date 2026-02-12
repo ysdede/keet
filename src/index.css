@@ -1,19 +1,31 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #135bec;
-  --color-neu-bg: #eef0f5;
-  --color-workspace-bg: #f9fafc;
-  --color-sidebar-border: #d1d5db;
+  /* Earthy palette from reference */
+  --color-earthy-bg: #F9F7F2;
+  --color-earthy-muted-green: #6B705C;
+  --color-earthy-soft-brown: #A5A58D;
+  --color-earthy-dark-brown: #3D405B;
+  --color-earthy-coral: #E07A5F;
+  --color-earthy-sage: #B7B7A4;
 
-  --font-display: "Manrope", sans-serif;
-  --font-sans: "Manrope", sans-serif;
+  /* Semantic aliases (accent = coral for focus/selection) */
+  --color-primary: #6B705C;
+  --color-accent: #E07A5F;
+  --color-neu-bg: #F9F7F2;
+  --color-workspace-bg: #F9F7F2;
+  --color-sidebar-border: #B7B7A4;
 
-  --shadow-neu-flat: 6px 6px 12px #c8cdd8, -6px -6px 12px #ffffff;
-  --shadow-neu-pressed: inset 4px 4px 8px #c8cdd8, inset -4px -4px 8px #ffffff;
-  --shadow-neu-btn: 5px 5px 10px #c8cdd8, -5px -5px 10px #ffffff;
-  --shadow-neu-btn-hover: 3px 3px 6px #c8cdd8, -3px -3px 6px #ffffff;
+  --font-display: "Plus Jakarta Sans", sans-serif;
+  --font-sans: "Plus Jakarta Sans", sans-serif;
+  --font-story: "Crimson Pro", serif;
+
+  /* Softer shadows for earthy theme */
+  --shadow-neu-flat: 4px 4px 10px rgba(183, 183, 164, 0.25), -4px -4px 10px rgba(255, 255, 255, 0.8);
+  --shadow-neu-pressed: inset 3px 3px 6px rgba(183, 183, 164, 0.2), inset -3px -3px 6px rgba(255, 255, 255, 0.6);
+  --shadow-neu-btn: 3px 3px 8px rgba(183, 183, 164, 0.2), -3px -3px 8px rgba(255, 255, 255, 0.7);
+  --shadow-neu-btn-hover: 2px 2px 5px rgba(183, 183, 164, 0.2), -2px -2px 5px rgba(255, 255, 255, 0.6);
 }
 
 /* Material Symbols - ensure they load and look sharp. */
@@ -36,11 +48,17 @@
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
-/* Custom Utilities */
+/* Story/content font class */
+.story-font {
+  font-family: var(--font-story);
+}
+
+/* Custom Utilities (earthy) */
 @utility neu-icon-btn {
   background-color: var(--color-neu-bg);
   box-shadow: var(--shadow-neu-btn);
   transition: all 0.2s;
+  border: 1px solid var(--color-earthy-sage);
 
   &:hover {
     box-shadow: var(--shadow-neu-btn-hover);
@@ -50,7 +68,7 @@
   &:active,
   &.active {
     box-shadow: var(--shadow-neu-pressed);
-    color: var(--color-primary);
+    color: var(--color-earthy-coral);
   }
 }
 
@@ -73,13 +91,23 @@
 }
 
 @utility status-led {
-  @apply absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full border-2 border-neu-bg;
+  @apply absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full border-2;
+  border-color: var(--color-earthy-bg);
 }
 
-/* Custom scrollbar */
+/* Load model button: spinning indicator while model is loading */
+@keyframes load-btn-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.load-btn-spin {
+  animation: load-btn-spin 1s linear infinite;
+}
+
+/* Custom scrollbar (earthy-sage) */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -87,19 +115,36 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-earthy-sage);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-earthy-soft-brown);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-earthy-sage);
+  border-radius: 10px;
+}
+
+.abstract-wave {
+  mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
 }
 
 /* Global resets for the theme */
 body {
-  background-color: var(--color-neu-bg);
+  background-color: var(--color-earthy-bg);
   font-family: var(--font-sans);
-  color: #334155;
+  color: var(--color-earthy-dark-brown);
   -webkit-font-smoothing: antialiased;
   margin: 0;
   padding: 0;
@@ -131,7 +176,7 @@ pre,
 }
 
 ::selection {
-  background-color: #135bec;
+  background-color: var(--color-earthy-coral);
   color: white;
 }
 
@@ -153,4 +198,58 @@ pre,
 
 .animate-pulse-gentle {
   animation: pulse-gentle 2s ease-in-out infinite;
+}
+
+/* Debug panel adjustable settings: earthy track + dark handle */
+.debug-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.debug-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-earthy-sage);
+  opacity: 0.4;
+}
+
+.debug-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-earthy-muted-green);
+  border: 1px solid var(--color-earthy-dark-brown);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  margin-top: -5px;
+  cursor: pointer;
+}
+
+.debug-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-earthy-sage);
+  opacity: 0.4;
+}
+
+.debug-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-earthy-muted-green);
+  border: 1px solid var(--color-earthy-dark-brown);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+/* Settings panel: slide in from the right, no full-screen block */
+.settings-panel-slide {
+  transform: translateX(100%);
+  transition: transform 0.3s ease-out;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
+}
+.settings-panel-slide--open {
+  transform: translateX(0);
 }

@@ -1,17 +1,17 @@
-import { Component, Show, For, Switch, Match, createSignal, onMount, onCleanup, createEffect } from 'solid-js';
+import { Component, Show, For, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { appStore } from './stores/appStore';
-import { CompactWaveform, BufferVisualizer, ModelLoadingOverlay, Sidebar, DebugPanel, StatusBar, TranscriptionDisplay } from './components';
+import { CompactWaveform, ModelLoadingOverlay, DebugPanel, TranscriptionDisplay, SettingsContent } from './components';
 import { getModelDisplayName, MODELS } from './components/ModelLoadingOverlay';
 import { AudioEngine } from './lib/audio';
 import { MelWorkerClient } from './lib/audio/MelWorkerClient';
 import { TranscriptionWorkerClient } from './lib/transcription';
-import { formatDuration } from './utils/time';
 import { HybridVAD } from './lib/vad';
 import { WindowBuilder } from './lib/transcription/WindowBuilder';
 import { BufferWorkerClient } from './lib/buffer';
 import { TenVADWorkerClient } from './lib/vad/TenVADWorkerClient';
 import type { V4ProcessResult } from './lib/transcription/TranscriptionWorkerClient';
 import type { BufferWorkerConfig, TenVADResult } from './lib/buffer/types';
+import { formatDuration } from './utils/time';
 
 // Singleton instances
 let audioEngine: AudioEngine | null = null;
@@ -23,7 +23,7 @@ export const [melClientSignal, setMelClientSignal] = createSignal<MelWorkerClien
 let segmentUnsubscribe: (() => void) | null = null;
 let windowUnsubscribe: (() => void) | null = null;
 let melChunkUnsubscribe: (() => void) | null = null;
-let energyPollInterval: number | undefined;
+let visualizationUnsubscribe: (() => void) | undefined;
 // v4 pipeline instances
 let hybridVAD: HybridVAD | null = null;
 let bufferClient: BufferWorkerClient | null = null;
@@ -92,89 +92,148 @@ const scheduleVadStateUpdate = (next: {
   });
 };
 
-interface ModelOption { id: string; name: string; desc?: string }
-
 const Header: Component<{
-  isRecording: boolean;
-  audioLevel: number;
-  modelLabel: () => string;
-  models: ModelOption[];
-  selectedModelId: () => string;
-  onModelSelect: (id: string) => void;
-  isModelLoading: boolean;
+  onToggleDebug: () => void;
 }> = (props) => {
+  const sessionLabel = () =>
+    appStore.modelState() === 'ready' ? getModelDisplayName(appStore.selectedModelId()) : 'Session';
   return (
-    <header class="bg-white border-b border-slate-200 shrink-0 z-10 transition-all duration-300">
-      <div class="px-8 h-20 flex items-center justify-between">
-        <div class="flex items-center gap-10">
+    <header class="h-20 flex items-center justify-between px-8 bg-[var(--color-earthy-bg)]/80 backdrop-blur-sm z-30 shrink-0">
+      <div class="flex items-center gap-6">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-[var(--color-earthy-muted-green)] flex items-center justify-center text-white">
+            <span class="material-symbols-outlined text-xl">auto_awesome</span>
+          </div>
           <div>
-            <div class="flex items-center gap-2">
-              <span class="flex h-2 w-2">
-                <span class={`absolute inline-flex h-2 w-2 rounded-full opacity-75 ${props.isRecording ? 'animate-ping bg-red-400' : 'bg-slate-300'}`}></span>
-                <span class={`relative inline-flex rounded-full h-2 w-2 ${props.isRecording ? 'bg-red-500' : 'bg-slate-400'}`}></span>
-              </span>
-              <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {props.isRecording ? 'Live' : 'Standby'}
-              </span>
-            </div>
-            <div class="text-[10px] text-slate-500 mt-1">
-              <div>parakeet.js {typeof __PARAKEET_VERSION__ !== 'undefined' ? __PARAKEET_VERSION__ : 'unknown'} ({typeof __PARAKEET_SOURCE__ !== 'undefined' ? __PARAKEET_SOURCE__ : 'unknown'})</div>
-              <div>onnxruntime-web {typeof __ONNXRUNTIME_VERSION__ !== 'undefined' ? __ONNXRUNTIME_VERSION__ : 'unknown'}</div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-8 border-l border-slate-100 pl-10">
-            <div class="flex flex-col gap-0.5">
-              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model</span>
-              <select
-                class="text-sm font-bold text-slate-700 bg-transparent border border-slate-200 rounded-lg px-2 py-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[140px]"
-                value={props.selectedModelId()}
-                onInput={(e) => props.onModelSelect((e.target as HTMLSelectElement).value)}
-                disabled={props.isModelLoading}
-              >
-                <For each={props.models}>{(m) => <option value={m.id}>{m.name}</option>}</For>
-              </select>
-              <span class="text-[10px] text-slate-500">{props.modelLabel()}</span>
-            </div>
-            <div class="flex flex-col">
-              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inference</span>
-              <span class="text-sm font-bold text-slate-700">
-                {appStore.inferenceLatency().toFixed(0)} ms
-              </span>
-            </div>
-            <div class="flex flex-col">
-              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Duration</span>
-              <span class="text-sm font-bold text-slate-700">{formatDuration(appStore.sessionDuration())}</span>
-            </div>
+            <h1 class="text-lg font-semibold tracking-tight text-[var(--color-earthy-dark-brown)]">keet</h1>
+            <p class="text-[10px] uppercase tracking-[0.2em] text-[var(--color-earthy-soft-brown)] font-medium">{sessionLabel()}</p>
           </div>
         </div>
-
-        <div class="flex-1 max-w-md h-12 mx-12 flex items-center justify-center">
-          <CompactWaveform audioLevel={props.audioLevel} isRecording={props.isRecording} />
-        </div>
-
-        <div class="flex items-center gap-4">
-          <div class="text-right mr-2 hidden sm:block">
-            <p class="text-xs font-bold text-slate-700">On-Device AI</p>
-            <p class="text-[10px] text-slate-500">{appStore.backend().toUpperCase()} Backend</p>
-          </div>
-          <div class="w-10 h-10 rounded-full bg-neu-bg shadow-neu-flat flex items-center justify-center border border-slate-100">
-            <span class="material-symbols-outlined text-primary">shield</span>
-          </div>
-        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <button
+          type="button"
+          onClick={props.onToggleDebug}
+          class={`p-2 rounded-full transition-colors ${appStore.showDebugPanel() ? 'bg-[var(--color-earthy-muted-green)] text-white' : 'text-[var(--color-earthy-muted-green)] hover:bg-[var(--color-earthy-sage)]/30'}`}
+          title={appStore.showDebugPanel() ? 'Hide debug panel' : 'Show debug panel'}
+          aria-label="Toggle debug panel"
+        >
+          <span class="material-symbols-outlined">bug_report</span>
+        </button>
+        <button
+          type="button"
+          class="p-2 text-[var(--color-earthy-muted-green)] hover:scale-110 transition-transform"
+          aria-label="More options"
+        >
+          <span class="material-symbols-outlined">more_vert</span>
+        </button>
       </div>
     </header>
   );
 };
 
+const WIDGET_STORAGE_KEY = 'boncukjs-control-widget-pos';
+const WIDGET_MAX_W = 672;
+const WIDGET_MIN_H = 80;
+
 const App: Component = () => {
-  const [activeTab, setActiveTab] = createSignal('transcript');
   const [showModelOverlay, setShowModelOverlay] = createSignal(false);
+  const [showContextPanel, setShowContextPanel] = createSignal(false);
+  type SettingsPanelSection = 'full' | 'audio' | 'model';
+  const [settingsPanelSection, setSettingsPanelSection] = createSignal<SettingsPanelSection>('full');
+  let panelHoverCloseTimeout: number | undefined;
+  const [workerReady, setWorkerReady] = createSignal(false);
+  const [widgetPos, setWidgetPos] = createSignal<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = createSignal(false);
 
   const isRecording = () => appStore.recordingState() === 'recording';
   const isModelReady = () => appStore.modelState() === 'ready';
 
+  let dragStart = { x: 0, y: 0 };
+  let posStart = { x: 0, y: 0 };
+
+  const [windowHeight, setWindowHeight] = createSignal(typeof window !== 'undefined' ? window.innerHeight : 600);
+  const settingsExpandUp = () => {
+    const pos = widgetPos();
+    if (!pos) return true;
+    return pos.y >= windowHeight() / 2;
+  };
+
+  const handleWidgetDragStart = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, select, input')) return;
+    e.preventDefault();
+    const pos = widgetPos();
+    if (!pos) return;
+    setIsDragging(true);
+    dragStart = { x: e.clientX, y: e.clientY };
+    posStart = { ...pos };
+    const onMove = (e2: MouseEvent) => {
+      const dx = e2.clientX - dragStart.x;
+      const dy = e2.clientY - dragStart.y;
+      const w = typeof window !== 'undefined' ? window.innerWidth : 800;
+      const h = typeof window !== 'undefined' ? window.innerHeight : 600;
+      const newX = Math.max(0, Math.min(w - WIDGET_MAX_W, posStart.x + dx));
+      const newY = Math.max(0, Math.min(h - WIDGET_MIN_H, posStart.y + dy));
+      setWidgetPos({ x: newX, y: newY });
+    };
+    const onUp = () => {
+      setIsDragging(false);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      const p = widgetPos();
+      if (p && typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(WIDGET_STORAGE_KEY, JSON.stringify(p));
+        } catch (_) {}
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  createEffect(() => {
+    if (!showContextPanel()) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowContextPanel(false);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  });
+
+  createEffect(() => {
+    if (appStore.modelState() === 'ready' && showContextPanel() && settingsPanelSection() === 'model') {
+      setShowContextPanel(false);
+    }
+  });
+
   onMount(() => {
+    const onResize = () => setWindowHeight(window.innerHeight);
+    window.addEventListener('resize', onResize);
+
+    const stored =
+      typeof localStorage !== 'undefined' ? localStorage.getItem(WIDGET_STORAGE_KEY) : null;
+    let posRestored = false;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as { x: number; y: number };
+        if (Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) {
+          setWidgetPos({ x: parsed.x, y: parsed.y });
+          posRestored = true;
+        }
+      } catch (_) {}
+    }
+    if (!posRestored) {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      setWidgetPos({
+        x: Math.max(0, (w - WIDGET_MAX_W) / 2),
+        y: h - 140,
+      });
+    }
+
     workerClient = new TranscriptionWorkerClient();
 
     workerClient.onModelProgress = (p) => {
@@ -200,10 +259,17 @@ const App: Component = () => {
     };
 
     appStore.refreshDevices();
+    setWorkerReady(true);
+
+    return () => window.removeEventListener('resize', onResize);
   });
 
+  // No longer auto-show blocking model overlay; model selection is in the settings panel.
+  // createEffect(() => { ... setShowModelOverlay(true); });
+
   onCleanup(() => {
-    if (energyPollInterval) clearInterval(energyPollInterval);
+    clearTimeout(panelHoverCloseTimeout);
+    visualizationUnsubscribe?.();
     cleanupV4Pipeline();
     melClient?.dispose();
     workerClient?.dispose();
@@ -442,12 +508,11 @@ const App: Component = () => {
   const toggleRecording = async () => {
     if (isRecording()) {
       // Update UI immediately so the stop button always takes effect even if cleanup throws
-      if (energyPollInterval) {
-        clearInterval(energyPollInterval);
-        energyPollInterval = undefined;
-      }
+      visualizationUnsubscribe?.();
+      visualizationUnsubscribe = undefined;
       appStore.stopRecording();
       appStore.setAudioLevel(0);
+      appStore.setBarLevels(new Float32Array(0));
 
       try {
         audioEngine?.stop();
@@ -730,15 +795,15 @@ const App: Component = () => {
 
         appStore.startRecording();
 
-        energyPollInterval = window.setInterval(() => {
-          if (audioEngine) {
-            appStore.setAudioLevel(audioEngine.getCurrentEnergy());
-            // Only set speech detected here for non-v4 modes (v4 handles it in VAD callback)
-            if (appStore.transcriptionMode() !== 'v4-utterance') {
-              appStore.setIsSpeechDetected(audioEngine.isSpeechActive());
-            }
+        // Use same 30fps tick (onVisualizationUpdate throttled to 33ms).
+        // Bar levels from AnalyserNode (native FFT, low CPU) instead of mel worker.
+        visualizationUnsubscribe = audioEngine.onVisualizationUpdate((_data, metrics) => {
+          appStore.setAudioLevel(metrics.currentEnergy);
+          if (appStore.transcriptionMode() !== 'v4-utterance') {
+            appStore.setIsSpeechDetected(audioEngine?.isSpeechActive() ?? false);
           }
-        }, 100);
+          appStore.setBarLevels(audioEngine!.getBarLevels());
+        });
       } catch (err: any) {
         appStore.setErrorMessage(err.message);
       }
@@ -749,34 +814,50 @@ const App: Component = () => {
     if (!workerClient) return;
     if (appStore.modelState() === 'ready') return;
     if (appStore.modelState() === 'loading') return;
-    setShowModelOverlay(true);
+    setShowContextPanel(true);
     try {
       await workerClient.initModel(appStore.selectedModelId());
-      setTimeout(() => setShowModelOverlay(false), 1500);
-    } catch (e) { }
+    } catch (e) {
+      console.error('Failed to load model:', e);
+      appStore.setModelState('error');
+      appStore.setErrorMessage(e instanceof Error ? e.message : String(e));
+    }
   };
 
-  const openModelSelection = () => {
-    if (!workerClient) return;
-    if (appStore.modelState() !== 'loading' && appStore.modelState() !== 'ready') {
-      appStore.setModelState('unloaded');
-    }
-    setShowModelOverlay(true);
+  const openPanelForAudio = () => {
+    clearTimeout(panelHoverCloseTimeout);
+    setSettingsPanelSection('audio');
+    setShowContextPanel(true);
+  };
+  const openPanelForModel = () => {
+    clearTimeout(panelHoverCloseTimeout);
+    setSettingsPanelSection('model');
+    setShowContextPanel(true);
+  };
+  const schedulePanelCloseIfHover = () => {
+    panelHoverCloseTimeout = window.setTimeout(() => {
+      if (settingsPanelSection() !== 'full' && appStore.modelState() !== 'loading') {
+        setShowContextPanel(false);
+      }
+    }, 250);
+  };
+  const cancelPanelClose = () => clearTimeout(panelHoverCloseTimeout);
+  const panelMouseLeave = () => {
+    if (settingsPanelSection() !== 'full') schedulePanelCloseIfHover();
   };
 
   const handleLocalLoad = async (files: FileList) => {
     if (!workerClient) return;
-    setShowModelOverlay(true);
+    setShowContextPanel(true);
     try {
       await workerClient.initLocalModel(files);
-      setTimeout(() => setShowModelOverlay(false), 1500);
     } catch (e) {
       console.error('Failed to load local model:', e);
     }
   };
 
   return (
-    <div class="h-screen bg-neu-bg flex overflow-hidden selection:bg-primary/20">
+    <div class="h-screen flex flex-col overflow-hidden bg-[var(--color-earthy-bg)] selection:bg-[var(--color-earthy-coral)] selection:text-white">
       <ModelLoadingOverlay
         isVisible={showModelOverlay()}
         state={appStore.modelState()}
@@ -791,100 +872,154 @@ const App: Component = () => {
         onClose={() => setShowModelOverlay(false)}
       />
 
-      <Sidebar
-        activeTab={activeTab()}
-        onTabChange={setActiveTab}
-        isRecording={isRecording()}
-        onToggleRecording={toggleRecording}
-        isModelReady={isModelReady()}
-        onLoadModel={() => loadSelectedModel()}
-        modelState={appStore.modelState()}
-        availableDevices={appStore.availableDevices()}
-        selectedDeviceId={appStore.selectedDeviceId()}
-        onDeviceSelect={(id: string) => {
-          appStore.setSelectedDeviceId(id);
-          if (audioEngine) {
-            audioEngine.updateConfig({ deviceId: id });
-          }
-        }}
-        audioLevel={appStore.audioLevel()}
+      <Header
+        onToggleDebug={() => appStore.setShowDebugPanel(!appStore.showDebugPanel())}
       />
 
-      <main class="flex-1 flex flex-col min-w-0 bg-workspace-bg overflow-hidden">
-        <Header
-          isRecording={isRecording()}
-          audioLevel={appStore.audioLevel()}
-          modelLabel={() => appStore.modelState() === 'ready' ? getModelDisplayName(appStore.selectedModelId()) : 'Not loaded'}
-          models={MODELS}
-          selectedModelId={appStore.selectedModelId}
-          onModelSelect={(id) => appStore.setSelectedModelId(id)}
-          isModelLoading={appStore.modelState() === 'loading'}
-        />
+      <div class="flex-1 flex overflow-hidden relative">
+        <main class="flex-1 overflow-y-auto custom-scrollbar px-6 flex flex-col items-center">
+          <div class="max-w-3xl w-full py-12 lg:py-20">
+            <TranscriptionDisplay
+              confirmedText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.matureText() : appStore.transcript()}
+              pendingText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.immatureText() : appStore.pendingText()}
+              isRecording={isRecording()}
+              lcsLength={appStore.mergeInfo().lcsLength}
+              anchorValid={appStore.mergeInfo().anchorValid}
+              showConfidence={appStore.transcriptionMode() === 'v3-streaming'}
+              class="min-h-[40vh]"
+            />
+          </div>
+        </main>
+      </div>
 
-        <div class="flex-1 overflow-y-auto relative">
-          <Switch>
-            <Match when={activeTab() === 'transcript'}>
-              <div class="px-8 py-10 max-w-5xl mx-auto w-full h-full">
-                <TranscriptionDisplay
-                  confirmedText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.matureText() : appStore.transcript()}
-                  pendingText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.immatureText() : appStore.pendingText()}
-                  isRecording={isRecording()}
-                  lcsLength={appStore.mergeInfo().lcsLength}
-                  anchorValid={appStore.mergeInfo().anchorValid}
-                  showConfidence={appStore.transcriptionMode() === 'v3-streaming'}
-                  class="h-full"
-                />
-              </div>
-            </Match>
-            <Match when={activeTab() === 'settings'}>
-              <div class="px-12 py-10 max-w-5xl mx-auto w-full">
-                <h2 class="text-2xl font-extrabold text-[#0f172a] mb-8">System Settings</h2>
-                <div class="nm-flat rounded-3xl p-8 space-y-8">
-                  <section>
-                    <h3 class="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Device Configuration</h3>
-                    <p class="text-slate-600">Model: <span class="font-bold text-primary">{appStore.selectedModelId()}</span></p>
-                    <p class="text-slate-600">Backend: <span class="font-bold text-primary">{appStore.backend().toUpperCase()}</span></p>
-                  </section>
-                </div>
-              </div>
-            </Match>
-          </Switch>
-        </div>
-
-        {/* Floating Metrics Block */}
-        <div class="fixed top-24 right-8 flex gap-4 z-30">
-          <div class="bg-white/90 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-200 shadow-lg flex items-center gap-4 transition-all hover:shadow-xl hover:bg-white">
-            <div class="flex flex-col items-center min-w-[2rem]">
-              <span class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter w-full text-center">RTFx</span>
-              <span class={`text-xs font-bold tabular-nums min-w-[3ch] text-center ${appStore.rtfxAverage() > 0 && appStore.rtfxAverage() < 5 ? 'text-red-500' : appStore.rtfxAverage() >= 10 ? 'text-emerald-600' : appStore.rtfxAverage() >= 5 ? 'text-green-600' : 'text-slate-900'}`}>{appStore.rtfxAverage() > 0 ? Math.round(appStore.rtfxAverage()) : '–'}</span>
+      {/* Draggable floating control widget */}
+      <div
+        class={widgetPos() !== null ? 'fixed z-30 w-full max-w-2xl px-6 select-none' : 'absolute bottom-8 left-1/2 -translate-x-1/2 z-30 w-full max-w-2xl px-6'}
+        style={widgetPos() ? { left: `${widgetPos()!.x}px`, top: `${widgetPos()!.y}px` } : {}}
+      >
+        <div class="relative">
+          {/* Settings panel: expands up or down depending on bar position vs half screen height */}
+          <div
+            class="absolute left-0 right-0 overflow-hidden transition-[max-height] duration-300 ease-out border border-[var(--color-earthy-sage)]/30 bg-[var(--color-earthy-bg)]/95 backdrop-blur-sm shadow-lg"
+            classList={{
+              'max-h-0': !showContextPanel(),
+              'max-h-[70vh]': showContextPanel(),
+              'bottom-full rounded-t-2xl border-b-0': settingsExpandUp(),
+              'top-full rounded-b-2xl border-t-0': !settingsExpandUp(),
+            }}
+            onMouseEnter={cancelPanelClose}
+            onMouseLeave={panelMouseLeave}
+          >
+            <div class="max-h-[70vh] min-h-0 flex flex-col overflow-y-auto custom-scrollbar">
+              <SettingsContent
+                section={settingsPanelSection()}
+                onClose={() => setShowContextPanel(false)}
+                onLoadModel={() => loadSelectedModel()}
+                onLocalLoad={handleLocalLoad}
+                onOpenDebug={() => appStore.setShowDebugPanel(true)}
+                onDeviceSelect={(id) => {
+                  if (audioEngine) audioEngine.updateConfig({ deviceId: id });
+                }}
+                audioEngine={audioEngineSignal() ?? undefined}
+                expandUp={settingsExpandUp}
+              />
             </div>
-            <div class="w-px h-5 bg-slate-200"></div>
-            <button
-              onClick={() => appStore.copyTranscript()}
-              class="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-[10px] font-bold rounded-lg hover:bg-blue-600 transition-all shadow-md active:scale-95 active:shadow-sm"
-            >
-              <span class="material-symbols-outlined text-[14px]">content_copy</span>
-              <span>Copy</span>
-            </button>
-            <div class="w-px h-5 bg-slate-200"></div>
-            <button
-              onClick={() => appStore.setShowDebugPanel(!appStore.showDebugPanel())}
-              class={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all shadow-md active:scale-95 active:shadow-sm ${appStore.showDebugPanel() ? 'bg-slate-700 text-white hover:bg-slate-800' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
-              title={appStore.showDebugPanel() ? 'Hide debug panel (improves performance)' : 'Show debug panel'}
-            >
-              <span class="material-symbols-outlined text-[14px]">{appStore.showDebugPanel() ? 'bug_report' : 'bug_report'}</span>
-              <span>{appStore.showDebugPanel() ? 'Debug' : 'Debug'}</span>
-            </button>
+          </div>
+
+          {/* Control bar: steady, fixed position; never moves when settings open */}
+          <div
+            class="bg-white/90 backdrop-blur-md shadow-lg border border-[var(--color-earthy-sage)]/30 rounded-2xl overflow-hidden"
+            onMouseDown={handleWidgetDragStart}
+            role="presentation"
+          >
+            <div class="p-4 flex items-center justify-between gap-6 cursor-grab active:cursor-grabbing">
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <span class="material-symbols-outlined text-[var(--color-earthy-soft-brown)] text-lg opacity-60" aria-hidden="true">drag_indicator</span>
+              <div class="flex flex-col min-w-[60px]">
+                <span class="text-[10px] uppercase tracking-wider text-[var(--color-earthy-soft-brown)] font-bold">Rec</span>
+                <span class="font-mono text-sm text-[var(--color-earthy-dark-brown)]">{formatDuration(appStore.sessionDuration())}</span>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0 flex flex-col justify-center gap-1">
+              <div class="h-8 flex items-center justify-center gap-1 overflow-hidden opacity-80 abstract-wave">
+                <CompactWaveform audioLevel={appStore.audioLevel()} barLevels={appStore.barLevels()} isRecording={isRecording()} />
+              </div>
+              <Show when={appStore.modelState() === 'loading'}>
+                <div class="flex items-center gap-2 px-1">
+                  <div class="flex-1 h-1.5 rounded-full overflow-hidden bg-[var(--color-earthy-sage)]/20">
+                    <div
+                      class="h-full bg-[var(--color-earthy-muted-green)] rounded-full transition-all duration-300"
+                      style={{ width: `${Math.max(0, Math.min(100, appStore.modelProgress()))}%` }}
+                    />
+                  </div>
+                  <span class="text-[10px] font-mono text-[var(--color-earthy-soft-brown)] tabular-nums">{Math.round(appStore.modelProgress())}%</span>
+                </div>
+              </Show>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={toggleRecording}
+                onMouseEnter={openPanelForAudio}
+                onMouseLeave={schedulePanelCloseIfHover}
+                class={`w-10 h-10 rounded-full flex items-center justify-center transition-colors border ${isRecording() ? 'bg-[var(--color-earthy-coral)] text-white border-[var(--color-earthy-coral)]' : 'text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] border-transparent hover:border-[var(--color-earthy-sage)]/30'}`}
+                title={isRecording() ? 'Stop recording' : 'Start recording'}
+              >
+                <span class="material-symbols-outlined">mic</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => loadSelectedModel()}
+                onMouseEnter={openPanelForModel}
+                onMouseLeave={schedulePanelCloseIfHover}
+                disabled={appStore.modelState() === 'loading' || appStore.modelState() === 'ready'}
+                class="w-10 h-10 rounded-full flex items-center justify-center text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] transition-colors border border-transparent hover:border-[var(--color-earthy-sage)]/30 disabled:opacity-40 disabled:cursor-not-allowed relative"
+                title={appStore.modelState() === 'ready' ? 'Model loaded' : appStore.modelState() === 'loading' ? 'Loading...' : 'Load model'}
+              >
+                <Show when={appStore.modelState() === 'loading'} fallback={<span class="material-symbols-outlined">power_settings_new</span>}>
+                  <span class="material-symbols-outlined load-btn-spin">progress_activity</span>
+                </Show>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSettingsPanelSection('full'); setShowContextPanel((v) => !v); }}
+                class={`w-10 h-10 rounded-full flex items-center justify-center transition-colors border ${showContextPanel() ? 'bg-[var(--color-earthy-sage)]/30 text-[var(--color-earthy-muted-green)] border-[var(--color-earthy-sage)]/50' : 'text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] border-transparent hover:border-[var(--color-earthy-sage)]/30'}`}
+                title="Settings"
+              >
+                <span class="material-symbols-outlined">tune</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => isRecording() && toggleRecording()}
+                disabled={!isRecording()}
+                class="w-10 h-10 rounded-full flex items-center justify-center text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] transition-colors border border-transparent hover:border-[var(--color-earthy-sage)]/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Pause"
+              >
+                <span class="material-symbols-outlined">pause</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => appStore.copyTranscript()}
+                class="w-10 h-10 rounded-full flex items-center justify-center text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] transition-colors border border-transparent hover:border-[var(--color-earthy-sage)]/30"
+                title="Copy transcript"
+              >
+                <span class="material-symbols-outlined">content_copy</span>
+              </button>
+            </div>
+            </div>
           </div>
         </div>
+      </div>
 
-        <Show when={appStore.showDebugPanel()}>
+      {/* Foldable debug panel (bottom drawer) */}
+      <Show when={appStore.showDebugPanel()}>
+        <div class="absolute bottom-0 left-0 right-0 z-20 flex flex-col bg-[var(--color-earthy-bg)] border-t border-[var(--color-earthy-sage)]/30 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] max-h-[70vh] overflow-hidden transition-all">
           <DebugPanel
             audioEngine={audioEngineSignal() ?? undefined}
             melClient={melClientSignal() ?? undefined}
           />
-        </Show>
-      </main>
+        </div>
+      </Show>
     </div>
   );
 };
