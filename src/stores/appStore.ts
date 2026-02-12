@@ -72,6 +72,7 @@ export function createAppStore() {
 
   // Audio state
   const [audioLevel, setAudioLevel] = createSignal(0);
+  const [barLevels, setBarLevels] = createSignal<Float32Array>(new Float32Array(0));
   const [isSpeechDetected, setIsSpeechDetected] = createSignal(false);
 
   // Offline state
@@ -141,7 +142,7 @@ export function createAppStore() {
   const [sileroThreshold, setSileroThreshold] = createSignal(0.5); // Silero VAD probability threshold
 
   // UI state
-  const [showDebugPanel, setShowDebugPanel] = createSignal(true);
+  const [showDebugPanel, setShowDebugPanel] = createSignal(false);
 
   // v4 Utterance-based state
   const [matureText, setMatureText] = createSignal('');
@@ -241,6 +242,8 @@ export function createAppStore() {
     transcript,
     pendingText,
     audioLevel,
+    barLevels,
+    setBarLevels,
     isSpeechDetected,
     isOfflineReady,
     isOnline,
