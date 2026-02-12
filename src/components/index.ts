@@ -8,3 +8,5 @@ export * from './DebugPanel';
 export * from './BufferVisualizer';
 export * from './EnergyMeter';
 export * from './PrivacyBadge';
+export * from './ContextPanel';
+export * from './SettingsPanel';

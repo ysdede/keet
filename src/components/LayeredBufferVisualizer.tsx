@@ -352,8 +352,9 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         ctx.putImageData(imgData, 0, 0);
     };
 
-    // Fixed gain so typical mic levels are visible; avoids jumps from per-buffer scaling
-    const WAVEFORM_GAIN = 4;
+    // Use gain 1 so waveform shows true amplitude (float32 in [-1,1] fills half-height).
+    // No display amplification; ASR pipeline is unchanged.
+    const WAVEFORM_GAIN = 1;
 
     const drawWaveform = (ctx: CanvasRenderingContext2D, data: Float32Array, width: number, height: number, offsetY: number) => {
         if (data.length === 0) return;

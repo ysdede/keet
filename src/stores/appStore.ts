@@ -141,7 +141,7 @@ export function createAppStore() {
   const [sileroThreshold, setSileroThreshold] = createSignal(0.5); // Silero VAD probability threshold
 
   // UI state
-  const [showDebugPanel, setShowDebugPanel] = createSignal(true);
+  const [showDebugPanel, setShowDebugPanel] = createSignal(false);
 
   // v4 Utterance-based state
   const [matureText, setMatureText] = createSignal('');
