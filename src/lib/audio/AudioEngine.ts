@@ -21,6 +21,15 @@ export class AudioEngine implements IAudioEngine {
     private workletNode: AudioWorkletNode | null = null;
     private sourceNode: MediaStreamAudioSourceNode | null = null;
 
+    // AnalyserNode for oscilloscope waveform (native getByteTimeDomainData)
+    private analyserNode: AnalyserNode | null = null;
+    private analyserSourceNode: MediaStreamAudioSourceNode | null = null;
+    private analyserGainNode: GainNode | null = null;
+    private analyserTimeBuffer: Uint8Array | null = null;
+    private waveformOut: Float32Array | null = null;
+    private readonly ANALYSER_FFT_SIZE = 256;
+    private readonly ANALYSER_SMOOTHING = 0.3; // Low = fast oscilloscope response
+
     // Track device vs target sample rates
     private deviceSampleRate: number = 48000;
     private targetSampleRate: number = 16000;
@@ -46,7 +55,7 @@ export class AudioEngine implements IAudioEngine {
 
     // Last N energy values for bar visualizer (oldest first when read)
     private energyBarHistory: number[] = [];
-    private readonly BAR_LEVELS_SIZE = 32;
+    private readonly BAR_LEVELS_SIZE = 64;
 
     // Visualization Summary Buffer (Low-Res Min/Max pairs)
     private visualizationSummary: Float32Array | null = null;
@@ -71,7 +80,7 @@ export class AudioEngine implements IAudioEngine {
     // Subscribers for visualization updates
     private visualizationCallbacks: Array<(data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void> = [];
     private lastVisualizationNotifyTime: number = 0;
-    private readonly VISUALIZATION_NOTIFY_INTERVAL_MS = 33; // ~30fps (approx 3 updates per 80ms chunk window)
+    private readonly VISUALIZATION_NOTIFY_INTERVAL_MS = 16; // ~60fps for responsive oscilloscope
 
     // Recent segments for visualization (stores timing info only)
     private recentSegments: Array<{ startTime: number; endTime: number; isProcessed: boolean }> = [];
@@ -310,9 +319,25 @@ export class AudioEngine implements IAudioEngine {
         this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
         this.sourceNode.connect(this.workletNode);
 
+        // AnalyserNode branch for lightweight preview bars (native FFT, no mel worker)
+        this.disposeAnalyser();
+        this.analyserSourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
+        this.analyserNode = this.audioContext.createAnalyser();
+        this.analyserNode.fftSize = this.ANALYSER_FFT_SIZE;
+        this.analyserNode.smoothingTimeConstant = this.ANALYSER_SMOOTHING;
+        this.analyserTimeBuffer = new Uint8Array(this.analyserNode.fftSize);
+        this.waveformOut = new Float32Array(this.analyserNode.fftSize);
+
+        this.analyserGainNode = this.audioContext.createGain();
+        this.analyserGainNode.gain.value = 0;
+
+        this.analyserSourceNode.connect(this.analyserNode);
+        this.analyserNode.connect(this.analyserGainNode);
+        this.analyserGainNode.connect(this.audioContext.destination);
+
         // Keep graph alive
         this.workletNode.connect(this.audioContext.destination);
-        console.log('[AudioEngine] Graph connected: Source -> Worklet -> Destination');
+        console.log('[AudioEngine] Graph connected: Source -> Worklet, AnalyserNode for oscilloscope');
     }
 
     async start(): Promise<void> {
@@ -374,10 +399,17 @@ export class AudioEngine implements IAudioEngine {
         return this.currentEnergy;
     }
 
-    /** Last N energy (RMS) values for bar visualizer; oldest first, 0..1. */
+    /** Oscilloscope waveform from AnalyserNode.getByteTimeDomainData (native, fast). Values -1..1. */
     getBarLevels(): Float32Array {
-        const h = this.energyBarHistory;
+        if (this.analyserNode && this.analyserTimeBuffer && this.waveformOut) {
+            (this.analyserNode as { getByteTimeDomainData(array: Uint8Array): void }).getByteTimeDomainData(this.analyserTimeBuffer);
+            for (let i = 0; i < this.analyserTimeBuffer.length; i++) {
+                this.waveformOut[i] = (this.analyserTimeBuffer[i] - 128) / 128; // 0..255 -> -1..1
+            }
+            return this.waveformOut;
+        }
         const out = new Float32Array(this.BAR_LEVELS_SIZE);
+        const h = this.energyBarHistory;
         const start = h.length <= this.BAR_LEVELS_SIZE ? 0 : h.length - this.BAR_LEVELS_SIZE;
         for (let i = 0; i < this.BAR_LEVELS_SIZE; i++) {
             const idx = start + i;
@@ -478,8 +510,20 @@ export class AudioEngine implements IAudioEngine {
         }
     }
 
+    private disposeAnalyser(): void {
+        this.analyserSourceNode?.disconnect();
+        this.analyserNode?.disconnect();
+        this.analyserGainNode?.disconnect();
+        this.analyserSourceNode = null;
+        this.analyserNode = null;
+        this.analyserGainNode = null;
+        this.analyserTimeBuffer = null;
+        this.waveformOut = null;
+    }
+
     dispose(): void {
         this.stop();
+        this.disposeAnalyser();
         this.mediaStream?.getTracks().forEach(track => track.stop());
         this.audioContext?.close();
         this.audioContext = null;
