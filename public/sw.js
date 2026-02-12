@@ -6,25 +6,55 @@
  * - App shell (HTML, CSS, JS): Cache-first, update in background
  * - Model files: Cache-first (large files, rarely change)
  * - API/Dynamic: Network-first with fallback
+ * - Cross-origin isolation headers injected for SharedArrayBuffer / WebGPU support
  */
 
-const CACHE_NAME = 'keet-v1';
+const CACHE_NAME = 'keet-v2';
 const MODEL_CACHE = 'keet-models-v1';
 
-// App shell files to pre-cache
+// Base path from SW script URL (works at / and /keet/ on GitHub Pages)
+const BASE = (() => {
+    const path = self.location.pathname;
+    const i = path.lastIndexOf('/');
+    return i >= 0 ? path.slice(0, i + 1) : '/';
+})();
+
+// App shell files to pre-cache (base-relative)
 const APP_SHELL = [
-    '/',
-    '/index.html',
-    '/manifest.json',
+    BASE,
+    BASE + 'index.html',
+    BASE + 'manifest.json',
 ];
 
 // Model file patterns (cached on-demand)
 const MODEL_PATTERNS = [
+    /\.onnx\.data$/,
     /\.onnx$/,
     /\.bin$/,
     /vocab\.txt$/,
     /tokenizer\.json$/,
 ];
+
+/**
+ * Add Cross-Origin Isolation headers to a response.
+ * This enables SharedArrayBuffer and WebGPU on static hosts (e.g. GitHub Pages)
+ * that don't allow custom response headers.
+ * Equivalent to what coi-serviceworker.js does in the parakeet.js demo.
+ */
+function addCOIHeaders(response) {
+    if (response.status === 0) {
+        return response;
+    }
+    const newHeaders = new Headers(response.headers);
+    newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
+    newHeaders.set("Cross-Origin-Resource-Policy", "cross-origin");
+    newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
+    return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders,
+    });
+}
 
 // Install event - pre-cache app shell
 self.addEventListener('install', (event) => {
@@ -58,7 +88,7 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Fetch event - serve from cache or network
+// Fetch event - serve from cache or network, inject COI headers
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
@@ -96,7 +126,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // App shell: Cache-first with network fallback
+    // App shell: Cache-first with network fallback + COI headers
     if (url.origin === self.location.origin) {
         event.respondWith(
             caches.match(event.request)
@@ -108,19 +138,20 @@ self.addEventListener('fetch', (event) => {
                                 caches.open(CACHE_NAME)
                                     .then((cache) => cache.put(event.request, responseClone));
                             }
-                            return response;
+                            return addCOIHeaders(response);
                         })
                         .catch(() => cached);
 
-                    return cached || fetchPromise;
+                    return cached ? addCOIHeaders(cached) : fetchPromise;
                 })
         );
         return;
     }
 
-    // External resources: Network-first
+    // External resources: Network-first + COI headers
     event.respondWith(
         fetch(event.request)
+            .then((response) => addCOIHeaders(response))
             .catch(() => caches.match(event.request))
     );
 });
