@@ -140,6 +140,10 @@ const WIDGET_MIN_H = 80;
 const App: Component = () => {
   const [showModelOverlay, setShowModelOverlay] = createSignal(false);
   const [showContextPanel, setShowContextPanel] = createSignal(false);
+  type SettingsPanelSection = 'full' | 'audio' | 'model';
+  const [settingsPanelSection, setSettingsPanelSection] = createSignal<SettingsPanelSection>('full');
+  let panelHoverCloseTimeout: number | undefined;
+  const [workerReady, setWorkerReady] = createSignal(false);
   const [widgetPos, setWidgetPos] = createSignal<{ x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = createSignal(false);
 
@@ -200,27 +204,37 @@ const App: Component = () => {
     return () => document.removeEventListener('keydown', handler);
   });
 
+  createEffect(() => {
+    if (appStore.modelState() === 'ready' && showContextPanel() && settingsPanelSection() === 'model') {
+      setShowContextPanel(false);
+    }
+  });
+
   onMount(() => {
     const onResize = () => setWindowHeight(window.innerHeight);
     window.addEventListener('resize', onResize);
 
     const stored =
       typeof localStorage !== 'undefined' ? localStorage.getItem(WIDGET_STORAGE_KEY) : null;
+    let posRestored = false;
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as { x: number; y: number };
         if (Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) {
           setWidgetPos({ x: parsed.x, y: parsed.y });
-          return;
+          posRestored = true;
         }
       } catch (_) {}
     }
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    setWidgetPos({
-      x: Math.max(0, (w - WIDGET_MAX_W) / 2),
-      y: h - 140,
-    });
+    if (!posRestored) {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      setWidgetPos({
+        x: Math.max(0, (w - WIDGET_MAX_W) / 2),
+        y: h - 140,
+      });
+    }
+
     workerClient = new TranscriptionWorkerClient();
 
     workerClient.onModelProgress = (p) => {
@@ -246,11 +260,16 @@ const App: Component = () => {
     };
 
     appStore.refreshDevices();
+    setWorkerReady(true);
 
     return () => window.removeEventListener('resize', onResize);
   });
 
+  // No longer auto-show blocking model overlay; model selection is in the settings panel.
+  // createEffect(() => { ... setShowModelOverlay(true); });
+
   onCleanup(() => {
+    clearTimeout(panelHoverCloseTimeout);
     visualizationUnsubscribe?.();
     cleanupV4Pipeline();
     melClient?.dispose();
@@ -812,15 +831,33 @@ const App: Component = () => {
     setShowContextPanel(true);
     try {
       await workerClient.initModel(appStore.selectedModelId());
-    } catch (e) { }
+    } catch (e) {
+      console.error('Failed to load model:', e);
+      appStore.setModelState('error');
+      appStore.setErrorMessage(e instanceof Error ? e.message : String(e));
+    }
   };
 
-  const openModelSelection = () => {
-    if (!workerClient) return;
-    if (appStore.modelState() !== 'loading' && appStore.modelState() !== 'ready') {
-      appStore.setModelState('unloaded');
-    }
-    setShowModelOverlay(true);
+  const openPanelForAudio = () => {
+    clearTimeout(panelHoverCloseTimeout);
+    setSettingsPanelSection('audio');
+    setShowContextPanel(true);
+  };
+  const openPanelForModel = () => {
+    clearTimeout(panelHoverCloseTimeout);
+    setSettingsPanelSection('model');
+    setShowContextPanel(true);
+  };
+  const schedulePanelCloseIfHover = () => {
+    panelHoverCloseTimeout = window.setTimeout(() => {
+      if (settingsPanelSection() !== 'full' && appStore.modelState() !== 'loading') {
+        setShowContextPanel(false);
+      }
+    }, 250);
+  };
+  const cancelPanelClose = () => clearTimeout(panelHoverCloseTimeout);
+  const panelMouseLeave = () => {
+    if (settingsPanelSection() !== 'full') schedulePanelCloseIfHover();
   };
 
   const handleLocalLoad = async (files: FileList) => {
@@ -884,11 +921,15 @@ const App: Component = () => {
               'bottom-full rounded-t-2xl border-b-0': settingsExpandUp(),
               'top-full rounded-b-2xl border-t-0': !settingsExpandUp(),
             }}
+            onMouseEnter={cancelPanelClose}
+            onMouseLeave={panelMouseLeave}
           >
             <div class="max-h-[70vh] min-h-0 flex flex-col overflow-y-auto custom-scrollbar">
               <SettingsContent
+                section={settingsPanelSection()}
                 onClose={() => setShowContextPanel(false)}
                 onLoadModel={() => loadSelectedModel()}
+                onLocalLoad={handleLocalLoad}
                 onOpenDebug={() => appStore.setShowDebugPanel(true)}
                 onDeviceSelect={(id) => {
                   if (audioEngine) audioEngine.updateConfig({ deviceId: id });
@@ -933,6 +974,8 @@ const App: Component = () => {
               <button
                 type="button"
                 onClick={toggleRecording}
+                onMouseEnter={openPanelForAudio}
+                onMouseLeave={schedulePanelCloseIfHover}
                 class={`w-10 h-10 rounded-full flex items-center justify-center transition-colors border ${isRecording() ? 'bg-[var(--color-earthy-coral)] text-white border-[var(--color-earthy-coral)]' : 'text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] border-transparent hover:border-[var(--color-earthy-sage)]/30'}`}
                 title={isRecording() ? 'Stop recording' : 'Start recording'}
               >
@@ -941,15 +984,19 @@ const App: Component = () => {
               <button
                 type="button"
                 onClick={() => loadSelectedModel()}
+                onMouseEnter={openPanelForModel}
+                onMouseLeave={schedulePanelCloseIfHover}
                 disabled={appStore.modelState() === 'loading' || appStore.modelState() === 'ready'}
-                class="w-10 h-10 rounded-full flex items-center justify-center text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] transition-colors border border-transparent hover:border-[var(--color-earthy-sage)]/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                class="w-10 h-10 rounded-full flex items-center justify-center text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] transition-colors border border-transparent hover:border-[var(--color-earthy-sage)]/30 disabled:opacity-40 disabled:cursor-not-allowed relative"
                 title={appStore.modelState() === 'ready' ? 'Model loaded' : appStore.modelState() === 'loading' ? 'Loading...' : 'Load model'}
               >
-                <span class="material-symbols-outlined">power_settings_new</span>
+                <Show when={appStore.modelState() === 'loading'} fallback={<span class="material-symbols-outlined">power_settings_new</span>}>
+                  <span class="material-symbols-outlined load-btn-spin">progress_activity</span>
+                </Show>
               </button>
               <button
                 type="button"
-                onClick={() => setShowContextPanel((v) => !v)}
+                onClick={() => { setSettingsPanelSection('full'); setShowContextPanel((v) => !v); }}
                 class={`w-10 h-10 rounded-full flex items-center justify-center transition-colors border ${showContextPanel() ? 'bg-[var(--color-earthy-sage)]/30 text-[var(--color-earthy-muted-green)] border-[var(--color-earthy-sage)]/50' : 'text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] border-transparent hover:border-[var(--color-earthy-sage)]/30'}`}
                 title="Settings"
               >
