@@ -1,10 +1,9 @@
 import { Component, Show, For, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { appStore } from './stores/appStore';
-import { CompactWaveform, SPECTRUM_BAR_COUNT, ModelLoadingOverlay, DebugPanel, TranscriptionDisplay, SettingsContent } from './components';
+import { CompactWaveform, ModelLoadingOverlay, DebugPanel, TranscriptionDisplay, SettingsContent } from './components';
 import { getModelDisplayName, MODELS } from './components/ModelLoadingOverlay';
 import { AudioEngine } from './lib/audio';
 import { MelWorkerClient } from './lib/audio/MelWorkerClient';
-import { normalizeMelForDisplay } from './lib/audio/mel-display';
 import { TranscriptionWorkerClient } from './lib/transcription';
 import { HybridVAD } from './lib/vad';
 import { WindowBuilder } from './lib/transcription/WindowBuilder';
@@ -796,27 +795,14 @@ const App: Component = () => {
 
         appStore.startRecording();
 
-        // Use same 30fps tick as mel spectrogram (onVisualizationUpdate is throttled to 33ms)
+        // Use same 30fps tick (onVisualizationUpdate throttled to 33ms).
+        // Bar levels from AnalyserNode (native FFT, low CPU) instead of mel worker.
         visualizationUnsubscribe = audioEngine.onVisualizationUpdate((_data, metrics) => {
           appStore.setAudioLevel(metrics.currentEnergy);
           if (appStore.transcriptionMode() !== 'v4-utterance') {
             appStore.setIsSpeechDetected(audioEngine?.isSpeechActive() ?? false);
           }
-          if (melClient) {
-            melClient.getLastMelFrame().then((frame) => {
-              if (frame && frame.length >= SPECTRUM_BAR_COUNT) {
-                const out = new Float32Array(SPECTRUM_BAR_COUNT);
-                for (let m = 0; m < SPECTRUM_BAR_COUNT; m++) {
-                  out[m] = normalizeMelForDisplay(frame[m]);
-                }
-                appStore.setBarLevels(out);
-              } else if (audioEngine) {
-                appStore.setBarLevels(audioEngine.getBarLevels());
-              }
-            });
-          } else if (audioEngine) {
-            appStore.setBarLevels(audioEngine.getBarLevels());
-          }
+          appStore.setBarLevels(audioEngine!.getBarLevels());
         });
       } catch (err: any) {
         appStore.setErrorMessage(err.message);
