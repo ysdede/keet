@@ -8,9 +8,14 @@ const formatInterval = (ms: number) => {
   return `${ms}ms`;
 };
 
+export type SettingsPanelSection = 'full' | 'audio' | 'model';
+
 export interface SettingsContentProps {
+  /** When 'audio' or 'model', only that section is shown (e.g. hover on mic or load button). */
+  section?: SettingsPanelSection;
   onClose: () => void;
   onLoadModel: () => void;
+  onLocalLoad?: (files: FileList) => void;
   onOpenDebug: () => void;
   onDeviceSelect?: (id: string) => void;
   audioEngine?: AudioEngine | null;
@@ -24,6 +29,11 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
   const isV3 = () => appStore.transcriptionMode() === 'v3-streaming';
 
   const expandUp = () => props.expandUp?.() ?? false;
+  const section = () => props.section ?? 'full';
+  const showAsr = () => section() === 'full' || section() === 'model';
+  const showAudio = () => section() === 'full' || section() === 'audio';
+  const showSliders = () => section() === 'full';
+  const showDebug = () => section() === 'full';
 
   return (
     <div class="flex flex-col min-h-0">
@@ -31,9 +41,10 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
         class="flex flex-col flex-1 min-h-0 overflow-y-auto p-3 gap-4 custom-scrollbar"
         classList={{ 'flex-col-reverse': expandUp() }}
       >
-        <section class="space-y-2">
-          <h3 class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">ASR model</h3>
-          <div class="flex items-center gap-2">
+        <Show when={showAsr()}>
+          <section class="space-y-2">
+            <h3 class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">ASR model</h3>
+            <div class="flex items-center gap-2 flex-wrap">
             <select
               class="flex-1 min-w-0 text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
               value={appStore.selectedModelId()}
@@ -53,6 +64,23 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
               <span class="material-symbols-outlined text-lg">power_settings_new</span>
               {appStore.modelState() === 'ready' ? 'Loaded' : appStore.modelState() === 'loading' ? '...' : 'Load'}
             </button>
+            <Show when={props.onLocalLoad}>
+              <label class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--color-earthy-soft-brown)] hover:bg-[var(--color-earthy-sage)]/20 transition-colors cursor-pointer shrink-0">
+                <span class="material-symbols-outlined text-lg">folder_open</span>
+                Load from file
+                <input
+                  type="file"
+                  multiple
+                  class="hidden"
+                  accept=".onnx,.bin"
+                  onChange={(e) => {
+                    const files = e.currentTarget.files;
+                    if (files && files.length > 0) props.onLocalLoad?.(files);
+                    e.currentTarget.value = '';
+                  }}
+                />
+              </label>
+            </Show>
           </div>
           <p class="text-xs text-[var(--color-earthy-soft-brown)]">
             {appStore.modelState() === 'ready' ? getModelDisplayName(appStore.selectedModelId()) : appStore.modelState()}
@@ -71,9 +99,11 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
               </div>
             </div>
           </Show>
-        </section>
+          </section>
+        </Show>
 
-        <section class="space-y-2">
+        <Show when={showAudio()}>
+          <section class="space-y-2">
           <h3 class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Audio input</h3>
           <select
             class="w-full text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
@@ -92,9 +122,11 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
               )}
             </For>
           </select>
-        </section>
+          </section>
+        </Show>
 
-        <section class="grid grid-cols-2 gap-x-4 gap-y-3">
+        <Show when={showSliders()}>
+          <section class="grid grid-cols-2 gap-x-4 gap-y-3">
           <div class="space-y-1.5 min-w-0">
             <div class="flex justify-between items-center gap-2">
               <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Energy threshold</span>
@@ -169,21 +201,24 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
               />
             </div>
           </Show>
-        </section>
+          </section>
+        </Show>
 
-        <div class="pt-2">
-          <button
-            type="button"
-            onClick={() => {
-              props.onOpenDebug();
-              props.onClose();
-            }}
-            class="flex items-center gap-2 px-0 py-2 text-sm font-medium text-[var(--color-earthy-muted-green)] hover:opacity-80 transition-opacity w-full"
-          >
-            <span class="material-symbols-outlined text-lg">bug_report</span>
-            Open Debug panel
-          </button>
-        </div>
+        <Show when={showDebug()}>
+          <div class="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                props.onOpenDebug();
+                props.onClose();
+              }}
+              class="flex items-center gap-2 px-0 py-2 text-sm font-medium text-[var(--color-earthy-muted-green)] hover:opacity-80 transition-opacity w-full"
+            >
+              <span class="material-symbols-outlined text-lg">bug_report</span>
+              Open Debug panel
+            </button>
+          </div>
+        </Show>
       </div>
     </div>
   );

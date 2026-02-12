@@ -95,6 +95,15 @@
   border-color: var(--color-earthy-bg);
 }
 
+/* Load model button: spinning indicator while model is loading */
+@keyframes load-btn-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.load-btn-spin {
+  animation: load-btn-spin 1s linear infinite;
+}
+
 /* Custom scrollbar (earthy-sage) */
 ::-webkit-scrollbar {
   width: 4px;
