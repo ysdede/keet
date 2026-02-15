@@ -1233,23 +1233,13 @@ const App: Component = () => {
 
         const mode = appStore.transcriptionMode();
 
-        // v4/v5 modes: always start audio capture, mel preprocessing, and VAD.
+        // v4 mode: always start audio capture, mel preprocessing, and VAD.
         // Inference starts when the model is ready.
-        if (mode === 'v4-utterance' || mode === 'v5-streaming') {
-          const isV5Mode = mode === 'v5-streaming';
-          // ---- v4/v5: shared capture + VAD stack ----
+        if (mode === 'v4-utterance') {
+          // ---- v4: shared capture + VAD stack ----
 
           if (isModelReady() && workerClient) {
-            if (isV5Mode) {
-              await workerClient.initV5Stream({
-                stabilityLagSec: appStore.v5StabilityLagSec(),
-                correctionConfirmations: 2,
-                debug: false,
-              });
-              v5ServiceInitialized = true;
-            } else {
-              await workerClient.initV4Service({ debug: false });
-            }
+            await workerClient.initV4Service({ debug: false });
           }
 
           // Initialize mel worker (always needed for preprocessing)
@@ -1314,20 +1304,11 @@ const App: Component = () => {
           // because start() may re-create the internal RingBuffer.
 
           // Reset sample counters
-          if (isV5Mode) {
-            v5GlobalSampleOffset = 0;
-            v5LastGateChunkSample = 0;
-            v5FastCursorSample = 0;
-            v5LastCorrectionEndSample = 0;
-            v5GateState = 'idle';
-            v5GateReason = 'idle';
-            v5PendingFastRange = null;
-          } else {
-            v4GlobalSampleOffset = 0;
-            v4LastGateChunkSample = 0;
-            lastWordEndTime = 0;
-            lastImmatureText = '';
-            justFinalizedByTimeout = false;
+          v4GlobalSampleOffset = 0;
+          v4LastGateChunkSample = 0;
+          lastWordEndTime = 0;
+          lastImmatureText = '';
+          justFinalizedByTimeout = false;
             v4StateEpoch = 0;
           }
 
@@ -1524,7 +1505,7 @@ const App: Component = () => {
         // Bar levels from AnalyserNode (native FFT, low CPU) instead of mel worker.
         visualizationUnsubscribe = audioEngine.onVisualizationUpdate((_data, metrics) => {
           appStore.setAudioLevel(metrics.currentEnergy);
-          if (appStore.transcriptionMode() !== 'v4-utterance' && appStore.transcriptionMode() !== 'v5-streaming') {
+          if (appStore.transcriptionMode() !== 'v4-utterance') {
             appStore.setIsSpeechDetected(audioEngine?.isSpeechActive() ?? false);
           }
           appStore.setBarLevels(audioEngine!.getBarLevels());
@@ -1607,21 +1588,14 @@ const App: Component = () => {
             <TranscriptionDisplay
               confirmedText={appStore.transcriptionMode() === 'v4-utterance'
                 ? appStore.matureText()
-                : appStore.transcriptionMode() === 'v5-streaming'
-                  ? appStore.v5StableText()
-                  : appStore.transcript()}
+                : appStore.transcript()}
               pendingText={appStore.transcriptionMode() === 'v4-utterance'
                 ? appStore.immatureText()
-                : appStore.transcriptionMode() === 'v5-streaming'
-                  ? appStore.v5DraftText()
-                  : appStore.pendingText()}
-              confirmedTokens={appStore.transcriptionMode() === 'v5-streaming' ? appStore.v5StableTokens() : undefined}
-              pendingTokens={appStore.transcriptionMode() === 'v5-streaming' ? appStore.v5DraftTokens() : undefined}
+                : appStore.pendingText()}
               isRecording={isRecording()}
               lcsLength={appStore.mergeInfo().lcsLength}
               anchorValid={appStore.mergeInfo().anchorValid}
               showConfidence={appStore.transcriptionMode() === 'v3-streaming'}
-              colorByConfidence={appStore.transcriptionMode() === 'v5-streaming'}
               class="min-h-[40vh]"
             />
           </div>

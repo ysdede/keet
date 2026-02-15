@@ -51,10 +51,14 @@ export class AudioEngine implements IAudioEngine {
     private audioChunkCallbacks: Array<(chunk: Float32Array) => void> = [];
 
     // SMA buffer for energy calculation
-    private energyHistory: number[] = [];
+    private energyHistory = new Float32Array(6);
+    private energyHistoryIndex = 0;
+    private energyHistoryCount = 0;
 
     // Last N energy values for bar visualizer (oldest first when read)
-    private energyBarHistory: number[] = [];
+    private energyBarHistory = new Float32Array(64);
+    private energyBarHistoryIndex = 0;
+    private energyBarHistoryCount = 0;
     private readonly BAR_LEVELS_SIZE = 64;
 
     // Visualization Summary Buffer (Low-Res Min/Max pairs)
@@ -84,7 +88,12 @@ export class AudioEngine implements IAudioEngine {
 
     // Recent segments for visualization (stores timing info only)
     private recentSegments: Array<{ startTime: number; endTime: number; isProcessed: boolean }> = [];
+    private recentSegmentsIndex = 0;
     private readonly MAX_SEGMENTS_FOR_VISUALIZATION = 50;
+
+    private durationMsToSec(durationMs: number): number {
+        return Math.max(0, durationMs / 1000);
+    }
 
     constructor(config: Partial<AudioEngineConfig> = {}) {
         this.config = {
@@ -120,8 +129,8 @@ export class AudioEngine implements IAudioEngine {
         this.audioProcessor = new AudioSegmentProcessor({
             sampleRate: this.targetSampleRate,
             energyThreshold: this.config.energyThreshold,
-            minSpeechDuration: this.config.minSpeechDuration,
-            silenceThreshold: this.config.minSilenceDuration,
+            minSpeechDuration: this.durationMsToSec(this.config.minSpeechDuration),
+            silenceThreshold: this.durationMsToSec(this.config.minSilenceDuration),
             maxSegmentDuration: this.config.maxSegmentDuration,
             lookbackDuration: this.config.lookbackDuration,
             maxSilenceWithinSpeech: this.config.maxSilenceWithinSpeech,
@@ -142,6 +151,9 @@ export class AudioEngine implements IAudioEngine {
         // Initialize visualization summary (2000 points for 30s)
         this.visualizationSummary = new Float32Array(this.VIS_SUMMARY_SIZE * 2);
         this.visualizationSummaryPosition = 0;
+
+        // Initialize recentSegments with fixed capacity to avoid reallocations
+        this.recentSegments = new Array(this.MAX_SEGMENTS_FOR_VISUALIZATION);
 
         console.log('[AudioEngine] Initialized with config:', this.config);
     }
@@ -198,8 +210,8 @@ export class AudioEngine implements IAudioEngine {
         this.audioProcessor = new AudioSegmentProcessor({
             sampleRate: this.targetSampleRate,
             energyThreshold: this.config.energyThreshold,
-            minSpeechDuration: this.config.minSpeechDuration,
-            silenceThreshold: this.config.minSilenceDuration,
+            minSpeechDuration: this.durationMsToSec(this.config.minSpeechDuration),
+            silenceThreshold: this.durationMsToSec(this.config.minSilenceDuration),
             maxSegmentDuration: this.config.maxSegmentDuration,
         });
 
@@ -409,11 +421,12 @@ export class AudioEngine implements IAudioEngine {
             return this.waveformOut;
         }
         const out = new Float32Array(this.BAR_LEVELS_SIZE);
-        const h = this.energyBarHistory;
-        const start = h.length <= this.BAR_LEVELS_SIZE ? 0 : h.length - this.BAR_LEVELS_SIZE;
-        for (let i = 0; i < this.BAR_LEVELS_SIZE; i++) {
-            const idx = start + i;
-            out[i] = idx < h.length ? Math.min(1, Math.max(0, h[idx])) : 0;
+        const count = this.energyBarHistoryCount;
+        const size = this.energyBarHistory.length;
+        
+        for (let i = 0; i < count; i++) {
+            const idx = (this.energyBarHistoryIndex - count + i + size) % size;
+            out[i] = Math.min(1, Math.max(0, this.energyBarHistory[idx]));
         }
         return out;
     }
@@ -484,8 +497,8 @@ export class AudioEngine implements IAudioEngine {
 
         // Update processor config
         if (config.energyThreshold !== undefined) this.audioProcessor.setThreshold(config.energyThreshold);
-        if (config.minSpeechDuration !== undefined) this.audioProcessor.setMinSpeechDuration(config.minSpeechDuration);
-        if (config.minSilenceDuration !== undefined) this.audioProcessor.setSilenceLength(config.minSilenceDuration);
+        if (config.minSpeechDuration !== undefined) this.audioProcessor.setMinSpeechDuration(this.durationMsToSec(config.minSpeechDuration));
+        if (config.minSilenceDuration !== undefined) this.audioProcessor.setSilenceLength(this.durationMsToSec(config.minSilenceDuration));
         if (config.maxSegmentDuration !== undefined) this.audioProcessor.setMaxSegmentDuration(config.maxSegmentDuration);
 
         // Advanced VAD updates
@@ -549,18 +562,23 @@ export class AudioEngine implements IAudioEngine {
             }
         }
 
-        // SMA Smoothing (matching legacy UI project logic)
-        this.energyHistory.push(maxAbs);
-        if (this.energyHistory.length > 6) {
-            this.energyHistory.shift();
+        // SMA Smoothing using circular buffer
+        this.energyHistory[this.energyHistoryIndex] = maxAbs;
+        this.energyHistoryIndex = (this.energyHistoryIndex + 1) % this.energyHistory.length;
+        if (this.energyHistoryCount < this.energyHistory.length) this.energyHistoryCount++;
+        
+        let energySum = 0;
+        for (let i = 0; i < this.energyHistoryCount; i++) {
+            energySum += this.energyHistory[i];
         }
-        const energy = this.energyHistory.reduce((a: number, b: number) => a + b, 0) / this.energyHistory.length;
+        const energy = energySum / this.energyHistoryCount;
 
         this.currentEnergy = energy;
-        this.energyBarHistory.push(energy);
-        if (this.energyBarHistory.length > this.BAR_LEVELS_SIZE) {
-            this.energyBarHistory.shift();
-        }
+        
+        // Energy bar history using circular buffer
+        this.energyBarHistory[this.energyBarHistoryIndex] = energy;
+        this.energyBarHistoryIndex = (this.energyBarHistoryIndex + 1) % this.energyBarHistory.length;
+        if (this.energyBarHistoryCount < this.energyBarHistory.length) this.energyBarHistoryCount++;
 
         // Log when energy crosses threshold if state is close to changing
         const isSpeech = energy > this.config.energyThreshold;
@@ -747,17 +765,13 @@ export class AudioEngine implements IAudioEngine {
     }
 
     private notifySegment(segment: AudioSegment): void {
-        // Track segment for visualization
-        this.recentSegments.push({
+        // Track segment for visualization using circular buffer
+        this.recentSegments[this.recentSegmentsIndex] = {
             startTime: segment.startFrame / this.targetSampleRate,
             endTime: segment.endFrame / this.targetSampleRate,
             isProcessed: false
-        });
-
-        // Limit segments count
-        if (this.recentSegments.length > this.MAX_SEGMENTS_FOR_VISUALIZATION) {
-            this.recentSegments.shift();
-        }
+        };
+        this.recentSegmentsIndex = (this.recentSegmentsIndex + 1) % this.MAX_SEGMENTS_FOR_VISUALIZATION;
 
         this.segmentCallbacks.forEach((cb) => cb(segment));
     }
@@ -766,7 +780,15 @@ export class AudioEngine implements IAudioEngine {
      * Get recent segments for visualization.
      */
     getSegmentsForVisualization(): Array<{ startTime: number; endTime: number; isProcessed: boolean }> {
-        const segments = [...this.recentSegments];
+        const segments: Array<{ startTime: number; endTime: number; isProcessed: boolean }> = [];
+        
+        for (let i = 0; i < this.MAX_SEGMENTS_FOR_VISUALIZATION; i++) {
+            const seg = this.recentSegments[i];
+            if (seg) segments.push({ ...seg });
+        }
+        
+        // Sort by time
+        segments.sort((a, b) => a.startTime - b.startTime);
 
         // Add pending segment if speech is currently active
         const vadState = this.audioProcessor.getStateInfo();
@@ -785,7 +807,7 @@ export class AudioEngine implements IAudioEngine {
      * Mark a segment as processed (for visualization color coding).
      */
     markSegmentProcessed(startTime: number): void {
-        const segment = this.recentSegments.find(s => Math.abs(s.startTime - startTime) < 0.1);
+        const segment = this.recentSegments.find(s => s && Math.abs(s.startTime - startTime) < 0.1);
         if (segment) {
             segment.isProcessed = true;
         }
