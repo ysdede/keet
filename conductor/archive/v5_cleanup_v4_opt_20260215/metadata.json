@@ -1,0 +1,8 @@
+{
+    "description":  "Clean up V5 related overhead and optimize the V4 pipeline backend requests.",
+    "track_id":  "v5_cleanup_v4_opt_20260215",
+    "type":  "chore",
+    "created_at":  "2026-02-15T03:33:16Z",
+    "status":  "new",
+    "updated_at":  "2026-02-15T03:33:16Z"
+}

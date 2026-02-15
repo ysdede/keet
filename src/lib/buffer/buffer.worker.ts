@@ -68,13 +68,22 @@ class CircularLayer {
     /** Write N entries from a flat array. */
     writeBatch(data: Float32Array, count?: number): void {
         const n = count ?? Math.floor(data.length / this.entryDimension);
-        for (let e = 0; e < n; e++) {
-            const writePos = (this.globalWriteIndex % this.maxEntries) * this.entryDimension;
-            const srcOffset = e * this.entryDimension;
-            for (let d = 0; d < this.entryDimension; d++) {
-                this.buffer[writePos + d] = data[srcOffset + d] ?? 0;
-            }
-            this.globalWriteIndex++;
+        const entriesToWrite = n;
+        
+        let entriesWritten = 0;
+        while (entriesWritten < entriesToWrite) {
+            const writePos = this.globalWriteIndex % this.maxEntries;
+            const remainingInBuf = this.maxEntries - writePos;
+            const chunkEntries = Math.min(entriesToWrite - entriesWritten, remainingInBuf);
+            
+            const srcStart = entriesWritten * this.entryDimension;
+            const srcEnd = (entriesWritten + chunkEntries) * this.entryDimension;
+            const dstStart = writePos * this.entryDimension;
+            
+            this.buffer.set(data.subarray(srcStart, srcEnd), dstStart);
+            
+            this.globalWriteIndex += chunkEntries;
+            entriesWritten += chunkEntries;
         }
     }
 
@@ -126,20 +135,26 @@ class CircularLayer {
 
         if (clampEnd <= clampStart) return null;
 
-        const count = clampEnd - clampStart;
-        const result = new Float32Array(count * this.entryDimension);
+        const totalEntries = clampEnd - clampStart;
+        const result = new Float32Array(totalEntries * this.entryDimension);
 
-        for (let i = 0; i < count; i++) {
-            const readPos = ((clampStart + i) % this.maxEntries) * this.entryDimension;
-            const dstPos = i * this.entryDimension;
-            for (let d = 0; d < this.entryDimension; d++) {
-                result[dstPos + d] = this.buffer[readPos + d];
-            }
+        let entriesRead = 0;
+        while (entriesRead < totalEntries) {
+            const readIdx = (clampStart + entriesRead) % this.maxEntries;
+            const remainingInBuf = this.maxEntries - readIdx;
+            const chunkEntries = Math.min(totalEntries - entriesRead, remainingInBuf);
+            
+            const srcStart = readIdx * this.entryDimension;
+            const srcEnd = (readIdx + chunkEntries) * this.entryDimension;
+            const dstStart = entriesRead * this.entryDimension;
+            
+            result.set(this.buffer.subarray(srcStart, srcEnd), dstStart);
+            entriesRead += chunkEntries;
         }
 
         return {
             data: result,
-            entryCount: count,
+            entryCount: totalEntries,
             entryDimension: this.entryDimension,
             firstEntrySample: clampStart * this.hopSamples,
             hopSamples: this.hopSamples,
@@ -164,9 +179,9 @@ class CircularLayer {
         }
 
         let maxProb = 0;
-        const count = clampEnd - clampStart;
+        const totalEntries = clampEnd - clampStart;
 
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < totalEntries; i++) {
             const readPos = (clampStart + i) % this.maxEntries;
             const prob = this.buffer[readPos];
             if (prob > maxProb) maxProb = prob;
@@ -175,7 +190,7 @@ class CircularLayer {
             }
         }
 
-        return { hasSpeech: false, maxProb, entriesChecked: count };
+        return { hasSpeech: false, maxProb, entriesChecked: totalEntries };
     }
 
     /** Scan backward from the write head to find how long silence has lasted. */

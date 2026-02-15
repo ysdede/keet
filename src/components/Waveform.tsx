@@ -40,8 +40,9 @@ export const Waveform: Component<WaveformProps> = (props) => {
     const samples = props.barLevels;
     const n = samples && samples.length > 0 ? samples.length : 0;
 
-    const bg = getComputedStyle(canvasRef).getPropertyValue('--color-earthy-bg').trim() || '#faf8f5';
-    const color = getComputedStyle(canvasRef).getPropertyValue('--color-primary').trim() || '#14b8a6';
+    // Use hardcoded values or pass via props to avoid layout-triggering getComputedStyle
+    const bg = '#faf8f5';
+    const color = '#14b8a6';
 
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, w, h);

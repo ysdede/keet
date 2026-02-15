@@ -1,4 +1,4 @@
-import { Component, Show, createMemo, onMount, onCleanup } from 'solid-js';
+import { Component, For, Show, createMemo, onMount, onCleanup } from 'solid-js';
 
 export interface TranscriptionDisplayProps {
     confirmedText: string;
@@ -27,7 +27,8 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
     };
 
     const hasContent = createMemo(() =>
-        (props.confirmedText?.length ?? 0) > 0 || (props.pendingText?.length ?? 0) > 0
+        (props.confirmedText?.length ?? 0) > 0 ||
+        (props.pendingText?.length ?? 0) > 0
     );
 
     let observer: MutationObserver | undefined;
@@ -54,26 +55,26 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                     when={hasContent()}
                     fallback={
                         <div class="flex flex-col items-center justify-center h-full opacity-50 story-font">
-                            <span class="material-symbols-outlined text-5xl mb-4 text-[var(--color-earthy-soft-brown)]">graphic_eq</span>
-                            <p class="text-2xl md:text-3xl leading-[1.6] text-[var(--color-earthy-muted-green)] italic">
+                            <span class="material-symbols-outlined text-4xl mb-3 text-[var(--color-earthy-soft-brown)]">graphic_eq</span>
+                            <p class="text-lg md:text-xl leading-[1.35] text-[var(--color-earthy-muted-green)] italic">
                                 {props.placeholder ?? 'Ready to transcribe...'}
                             </p>
                         </div>
                     }
                 >
-                    <div class="story-font space-y-12 py-4">
+                    <div class="story-font space-y-6 py-2">
                         <div class="group">
-                            <div class="pl-4 border-l-2 border-[var(--color-earthy-coral)]/30 group-hover:border-[var(--color-earthy-coral)]/50 transition-colors duration-300">
+                            <div class="pl-3 border-l-2 border-[var(--color-earthy-coral)]/30 group-hover:border-[var(--color-earthy-coral)]/50 transition-colors duration-300">
                                 {/* Confirmed text */}
-                                <p class="text-2xl md:text-3xl leading-[1.6] text-[var(--color-earthy-dark-brown)] font-normal inline">
+                                <p class="text-lg md:text-xl leading-[1.35] text-[var(--color-earthy-dark-brown)] font-normal inline">
                                     {props.confirmedText}
                                 </p>
 
                                 {/* Pending text */}
                                 <Show when={props.pendingText}>
-                                    <span class="text-2xl md:text-3xl leading-[1.6] text-[var(--color-earthy-coral)] font-medium italic ml-1 transition-all duration-300">
+                                    <span class="text-lg md:text-xl leading-[1.35] text-[var(--color-earthy-coral)] font-normal ml-1 transition-all duration-300">
                                         {props.pendingText}
-                                        <span class="inline-block w-[3px] h-8 bg-[var(--color-earthy-coral)] align-middle ml-1 opacity-60 animate-pulse" />
+                                        <span class="inline-block w-[2px] h-5 bg-[var(--color-earthy-coral)] align-middle ml-0.5 opacity-60 animate-pulse" />
                                     </span>
                                 </Show>
                             </div>

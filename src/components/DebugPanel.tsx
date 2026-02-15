@@ -29,7 +29,7 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
 
   // Auto-scroll to bottom of finalized sentences
   createEffect(() => {
-    appStore.matureText(); // Track dependency
+    appStore.matureText();
     if (scrollContainer) {
       scrollContainer.scrollTop = scrollContainer.scrollHeight;
     }
@@ -269,14 +269,14 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
         </div>
 
         <div class="flex-1 overflow-y-auto p-3 space-y-4 custom-scrollbar">
-          {/* v4: Mature + Immature text display */}
+          {/* v4: Stable + Draft text display */}
           <Show when={isV4()}>
             <div class="space-y-3">
-              {/* Mature (finalized) sentences */}
+              {/* Stable (finalized) text */}
               <div class="space-y-1.5">
                 <h4 class="font-bold text-[var(--color-earthy-soft-brown)] uppercase tracking-widest flex items-center gap-2 text-[9px]">
                   <span class="w-1.5 h-1.5 bg-[var(--color-earthy-muted-green)] rounded-full"></span>
-                  Finalized Sentences
+                  Stable Text
                 </h4>
                 <div
                   ref={scrollContainer}
@@ -285,28 +285,32 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
                   <Show when={appStore.matureText()} fallback={
                     <span class="text-[var(--color-earthy-soft-brown)] italic text-[10px] opacity-50">No finalized sentences yet...</span>
                   }>
-                    <span class="text-[11px] text-[var(--color-earthy-dark-brown)] leading-relaxed">{appStore.matureText()}</span>
+                    <span class="text-[11px] text-[var(--color-earthy-dark-brown)] leading-relaxed">
+                      {appStore.matureText()}
+                    </span>
                   </Show>
                 </div>
               </div>
 
-              {/* Immature (active) sentence */}
+              {/* Draft (active) sentence */}
               <div class="space-y-1.5">
                 <h4 class="font-bold text-[var(--color-earthy-soft-brown)] uppercase tracking-widest flex items-center gap-2 text-[9px]">
                   <span class="w-1.5 h-1.5 bg-[var(--color-earthy-coral)] rounded-full animate-pulse"></span>
-                  Active Sentence
+                  Draft Text
                 </h4>
                 <div class="p-2 border border-[var(--color-earthy-coral)]/30 bg-[var(--color-earthy-coral)]/10 rounded min-h-[36px]">
                   <Show when={appStore.immatureText()} fallback={
                     <span class="text-[var(--color-earthy-soft-brown)] italic text-[10px] opacity-50">Waiting for speech...</span>
                   }>
-                    <span class="text-[11px] text-[var(--color-earthy-coral)] italic leading-relaxed">{appStore.immatureText()}</span>
+                    <span class="text-[11px] text-[var(--color-earthy-coral)] italic leading-relaxed">
+                      {appStore.immatureText()}
+                    </span>
                     <span class="inline-block w-0.5 h-3 bg-[var(--color-earthy-coral)] animate-pulse ml-0.5 align-middle"></span>
                   </Show>
                 </div>
               </div>
 
-              {/* Pending sentence info */}
+              {/* Timeline info */}
               <Show when={appStore.v4MergerStats().sentencesFinalized > 0}>
                 <div class="text-[9px] text-[var(--color-earthy-soft-brown)] flex items-center gap-3 pt-1">
                   <span>{appStore.v4MergerStats().sentencesFinalized} sentences finalized</span>
@@ -375,7 +379,7 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
           </Show>
 
           {/* v2: basic info */}
-          <Show when={!isV3() && !isV4()}>
+          <Show when={!isV3() && !isV4() && !isV5()}>
             <div class="text-[var(--color-earthy-soft-brown)] italic text-center py-4">
               Legacy per-utterance mode. Segments are transcribed individually.
             </div>
