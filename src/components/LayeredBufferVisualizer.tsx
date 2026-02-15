@@ -169,6 +169,10 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         }
     });
 
+    // --- Spectrogram Sliding Window State ---
+    let lastFetchedSampleIndex = -1;
+    let specScrollX = 0; // Current scroll position in pixels (0..width)
+
     const loop = (now: number = performance.now()) => {
         if (!ctx || !canvasRef || !props.audioEngine) {
             animationFrameId = requestAnimationFrame(loop);
@@ -181,7 +185,6 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         }
         lastDrawTime = now;
 
-        // Use cached dimensions (updated by ResizeObserver / DPR watcher)
         const dpr = cachedDpr;
         const width = cachedPhysicalWidth;
         const height = cachedPhysicalHeight;
@@ -190,17 +193,6 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
             animationFrameId = requestAnimationFrame(loop);
             return;
         }
-
-        // Colors
-        const bgColor = '#0f172a';
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, width, height);
-
-        const ringBuffer = props.audioEngine.getRingBuffer();
-        const currentTime = ringBuffer.getCurrentTime();
-        const duration = getWindowDuration();
-        const startTime = currentTime - duration;
-        const sampleRate = ringBuffer.sampleRate;
 
         // Layout: 
         // Top 55%: Spectrogram
@@ -212,41 +204,60 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         const waveY = specHeight;
         const vadY = specHeight + waveHeight;
 
-        // 1. Spectrogram (async fetch with stored alignment)
+        const ringBuffer = props.audioEngine.getRingBuffer();
+        const currentTime = ringBuffer.getCurrentTime();
+        const duration = getWindowDuration();
+        const startTime = currentTime - duration;
+        const sampleRate = ringBuffer.sampleRate;
+
+        // 1. Spectrogram (Incremental Sliding Window)
         if (props.melClient && specCtx && specCanvas) {
             if (now - lastSpecFetchTime > SPEC_FETCH_INTERVAL) {
                 lastSpecFetchTime = now;
 
-                const fetchStartSample = Math.round(startTime * sampleRate);
-                const fetchEndSample = Math.round(currentTime * sampleRate);
+                const currentEndSample = Math.round(currentTime * sampleRate);
+                // On first run or reset, fetch full window. Otherwise fetch only delta.
+                const isFirstFetch = lastFetchedSampleIndex === -1;
+                const fetchStartSample = isFirstFetch 
+                    ? Math.round(startTime * sampleRate)
+                    : lastFetchedSampleIndex;
+                
+                const fetchEndSample = currentEndSample;
 
-                // Request RAW (unnormalized) features for fixed dB scaling.
-                // ASR transcription still uses normalized features (default).
-                props.melClient.getFeatures(fetchStartSample, fetchEndSample, false).then(features => {
-                    if (features && specCtx && specCanvas) {
-                        // Store with time alignment info
-                        cachedSpecData = {
-                            features: features.features,
-                            melBins: features.melBins,
-                            timeSteps: features.T,
-                            startTime: startTime,
-                            endTime: currentTime
-                        };
-                        drawSpectrogramToCanvas(specCtx, features.features, features.melBins, features.T, width, specHeight);
-                    }
-                }).catch(() => { });
+                if (fetchEndSample > fetchStartSample) {
+                    props.melClient.getFeatures(fetchStartSample, fetchEndSample, false).then(features => {
+                        if (features && specCtx && specCanvas) {
+                            const newTimeSteps = features.T;
+                            const totalTimeSteps = Math.round(duration * (sampleRate / 160)); // 160 = HOP_LENGTH
+                            const pixelsPerStep = width / totalTimeSteps;
+                            const newWidth = Math.max(1, Math.round(newTimeSteps * pixelsPerStep));
+
+                            if (isFirstFetch) {
+                                // Draw full initial window
+                                drawSpectrogramPart(specCtx, features.features, features.melBins, newTimeSteps, 0, width, width, specHeight);
+                            } else {
+                                // Shift existing content left
+                                specCtx.globalCompositeOperation = 'copy';
+                                specCtx.drawImage(specCanvas, newWidth, 0, width - newWidth, specHeight, 0, 0, width - newWidth, specHeight);
+                                specCtx.globalCompositeOperation = 'source-over';
+                                // Draw new part at the right edge
+                                drawSpectrogramPart(specCtx, features.features, features.melBins, newTimeSteps, width - newWidth, newWidth, width, specHeight);
+                            }
+                            lastFetchedSampleIndex = fetchEndSample;
+                        }
+                    }).catch(() => { });
+                }
             }
+        }
 
-            // Draw cached spectrogram aligned to current view
-            if (cachedSpecData && cachedSpecData.timeSteps > 0) {
-                // Calculate offset to align cached data with current time window
-                const cachedDuration = cachedSpecData.endTime - cachedSpecData.startTime;
-                const timeOffset = startTime - cachedSpecData.startTime;
-                const offsetX = Math.floor((timeOffset / cachedDuration) * width);
+        // Draw background and layers
+        const bgColor = '#0f172a';
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, width, height);
 
-                // Draw the portion of cached spectrogram that's still visible
-                ctx.drawImage(specCanvas, offsetX, 0, width - offsetX, specHeight, 0, 0, width - offsetX, specHeight);
-            }
+        // Draw the sliding spectrogram canvas
+        if (specCanvas) {
+            ctx.drawImage(specCanvas, 0, 0, width, specHeight, 0, 0, width, specHeight);
         }
 
         // 2. Waveform (sync with current time window, zero-allocation read)
@@ -284,39 +295,37 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         animationFrameId = requestAnimationFrame(loop);
     };
 
-    const drawSpectrogramToCanvas = (
+    const drawSpectrogramPart = (
         ctx: CanvasRenderingContext2D,
         features: Float32Array,
         melBins: number,
         timeSteps: number,
-        width: number,
-        height: number
+        targetX: number,
+        targetWidth: number,
+        canvasWidth: number,
+        canvasHeight: number
     ) => {
-        // features layout: [melBins, T] (mel-major, flattened from [mel, time])
-        // So features[m * timeSteps + t].
-
-        if (timeSteps === 0) return;
+        if (timeSteps === 0 || targetWidth === 0) return;
 
         // Reuse cached ImageData if dimensions match; allocate only on size change
-        if (!cachedSpecImgData || cachedSpecImgWidth !== width || cachedSpecImgHeight !== height) {
-            cachedSpecImgData = ctx.createImageData(width, height);
-            cachedSpecImgWidth = width;
-            cachedSpecImgHeight = height;
+        if (!cachedSpecImgData || cachedSpecImgWidth !== targetWidth || cachedSpecImgHeight !== canvasHeight) {
+            cachedSpecImgData = ctx.createImageData(targetWidth, canvasHeight);
+            cachedSpecImgWidth = targetWidth;
+            cachedSpecImgHeight = canvasHeight;
         }
         const imgData = cachedSpecImgData;
         const data = imgData.data;
 
         // Scaling factors
-        const timeScale = timeSteps / width;
-        const freqScale = melBins / height;
+        const timeScale = timeSteps / targetWidth;
+        const freqScale = melBins / canvasHeight;
 
-        for (let x = 0; x < width; x++) {
+        for (let x = 0; x < targetWidth; x++) {
             const t = Math.floor(x * timeScale);
             if (t >= timeSteps) break;
 
-            for (let y = 0; y < height; y++) {
-                // y=0 is top (high freq), y=height is bottom (low freq).
-                const m = Math.floor((height - 1 - y) * freqScale);
+            for (let y = 0; y < canvasHeight; y++) {
+                const m = Math.floor((canvasHeight - 1 - y) * freqScale);
                 if (m >= melBins) continue;
 
                 const val = features[m * timeSteps + t];
@@ -324,14 +333,14 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
                 const lutIdx = (clamped * 255) | 0;
                 const lutBase = lutIdx * 3;
 
-                const idx = (y * width + x) * 4;
+                const idx = (y * targetWidth + x) * 4;
                 data[idx] = COLORMAP_LUT[lutBase];
                 data[idx + 1] = COLORMAP_LUT[lutBase + 1];
                 data[idx + 2] = COLORMAP_LUT[lutBase + 2];
                 data[idx + 3] = 255;
             }
         }
-        ctx.putImageData(imgData, 0, 0);
+        ctx.putImageData(imgData, targetX, 0);
     };
 
     // Use gain 1 so waveform shows true amplitude (float32 in [-1,1] fills half-height).

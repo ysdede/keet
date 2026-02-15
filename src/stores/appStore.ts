@@ -20,7 +20,7 @@ export interface SystemMetrics {
   vramUsage?: string;
 }
 
-/** Transcription mode: v2 (per-utterance VAD), v3 (overlapping windows + LCS merge), v4 (utterance-based merger) */
+/** Transcription mode: v2 (per-utterance VAD), v3 (overlapping windows + LCS merge), v4 (utterance merger) */
 export type TranscriptionMode = 'v2-utterance' | 'v3-streaming' | 'v4-utterance';
 
 /** Merge info for v3 streaming mode */
@@ -98,7 +98,7 @@ export function createAppStore() {
     modelConfidence: 0,
   });
 
-  // Transcription mode toggle (v4-utterance is the new default)
+  // Transcription mode toggle (v4-utterance is the ONLY active mode)
   const [transcriptionMode, setTranscriptionMode] = createSignal<TranscriptionMode>('v4-utterance');
   const [mergeInfo, setMergeInfo] = createSignal<MergeInfo>({
     lcsLength: 0,
@@ -138,7 +138,8 @@ export function createAppStore() {
 
   // v4 Pipeline config
   const [v4InferenceIntervalMs, setV4InferenceIntervalMs] = createSignal(480); // Transcription tick frequency in ms (320-8000)
-  const [v4SilenceFlushSec, setV4SilenceFlushSec] = createSignal(1.0); // Silence duration to flush pending sentence
+  const [v4SilenceFlushSec, setV4SilenceFlushSec] = createSignal(3.0); // Silence duration to flush pending sentence
+  const [v4WordTimeoutSec, setV4WordTimeoutSec] = createSignal(1.8); // Timeout when no new pending words are observed
   const [sileroThreshold, setSileroThreshold] = createSignal(0.5); // Silero VAD probability threshold
 
   // UI state
@@ -216,6 +217,9 @@ export function createAppStore() {
   const clearTranscript = () => {
     setTranscript('');
     setPendingText('');
+    setMatureText('');
+    setImmatureText('');
+    setMatureCursorTime(0);
   };
 
   const copyTranscript = async () => {
@@ -265,6 +269,7 @@ export function createAppStore() {
     // v4 config
     v4InferenceIntervalMs,
     v4SilenceFlushSec,
+    v4WordTimeoutSec,
     sileroThreshold,
     // UI state
     showDebugPanel,
@@ -310,6 +315,7 @@ export function createAppStore() {
     // v4 setters
     setV4InferenceIntervalMs,
     setV4SilenceFlushSec,
+    setV4WordTimeoutSec,
     setSileroThreshold,
     setMatureText,
     setImmatureText,

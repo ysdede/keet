@@ -9,7 +9,7 @@ import tailwindcss from '@tailwindcss/vite'
 const useLocalParakeet = process.env.USE_LOCAL_PARAKEET === 'true';
 
 // Path to local parakeet.js (relative to keet)
-const localParakeetPath = path.resolve(__dirname, '../parakeet.js');
+const localParakeetPath = path.resolve(__dirname, '../parakeet.js-wt-v5-stream-api');
 
 // Check if local parakeet.js exists
 const localParakeetExists = fs.existsSync(localParakeetPath);

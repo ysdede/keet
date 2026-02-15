@@ -76,7 +76,9 @@ export interface ProcessedSegment {
 export interface AudioSegmentProcessorConfig {
     sampleRate: number;
     windowSize: number;
+    /** Minimum speech duration in seconds */
     minSpeechDuration: number;
+    /** Silence threshold in seconds before ending current speech state */
     silenceThreshold: number;
     energyThreshold: number;
     smaLength: number;

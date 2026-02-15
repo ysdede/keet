@@ -10,6 +10,8 @@
 import { ModelState, ModelProgress, TranscriptionResult } from './types';
 import { TokenStreamResult, TokenStreamConfig } from './TokenStreamTranscriber';
 import type { MergerResult, UtteranceBasedMergerConfig } from './UtteranceBasedMerger';
+import type { StreamStateResult } from './TokenTimelineEngine';
+export type { StreamStateResult } from './TokenTimelineEngine';
 
 /** Result from v4 utterance-based processing */
 export interface V4ProcessResult {
@@ -22,12 +24,34 @@ export interface V4ProcessResult {
     matureSentenceCount: number;
     pendingSentence: string | null;
     stats: any;
+    debug?: any;
 }
 
 /** Incremental cache parameters for v4 transcription */
 export interface V4IncrementalCache {
     cacheKey: string;
     prefixSeconds: number;
+}
+
+export interface V5IncrementalCache {
+    cacheKey: string;
+    prefixSeconds: number;
+}
+
+export interface V5StreamConfig {
+    stabilityLagSec?: number;
+    correctionConfirmations?: number;
+    debug?: boolean;
+}
+
+export interface V5ChunkParams {
+    features: Float32Array;
+    T: number;
+    melBins: number;
+    timeOffset?: number;
+    endTime?: number;
+    incrementalCache?: V5IncrementalCache;
+    allowDecoderContinuation?: boolean;
 }
 
 export class TranscriptionWorkerClient {
@@ -148,7 +172,7 @@ export class TranscriptionWorkerClient {
         return this.sendRequest('RESET');
     }
 
-    async finalize(): Promise<TranscriptionResult | TokenStreamResult | MergerResult | { text: string }> {
+    async finalize(): Promise<TranscriptionResult | TokenStreamResult | MergerResult | StreamStateResult | { text: string }> {
         return this.sendRequest('FINALIZE');
     }
 
@@ -190,6 +214,28 @@ export class TranscriptionWorkerClient {
      */
     async v4Reset(): Promise<void> {
         return this.sendRequest('V4_RESET');
+    }
+
+    // ---- v5 Token timeline pipeline methods ----
+
+    async initV5Stream(config?: V5StreamConfig): Promise<void> {
+        return this.sendRequest('INIT_V5_STREAM', { config: config || {} });
+    }
+
+    async processV5Fast(params: V5ChunkParams): Promise<StreamStateResult> {
+        return this.sendRequest('PROCESS_V5_FAST', params);
+    }
+
+    async processV5Correction(params: V5ChunkParams): Promise<StreamStateResult> {
+        return this.sendRequest('PROCESS_V5_CORRECTION', params);
+    }
+
+    async v5FinalizeSilence(nowSec?: number): Promise<StreamStateResult> {
+        return this.sendRequest('V5_FINALIZE_SILENCE', { nowSec });
+    }
+
+    async v5Reset(): Promise<void> {
+        return this.sendRequest('V5_RESET');
     }
 
     dispose() {
