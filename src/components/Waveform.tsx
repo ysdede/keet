@@ -16,6 +16,13 @@ export const Waveform: Component<WaveformProps> = (props) => {
   let ctx: CanvasRenderingContext2D | null = null;
   let animationId: number | undefined;
   let resizeObserver: ResizeObserver | null = null;
+  let lastDrawTs = 0;
+  let lastStyleRefreshTs = 0;
+  let bgColor = '#faf8f5';
+  let strokeColor = '#14b8a6';
+  const FOREGROUND_FRAME_MS = 33;
+  const IDLE_FRAME_MS = 120;
+  const HIDDEN_FRAME_MS = 250;
 
   const updateCanvasSize = () => {
     if (!canvasRef?.parentElement) return;
@@ -29,9 +36,30 @@ export const Waveform: Component<WaveformProps> = (props) => {
     }
   };
 
-  const animate = () => {
+  const refreshThemeColors = () => {
+    if (!canvasRef) return;
+    const computed = getComputedStyle(canvasRef);
+    bgColor = computed.getPropertyValue('--color-earthy-bg').trim() || '#faf8f5';
+    strokeColor = computed.getPropertyValue('--color-primary').trim() || '#14b8a6';
+  };
+
+  const animate = (ts: number) => {
     animationId = requestAnimationFrame(animate);
     if (!ctx || !canvasRef) return;
+
+    const hidden = typeof document !== 'undefined' && document.visibilityState !== 'visible';
+    const minFrameInterval = hidden
+      ? HIDDEN_FRAME_MS
+      : props.isRecording
+        ? FOREGROUND_FRAME_MS
+        : IDLE_FRAME_MS;
+    if (ts - lastDrawTs < minFrameInterval) return;
+    lastDrawTs = ts;
+
+    if (ts - lastStyleRefreshTs > 1000) {
+      refreshThemeColors();
+      lastStyleRefreshTs = ts;
+    }
 
     const w = canvasRef.width;
     const h = canvasRef.height;
@@ -40,18 +68,14 @@ export const Waveform: Component<WaveformProps> = (props) => {
     const samples = props.barLevels;
     const n = samples && samples.length > 0 ? samples.length : 0;
 
-    // Use hardcoded values or pass via props to avoid layout-triggering getComputedStyle
-    const bg = '#faf8f5';
-    const color = '#14b8a6';
-
-    ctx.fillStyle = bg;
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, w, h);
 
     if (props.isRecording && samples && n > 0) {
       const centerY = h / 2;
       const amp = (h / 2) * 0.9;
 
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(0, centerY - Math.max(-1, Math.min(1, samples[0])) * amp);
@@ -68,6 +92,7 @@ export const Waveform: Component<WaveformProps> = (props) => {
     if (canvasRef) {
       updateCanvasSize();
       ctx = canvasRef.getContext('2d', { alpha: false });
+      refreshThemeColors();
       if (resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateCanvasSize) : null) {
         resizeObserver.observe(canvasRef.parentElement ?? canvasRef);
       }
@@ -76,7 +101,9 @@ export const Waveform: Component<WaveformProps> = (props) => {
   });
 
   onCleanup(() => {
-    cancelAnimationFrame(animationId!);
+    if (animationId !== undefined) {
+      cancelAnimationFrame(animationId);
+    }
     resizeObserver?.disconnect();
   });
 
