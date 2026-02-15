@@ -80,7 +80,8 @@ export class AudioEngine implements IAudioEngine {
     // Subscribers for visualization updates
     private visualizationCallbacks: Array<(data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void> = [];
     private lastVisualizationNotifyTime: number = 0;
-    private readonly VISUALIZATION_NOTIFY_INTERVAL_MS = 16; // ~60fps for responsive oscilloscope
+    private readonly VISUALIZATION_NOTIFY_INTERVAL_MS = 33; // ~30fps in foreground
+    private readonly VISUALIZATION_NOTIFY_HIDDEN_INTERVAL_MS = 250; // De-prioritize background updates
 
     // Recent segments for visualization (stores timing info only)
     private recentSegments: Array<{ startTime: number; endTime: number; isProcessed: boolean }> = [];
@@ -998,11 +999,15 @@ export class AudioEngine implements IAudioEngine {
 
     /**
      * Notify visualization subscribers with updated data.
-     * Throttled to ~30fps to avoid UI stuttering.
+     * Throttled in foreground/background to avoid unnecessary UI churn.
      */
     private notifyVisualizationUpdate(): void {
         const now = performance.now();
-        if (now - this.lastVisualizationNotifyTime < this.VISUALIZATION_NOTIFY_INTERVAL_MS) {
+        const minInterval =
+            (typeof document !== 'undefined' && document.visibilityState !== 'visible')
+                ? this.VISUALIZATION_NOTIFY_HIDDEN_INTERVAL_MS
+                : this.VISUALIZATION_NOTIFY_INTERVAL_MS;
+        if (now - this.lastVisualizationNotifyTime < minInterval) {
             return;
         }
         this.lastVisualizationNotifyTime = now;
