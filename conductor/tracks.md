@@ -4,5 +4,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Optimize and Stabilize Token-Level Timeline Engine**
-  *Link: [./tracks/token_timeline_engine_20260215/](./tracks/token_timeline_engine_20260215/)*
+- [ ] **Track: Performance Hardening: Reduce CPU/Memory Overhead and Ensure UI Fluidity**
+  *Link: [./tracks/perf_hardening_20260215/](./tracks/perf_hardening_20260215/)*
