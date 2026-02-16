@@ -44,6 +44,15 @@ const transcriptionCallbacks = {
     }
 };
 
+const toV4SentenceEntries = (result: MergerResult, emittedAt: number) =>
+    (result.matureSentences || []).map((sentence) => ({
+        id: sentence.id,
+        text: sentence.text,
+        startTime: sentence.startTime,
+        endTime: sentence.endTime,
+        emittedAt,
+    }));
+
 self.onmessage = async (e: MessageEvent) => {
     const { type, payload, id } = e.data;
 
@@ -242,6 +251,7 @@ self.onmessage = async (e: MessageEvent) => {
                 };
 
                 const v4MergerResult = utteranceMerger.processASRResult(asrResult);
+                const emittedAt = Date.now();
 
                 postMessage({
                     type: 'PROCESS_V4_CHUNK_WITH_FEATURES_DONE',
@@ -258,6 +268,7 @@ self.onmessage = async (e: MessageEvent) => {
                         matureSentenceCount: v4MergerResult.allMatureSentences.length,
                         pendingSentence: v4MergerResult.pendingSentence?.text || null,
                         stats: v4MergerResult.stats,
+                        matureSentences: toV4SentenceEntries(v4MergerResult, emittedAt),
                     },
                     id,
                 });
@@ -269,6 +280,7 @@ self.onmessage = async (e: MessageEvent) => {
                     throw new Error('UtteranceBasedMerger not initialized');
                 }
                 const timeoutResult = utteranceMerger.finalizePendingSentenceByTimeout();
+                const emittedAt = Date.now();
                 postMessage({
                     type: 'V4_FINALIZE_TIMEOUT_DONE',
                     payload: timeoutResult ? {
@@ -276,6 +288,11 @@ self.onmessage = async (e: MessageEvent) => {
                         immatureText: timeoutResult.immatureText,
                         matureCursorTime: timeoutResult.matureCursorTime,
                         fullText: timeoutResult.fullText,
+                        totalSentences: timeoutResult.totalSentences,
+                        matureSentenceCount: timeoutResult.allMatureSentences.length,
+                        pendingSentence: timeoutResult.pendingSentence?.text || null,
+                        stats: timeoutResult.stats,
+                        matureSentences: toV4SentenceEntries(timeoutResult, emittedAt),
                     } : null,
                     id,
                 });

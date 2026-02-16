@@ -7,6 +7,7 @@
 
 import { createSignal, createMemo, createRoot, onCleanup } from 'solid-js';
 import type { RecordingState, ModelState, BackendType } from '../types';
+import type { V4SentenceEntry } from '../lib/transcription/TranscriptionWorkerClient';
 
 export interface DebugToken {
   id: string;
@@ -160,6 +161,7 @@ export function createAppStore() {
     cursorUpdates: 0,
     utterancesProcessed: 0,
   });
+  const [v4SentenceEntries, setV4SentenceEntries] = createSignal<V4SentenceEntry[]>([]);
 
 
   // Network status listeners (with cleanup to prevent leaks)
@@ -216,6 +218,19 @@ export function createAppStore() {
   const clearTranscript = () => {
     setTranscript('');
     setPendingText('');
+    setMatureText('');
+    setImmatureText('');
+    setMatureCursorTime(0);
+    setV4SentenceEntries([]);
+  };
+
+  const appendV4SentenceEntries = (entries: V4SentenceEntry[]) => {
+    if (!Array.isArray(entries) || entries.length === 0) return;
+    setV4SentenceEntries(prev => [...prev, ...entries]);
+  };
+
+  const clearV4SentenceEntries = () => {
+    setV4SentenceEntries([]);
   };
 
   const copyTranscript = async () => {
@@ -274,6 +289,7 @@ export function createAppStore() {
     matureCursorTime,
     vadState,
     v4MergerStats,
+    v4SentenceEntries,
 
     // Setters (for internal use)
     setRecordingState,
@@ -316,6 +332,7 @@ export function createAppStore() {
     setMatureCursorTime,
     setVadState,
     setV4MergerStats,
+    setV4SentenceEntries,
 
     // Actions
     startRecording,
@@ -323,6 +340,8 @@ export function createAppStore() {
     refreshDevices,
     appendTranscript,
     clearTranscript,
+    appendV4SentenceEntries,
+    clearV4SentenceEntries,
     copyTranscript,
   };
 }

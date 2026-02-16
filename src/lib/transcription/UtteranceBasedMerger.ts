@@ -1,22 +1,20 @@
 /**
  * UtteranceBasedMerger.ts
  *
- * A sentence-based transcription merging approach that processes progressive
- * utterance texts. Sentences are detected via winkNLP and finalized once a
- * following sentence appears (proving the previous one is stable).
+ * Fast-merger parity implementation aligned with:
+ * `zdasr-onnx-main/src/zdasr/merger/fast_impl.py`
  *
- * Ported from legacy UI project/src/UtteranceBasedMerger.js to TypeScript,
- * with additions for VAD-informed timeout finalization and parakeet.js
- * word timestamp format integration.
- *
- * State model: [mature (finalized) sentences] + [active immature sentence]
+ * Core behavior:
+ * - Each process() call is a full-window replacement for immature text.
+ * - Sentence splitting runs on current window text.
+ * - All sentences except the last are considered finalization candidates.
+ * - Finalized sentence dedup uses (normalized text + end-time tolerance).
+ * - Mature cursor advances to end of the last newly finalized sentence.
+ * - flush/timeout finalization only finalizes punctuation-complete pending text.
  */
 
-import {
-    SentenceBoundaryDetector,
-    type DetectorWord,
-    type SentenceEndingWord,
-} from './SentenceBoundaryDetector';
+import winkNLP from 'wink-nlp';
+import model from 'wink-eng-lite-web-model';
 
 // ---- Public types ----
 
@@ -46,13 +44,28 @@ export interface MergerSentence {
     startWordIndex: number;
     endWordIndex: number;
     wordCount: number;
-    words: DetectorWord[];
+    words: {
+        text: string;
+        start: number;
+        end: number;
+        wordIndex?: number;
+        confidence?: number;
+    }[];
     detectionMethod: string;
     isMature: boolean;
     utteranceId?: string;
     timestamp?: number;
     wordEndTime?: number;
-    sentenceEndingWord?: SentenceEndingWord;
+    sentenceEndingWord?: {
+        text: string;
+        start: number;
+        end: number;
+        wordIndex: number;
+        sentenceMetadata?: {
+            sentenceText: string;
+            detectionMethod: 'nlp' | 'heuristic';
+        };
+    };
 }
 
 /** The result returned from processASRResult */
@@ -91,55 +104,49 @@ export interface UtteranceBasedMergerConfig {
     skipSingleSentences: boolean;
     enableTimeoutFinalization: boolean;
     finalizeTimeoutMs: number;
+    dedupToleranceSec: number;
 }
 
-// ---- Internal types ----
-
-interface Utterance {
-    id: string;
+interface InternalWord {
     text: string;
-    words: DetectorWord[];
-    timestamp: number;
-    endTime: number;
-    processed: boolean;
+    start_time: number;
+    end_time: number;
+    confidence: number;
+    finalized: boolean;
+    stability_counter: number;
 }
 
-interface SentenceDetectionResult {
-    sentences: MergerSentence[];
-    matureSentences: MergerSentence[];
-    totalSentences: number;
-    sentenceEndings: SentenceEndingWord[];
-    usedPreciseTimestamps: boolean;
+interface FinalizedSentenceMeta {
+    text: string;
+    start_time: number;
+    end_time: number;
 }
 
-// ---- Retention limits ----
-// Utterances only participate in recent sentence detection; old ones can be pruned.
-// Mature sentences older than the retention window are already persisted in the
-// store's transcript string, so they serve no further functional role.
-const MAX_UTTERANCES = 20;
-const MAX_MATURE_SENTENCES = 50;
-// For duplicate detection, only scan the most recent N mature sentences.
-const DEDUP_SCAN_WINDOW = 10;
+interface CreateResultContext {
+    totalSentences?: number;
+    matureSentences?: MergerSentence[];
+    usedPreciseTimestamps?: boolean;
+}
 
-// ---- Implementation ----
+const SENTENCE_END_RE = /[.!?]$/;
 
 export class UtteranceBasedMerger {
     private config: UtteranceBasedMergerConfig;
-    private sentenceDetector: SentenceBoundaryDetector;
+    private nlp: any | null = null;
 
-    // Core state
-    private utterances: Utterance[] = [];
+    // Fast-merger state parity
+    private mergedTranscript: InternalWord[] = []; // finalized only
+    private lastImmatureWords: InternalWord[] = []; // current pending tail
+    private matureCursorTime = 0;
+    private finalizedSentencesMeta: FinalizedSentenceMeta[] = [];
+
+    // UI-facing state
     private matureSentences: MergerSentence[] = [];
-    private currentUtteranceText: string = '';
-    private matureCursorTime: number = 0;
     private pendingSentence: MergerSentence | null = null;
-    
-    // Live buffer tracking to prevent duplicates during sentence finalization
-    // This tracks ONLY the unfinalized portion of text that should be appended to mature sentences
-    private liveBufferText: string = '';
-    private lastFinalizedSentenceEnd: number = 0;
+    private currentUtteranceText = '';
+    private utteranceCount = 0;
+    private sentenceSequence = 0;
 
-    // Statistics
     private stats: MergerStats = {
         utterancesProcessed: 0,
         sentencesDetected: 0,
@@ -151,622 +158,480 @@ export class UtteranceBasedMerger {
         this.config = {
             debug: false,
             useNLP: true,
-            minSentenceLength: 10,
+            minSentenceLength: 1,
             requireFollowingSentence: true,
             matureSentenceOffset: -2,
-            skipEmptyUtterances: true,
-            skipSingleSentences: true,
+            skipEmptyUtterances: false,
+            skipSingleSentences: false,
             enableTimeoutFinalization: true,
             finalizeTimeoutMs: 2000,
+            dedupToleranceSec: 0.15,
             ...config,
         };
+        this.initializeNLP();
+    }
 
-        this.sentenceDetector = new SentenceBoundaryDetector({
-            useNLP: this.config.useNLP,
-            debug: this.config.debug,
-            minSentenceLength: this.config.minSentenceLength,
-        });
-
-        if (this.config.debug) {
-            console.log('[UtteranceMerger] Initialized with config:', this.config);
+    private initializeNLP(): void {
+        if (!this.config.useNLP) {
+            this.nlp = null;
+            return;
+        }
+        try {
+            this.nlp = winkNLP(model, ['sbd']);
+        } catch (error) {
+            this.nlp = null;
+            if (this.config.debug) {
+                console.warn('[UtteranceMerger] NLP init failed, using heuristic splitter:', error);
+            }
         }
     }
 
+    private normalizeWords(words?: ASRWord[]): InternalWord[] {
+        if (!Array.isArray(words)) return [];
+        return words
+            .map((w) => ({
+                text: String(w?.text ?? '').trim(),
+                start_time: Number(w?.start_time ?? 0),
+                end_time: Number(w?.end_time ?? 0),
+                confidence: Number.isFinite(Number(w?.confidence))
+                    ? Math.max(0, Math.min(1, Number(w?.confidence)))
+                    : 1.0,
+                finalized: false,
+                stability_counter: 0,
+            }))
+            .filter((w) => w.text.length > 0)
+            .map((w) => ({
+                ...w,
+                start_time: Math.max(0, w.start_time),
+                end_time: Math.max(w.start_time, w.end_time),
+            }));
+    }
+
+    private joinWords(words: InternalWord[]): string {
+        return words.map((w) => w.text).join(' ').trim();
+    }
+
+    private normalizeForBoundary(value: string): string {
+        return value.replace(/\s+/g, '').toLowerCase();
+    }
+
+    private mapSentencesToWordBoundaries(words: InternalWord[], sentences: string[]): number[] {
+        const boundaries: number[] = [];
+        let wordIdx = 0;
+
+        for (const sentence of sentences) {
+            const sentenceClean = this.normalizeForBoundary(sentence);
+            let accumulated = '';
+
+            for (let i = wordIdx; i < words.length; i++) {
+                accumulated += this.normalizeForBoundary(words[i].text);
+                if (accumulated.length >= sentenceClean.length) {
+                    wordIdx = i + 1;
+                    break;
+                }
+            }
+
+            boundaries.push(wordIdx);
+        }
+
+        return boundaries;
+    }
+
+    private splitSentences(text: string): { sentences: string[]; detectionMethod: 'nlp' | 'heuristic' } {
+        const trimmed = text.trim();
+        if (!trimmed) {
+            return { sentences: [], detectionMethod: this.nlp ? 'nlp' : 'heuristic' };
+        }
+
+        if (this.nlp) {
+            try {
+                const doc = this.nlp.readDoc(trimmed);
+                const sentenceTexts: string[] = doc.sentences().out();
+                const cleaned = sentenceTexts
+                    .map((s) => String(s).trim())
+                    .filter((s) => s.length > 0);
+                if (cleaned.length > 0) {
+                    return { sentences: cleaned, detectionMethod: 'nlp' };
+                }
+            } catch (error) {
+                if (this.config.debug) {
+                    console.warn('[UtteranceMerger] NLP split failed, fallback to heuristic:', error);
+                }
+            }
+        }
+
+        const heuristic = trimmed.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [trimmed];
+        return {
+            sentences: heuristic.map((s) => s.trim()).filter((s) => s.length > 0),
+            detectionMethod: 'heuristic',
+        };
+    }
+
+    private isDuplicateSentence(text: string, endTime: number): boolean {
+        const norm = text.trim().toLowerCase();
+        for (const sentence of this.finalizedSentencesMeta) {
+            if (
+                sentence.text.trim().toLowerCase() === norm &&
+                Math.abs(sentence.end_time - endTime) < this.config.dedupToleranceSec
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private createSentenceFromWords(
+        words: InternalWord[],
+        isMature: boolean,
+        detectionMethod: 'nlp' | 'heuristic',
+        startWordIndex: number,
+        utteranceId?: string,
+        timestamp?: number,
+    ): MergerSentence | null {
+        if (words.length === 0) return null;
+        const text = this.joinWords(words);
+        if (!text) return null;
+        const startTime = words[0].start_time;
+        const endTime = words[words.length - 1].end_time;
+        const endWordIndex = startWordIndex + words.length - 1;
+        return {
+            id: `sentence_${this.sentenceSequence++}`,
+            text,
+            startTime,
+            endTime,
+            startWordIndex,
+            endWordIndex,
+            wordCount: words.length,
+            words: words.map((w, idx) => ({
+                text: w.text,
+                start: w.start_time,
+                end: w.end_time,
+                confidence: w.confidence,
+                wordIndex: startWordIndex + idx,
+            })),
+            detectionMethod,
+            isMature,
+            utteranceId,
+            timestamp,
+            wordEndTime: endTime,
+        };
+    }
+
+    private appendFinalizedSentence(
+        text: string,
+        finalizedWords: InternalWord[],
+        startWordIndex: number,
+        detectionMethod: 'nlp' | 'heuristic',
+        utteranceId?: string,
+        timestamp?: number,
+    ): MergerSentence | null {
+        if (finalizedWords.length === 0) return null;
+        const startTime = finalizedWords[0].start_time;
+        const endTime = finalizedWords[finalizedWords.length - 1].end_time;
+
+        this.finalizedSentencesMeta.push({
+            text,
+            start_time: startTime,
+            end_time: endTime,
+        });
+        this.stats.matureSentencesCreated++;
+
+        const sentence = this.createSentenceFromWords(
+            finalizedWords,
+            true,
+            detectionMethod,
+            startWordIndex,
+            utteranceId,
+            timestamp,
+        );
+        if (sentence) {
+            this.matureSentences.push(sentence);
+        }
+        return sentence;
+    }
+
+    private updatePendingSentence(): void {
+        const startWordIndex = this.mergedTranscript.length;
+        this.pendingSentence = this.createSentenceFromWords(
+            this.lastImmatureWords,
+            false,
+            this.nlp ? 'nlp' : 'heuristic',
+            startWordIndex,
+        );
+    }
+
     /**
-     * Process a new ASR result with utterance text and precise word timestamps.
-     * This is the main entry point for parakeet.js integration.
+     * Process one full ASR window.
      */
     processASRResult(asrResult: ASRResult): MergerResult {
-        const {
-            utterance_text,
-            words = [],
-            timestamp = Date.now(),
-            segment_id,
-            end_time = 0,
-        } = asrResult;
-
-        if (this.config.debug) {
-            console.log(
-                `[UtteranceMerger] Processing ASR result: "${utterance_text}" with ${words.length} words`
-            );
-        }
-
-        // Skip empty or very short utterances
-        if (
-            this.config.skipEmptyUtterances &&
-            (!utterance_text || utterance_text.trim().length < this.config.minSentenceLength)
-        ) {
-            if (this.config.debug) {
-                console.log('[UtteranceMerger] Skipping empty/short utterance');
-            }
-            return this.createResult();
-        }
-
-        // Convert parakeet.js words to detector format
-        const detectorWords: DetectorWord[] = words.map((w, index) => ({
-            text: (w.text || '').toString().trim(),
-            start: Math.max(0, w.start_time),
-            end: Math.max(w.start_time, w.end_time),
-            wordIndex: index,
-            confidence: typeof w.confidence === 'number' ? Math.max(0, Math.min(1, w.confidence)) : 1.0,
-        })).filter(w => w.text.length > 0);
-
-        // Store utterance
-        const utterance: Utterance = {
-            id: segment_id || `utterance_${timestamp}`,
-            text: utterance_text.trim(),
-            words: detectorWords,
-            timestamp,
-            endTime: end_time,
-            processed: false,
-        };
-
-        this.utterances.push(utterance);
-        // Prune old utterances to bound memory; only recent ones matter for detection
-        if (this.utterances.length > MAX_UTTERANCES) {
-            this.utterances = this.utterances.slice(-MAX_UTTERANCES);
-        }
-        this.currentUtteranceText = utterance_text.trim();
         this.stats.utterancesProcessed++;
+        this.utteranceCount++;
 
-        // Detect sentences
-        const sentenceResult = this.detectSentencesInUtterance(utterance);
-        
-        // Update live buffer to track only unfinalized text (prevents duplicates)
-        this.updateLiveBuffer(utterance, sentenceResult);
-        
-        // Track the most recent ended sentence as a pending candidate
-        if (sentenceResult && sentenceResult.sentences && sentenceResult.sentences.length > 0) {
-            const lastEndedSentence = sentenceResult.sentences[sentenceResult.sentences.length - 1];
-            if (lastEndedSentence) {
-                this.pendingSentence = {
-                    ...lastEndedSentence,
-                    utteranceId: utterance.id,
-                    timestamp: utterance.timestamp,
-                    wordEndTime: lastEndedSentence.endTime,
-                    isMature: false,
-                };
-            }
-        } else {
-            this.pendingSentence = null;
-        }
-
-        // Update mature cursor
-        if (sentenceResult.matureSentences.length > 0) {
-            this.updateMatureCursor(sentenceResult.matureSentences, end_time);
-        }
-
-        utterance.processed = true;
-
-        return this.createResult(sentenceResult);
-    }
-
-    /**
-     * Update the live buffer to track only unfinalized text.
-     * This prevents duplicates by marking live text as finalized immediately when sentences are detected.
-     */
-    private updateLiveBuffer(utterance: Utterance, sentenceResult: SentenceDetectionResult): void {
-        const { text, words } = utterance;
-        
-        // If we have mature sentences, the live portion is what comes after the last mature sentence
-        if (sentenceResult.matureSentences.length > 0) {
-            const lastMature = sentenceResult.matureSentences[sentenceResult.matureSentences.length - 1];
-            
-            // The live portion starts after the last mature sentence's word index
-            const lastMatureEndIndex = lastMature.endWordIndex;
-            
-            if (words.length > 0 && lastMatureEndIndex < words.length) {
-                // Extract live words from the word array
-                const liveWords = words.slice(lastMatureEndIndex + 1);
-                this.liveBufferText = liveWords.map(w => w.text).join(' ').trim();
-                this.lastFinalizedSentenceEnd = lastMatureEndIndex;
-            } else {
-                // Fallback: try to find the position in text
-                const matureText = sentenceResult.matureSentences.map(s => s.text).join(' ');
-                const livePortion = text.replace(matureText, '').trim();
-                this.liveBufferText = livePortion;
-            }
-        } else {
-            // No mature sentences yet - entire text is live
-            this.liveBufferText = text;
-            this.lastFinalizedSentenceEnd = -1;
-        }
-        
-        if (this.config.debug) {
-            console.log(`[DEBUG] updateLiveBuffer: liveBufferText="${this.liveBufferText}" lastFinalizedEnd=${this.lastFinalizedSentenceEnd}`);
-        }
-    }
-
-    /**
-     * Detect sentences in an utterance using winkNLP with precise word timestamps.
-     */
-    private detectSentencesInUtterance(utterance: Utterance): SentenceDetectionResult {
-        const { text, words, endTime, timestamp } = utterance;
-
-        let wordsForDetection: DetectorWord[];
-
-        if (words.length > 0) {
-            wordsForDetection = words;
-            if (this.config.debug) {
-                console.log(
-                    `[UtteranceMerger] Using ${wordsForDetection.length} precise word timestamps from ASR`
-                );
-            }
-        } else {
-            // Fallback to estimation
-            const estimatedStartTime = Math.max(0, endTime - text.length * 0.05);
-            wordsForDetection = this.textToWords(text, estimatedStartTime, endTime);
-            if (this.config.debug) {
-                console.log(
-                    `[UtteranceMerger] Using ${wordsForDetection.length} estimated word timestamps`
-                );
-            }
-        }
-
-        if (wordsForDetection.length === 0) {
-            return {
-                sentences: [],
-                matureSentences: [],
+        const incomingWords = this.normalizeWords(asrResult.words);
+        if (incomingWords.length === 0) {
+            return this.createResult({
                 totalSentences: 0,
-                sentenceEndings: [],
+                matureSentences: [],
                 usedPreciseTimestamps: false,
-            };
+            });
         }
 
-        // Detect sentence boundaries
-        const sentenceEndings = this.sentenceDetector.detectSentenceEndings(wordsForDetection);
-        this.stats.sentencesDetected += sentenceEndings.length;
+        this.currentUtteranceText = this.joinWords(incomingWords);
 
-        if (this.config.debug) {
-            console.log(
-                `[UtteranceMerger] Detected ${sentenceEndings.length} sentences in utterance`
-            );
+        const split = this.splitSentences(this.currentUtteranceText);
+        const sentences = split.sentences;
+        this.stats.sentencesDetected += sentences.length;
+
+        const maturedThisCall: MergerSentence[] = [];
+
+        if (sentences.length > 1) {
+            const boundaries = this.mapSentencesToWordBoundaries(incomingWords, sentences);
+            let prevIdx = 0;
+            let lastConsumedIdx = 0;
+
+            for (let sentenceIdx = 0; sentenceIdx < sentences.length - 1; sentenceIdx++) {
+                const endIdx = boundaries[sentenceIdx] ?? prevIdx;
+                const sentenceWords = incomingWords.slice(prevIdx, endIdx);
+                prevIdx = endIdx;
+
+                if (sentenceWords.length === 0) continue;
+
+                const joined = this.joinWords(sentenceWords);
+                const sentenceEnd = sentenceWords[sentenceWords.length - 1].end_time;
+
+                if (this.isDuplicateSentence(joined, sentenceEnd)) {
+                    lastConsumedIdx = endIdx;
+                    continue;
+                }
+
+                const finalizedWords = sentenceWords.map((w) => ({ ...w, finalized: true }));
+                const startWordIndex = this.mergedTranscript.length;
+                this.mergedTranscript.push(...finalizedWords);
+
+                const matureSentence = this.appendFinalizedSentence(
+                    joined,
+                    finalizedWords,
+                    startWordIndex,
+                    split.detectionMethod,
+                    asrResult.segment_id,
+                    asrResult.timestamp,
+                );
+                if (matureSentence) {
+                    maturedThisCall.push(matureSentence);
+                }
+
+                if (sentenceEnd > this.matureCursorTime) {
+                    this.matureCursorTime = sentenceEnd;
+                    this.stats.matureCursorUpdates++;
+                }
+
+                lastConsumedIdx = endIdx;
+            }
+
+            this.lastImmatureWords = incomingWords
+                .slice(lastConsumedIdx)
+                .map((w) => ({ ...w, finalized: false }));
+        } else if (sentences.length === 1) {
+            const singleText = this.joinWords(incomingWords);
+            const singleEnd = incomingWords[incomingWords.length - 1].end_time;
+            if (this.isDuplicateSentence(singleText, singleEnd)) {
+                this.lastImmatureWords = [];
+            } else {
+                this.lastImmatureWords = incomingWords.map((w) => ({ ...w, finalized: false }));
+            }
+        } else {
+            this.lastImmatureWords = incomingWords.map((w) => ({ ...w, finalized: false }));
         }
 
-        // Extract sentences with precise timestamps
-        const sentences = this.extractSentencesFromEndings(text, sentenceEndings, wordsForDetection);
+        this.updatePendingSentence();
 
-        // Determine which sentences are mature
-        const matureSentences = this.determineMatureSentences(sentences, utterance, sentenceEndings);
-
-        return {
-            sentences,
-            matureSentences,
+        return this.createResult({
             totalSentences: sentences.length,
-            sentenceEndings,
-            usedPreciseTimestamps: words.length > 0,
-        };
-    }
-
-    /**
-     * Convert text to word objects with estimated timestamps (fallback).
-     */
-    private textToWords(
-        text: string,
-        utteranceStartTime: number = 0,
-        utteranceEndTime: number = 0
-    ): DetectorWord[] {
-        if (!text) return [];
-
-        const words = text.split(/\s+/).filter(word => word.length > 0);
-        if (words.length === 0) return [];
-
-        const utteranceDuration = utteranceEndTime - utteranceStartTime;
-        const avgWordDuration = utteranceDuration / words.length;
-
-        return words.map((word, index) => {
-            const wordStart = utteranceStartTime + index * avgWordDuration;
-            const wordEnd = wordStart + avgWordDuration;
-            return {
-                text: word,
-                start: wordStart,
-                end: wordEnd,
-                wordIndex: index,
-            };
+            matureSentences: maturedThisCall,
+            usedPreciseTimestamps: true,
         });
     }
 
     /**
-     * Extract sentence texts from sentence endings with precise timestamps.
+     * Timeout/silence flush. Mirrors fast_impl.flush():
+     * - only finalize when pending text ends with [.?!]
+     * - dedup-guarded
      */
-    private extractSentencesFromEndings(
-        _fullText: string,
-        sentenceEndings: SentenceEndingWord[],
-        allWords: DetectorWord[]
-    ): MergerSentence[] {
-        if (sentenceEndings.length === 0) {
-            return [];
+    finalizePendingSentenceByTimeout(): MergerResult | null {
+        if (!this.config.enableTimeoutFinalization) return null;
+        if (this.lastImmatureWords.length === 0) return null;
+
+        const pendingText = this.joinWords(this.lastImmatureWords);
+        if (!this.isSentenceCompleteByPunctuation(pendingText)) return null;
+
+        const pendingEnd = Math.max(...this.lastImmatureWords.map((w) => w.end_time));
+        if (this.isDuplicateSentence(pendingText, pendingEnd)) {
+            this.lastImmatureWords = [];
+            this.pendingSentence = null;
+            return null;
         }
 
-        const sentences: MergerSentence[] = [];
-        let lastEndIndex = 0;
+        const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
+        const startWordIndex = this.mergedTranscript.length;
+        this.mergedTranscript.push(...finalizedWords);
 
-        sentenceEndings.forEach((endingWord, sentenceIndex) => {
-            const startWordIndex = lastEndIndex;
-            const endWordIndex = endingWord.wordIndex;
+        const matured = this.appendFinalizedSentence(
+            pendingText,
+            finalizedWords,
+            startWordIndex,
+            this.nlp ? 'nlp' : 'heuristic',
+        );
 
-            const sentenceWords = allWords.slice(startWordIndex, endWordIndex + 1);
-            const sentenceText = sentenceWords.map(w => w.text).join(' ');
+        this.lastImmatureWords = [];
+        this.pendingSentence = null;
 
-            const startTime = sentenceWords[0]?.start || 0;
-            const endTime = sentenceWords[sentenceWords.length - 1]?.end || 0;
-
-            sentences.push({
-                id: `sentence_${Date.now()}_${sentenceIndex}`,
-                text: sentenceText.trim(),
-                startTime,
-                endTime,
-                startWordIndex,
-                endWordIndex,
-                wordCount: sentenceWords.length,
-                words: sentenceWords,
-                detectionMethod: endingWord.sentenceMetadata?.detectionMethod || 'nlp',
-                isMature: false,
-            });
-
-            lastEndIndex = endWordIndex + 1;
-        });
-
-        return sentences;
-    }
-
-    /**
-     * Determine which sentences are mature (can be finalized).
-     * A sentence is mature when it has at least one following sentence.
-     */
-    private determineMatureSentences(
-        sentences: MergerSentence[],
-        utterance: Utterance,
-        sentenceEndings: SentenceEndingWord[]
-    ): MergerSentence[] {
-        if (!sentences || sentences.length === 0) {
-            return [];
-        }
-
-        if (this.config.skipSingleSentences && sentences.length === 1) {
-            if (this.config.debug) {
-                console.log('[UtteranceMerger] Skipping single sentence (no following sentence)');
-            }
-            return [];
-        }
-
-        const matureSentences: MergerSentence[] = [];
-
-        if (sentences.length >= 2) {
-            const sentencesToMature = sentences.slice(0, -1);
-
-            sentencesToMature.forEach((sentence, index) => {
-                const sentenceEndingWord = sentenceEndings[index];
-
-                const matureSentence: MergerSentence = {
-                    ...sentence,
-                    utteranceId: utterance.id,
-                    timestamp: utterance.timestamp,
-                    wordEndTime:
-                        sentence.endTime ||
-                        (sentenceEndingWord ? sentenceEndingWord.end : utterance.endTime),
-                    isMature: true,
-                    sentenceEndingWord,
-                };
-
-                // Check for duplicates (bounded scan of most recent entries only)
-                const dedupStart = Math.max(0, this.matureSentences.length - DEDUP_SCAN_WINDOW);
-                let existingSentence: MergerSentence | undefined;
-                for (let d = this.matureSentences.length - 1; d >= dedupStart; d--) {
-                    const existing = this.matureSentences[d];
-                    if (
-                        existing.text === matureSentence.text &&
-                        Math.abs((existing.wordEndTime ?? 0) - (matureSentence.wordEndTime ?? 0)) < 0.1
-                    ) {
-                        existingSentence = existing;
-                        break;
-                    }
-                }
-
-                if (!existingSentence) {
-                    matureSentences.push(matureSentence);
-                    this.matureSentences.push(matureSentence);
-                    this.stats.matureSentencesCreated++;
-                    
-                    // Update the live buffer reference point when sentences finalize
-                    this.lastFinalizedSentenceEnd = matureSentence.endWordIndex;
-                    if (this.config.debug) {
-                        console.log(`[DEBUG] Sentence finalized: "${matureSentence.text}" at word index ${matureSentence.endWordIndex}`);
-                        console.log(`[DEBUG] Total mature now: ${this.matureSentences.length}`);
-                    }
-                    // Prune old mature sentences to bound memory
-                    if (this.matureSentences.length > MAX_MATURE_SENTENCES) {
-                        this.matureSentences = this.matureSentences.slice(-MAX_MATURE_SENTENCES);
-                    }
-                } else {
-                    matureSentences.push(existingSentence);
-                }
-            });
-
-            if (this.config.debug) {
-                console.log(
-                    `[UtteranceMerger] Created ${matureSentences.length} mature sentences from ${sentences.length} total`
-                );
-            }
-        }
-
-        return matureSentences;
-    }
-
-    /**
-     * Update mature cursor time based on mature sentences.
-     */
-    private updateMatureCursor(newMatureSentences: MergerSentence[], _currentEndTime: number): void {
-        if (newMatureSentences.length === 0) return;
-
-        const allMatureSentencesWithTimestamps = this.matureSentences.filter(s => s.wordEndTime);
-
-        let newCursorTime = this.matureCursorTime;
-
-        if (allMatureSentencesWithTimestamps.length >= 1) {
-            const lastMatureSentence =
-                allMatureSentencesWithTimestamps[allMatureSentencesWithTimestamps.length - 1];
-            newCursorTime = lastMatureSentence.wordEndTime!;
-
-            if (this.config.debug) {
-                console.log(
-                    `[UtteranceMerger] Using last mature sentence end time: ${newCursorTime.toFixed(2)}s`
-                );
-                console.log(`[UtteranceMerger] Sentence: "${lastMatureSentence.text}"`);
-            }
-        }
-
-        if (newCursorTime > this.matureCursorTime) {
-            const previousTime = this.matureCursorTime;
-            this.matureCursorTime = newCursorTime;
+        if (pendingEnd > this.matureCursorTime) {
+            this.matureCursorTime = pendingEnd;
             this.stats.matureCursorUpdates++;
-
-            if (this.config.debug) {
-                console.log(
-                    `[UtteranceMerger] Cursor advanced from ${previousTime.toFixed(2)}s to ${newCursorTime.toFixed(2)}s`
-                );
-            }
         }
+
+        return this.createResult({
+            totalSentences: 1,
+            matureSentences: matured ? [matured] : [],
+            usedPreciseTimestamps: true,
+        });
     }
 
     /**
-     * Get the current mature text (finalized sentences).
+     * Parity helper with fast_impl.force_finalize_all().
      */
+    forceFinalizeAll(): void {
+        if (this.lastImmatureWords.length === 0) return;
+
+        const pendingText = this.joinWords(this.lastImmatureWords);
+        const pendingEnd = Math.max(...this.lastImmatureWords.map((w) => w.end_time));
+
+        if (this.isDuplicateSentence(pendingText, pendingEnd)) {
+            this.lastImmatureWords = [];
+            this.pendingSentence = null;
+            return;
+        }
+
+        const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
+        const startWordIndex = this.mergedTranscript.length;
+        this.mergedTranscript.push(...finalizedWords);
+        this.appendFinalizedSentence(
+            pendingText,
+            finalizedWords,
+            startWordIndex,
+            this.nlp ? 'nlp' : 'heuristic',
+        );
+
+        this.lastImmatureWords = [];
+        this.pendingSentence = null;
+
+        if (pendingEnd > this.matureCursorTime) {
+            this.matureCursorTime = pendingEnd;
+            this.stats.matureCursorUpdates++;
+        }
+    }
+
+    isSentenceCompleteByPunctuation(text: string): boolean {
+        if (!text || typeof text !== 'string') return false;
+        const trimmed = text.trim();
+        if (!trimmed) return false;
+        if (trimmed.endsWith('...')) return false;
+        return SENTENCE_END_RE.test(trimmed);
+    }
+
     getMatureText(): string {
-        const uniqueSentences: MergerSentence[] = [];
-        const seenTexts = new Set<string>();
-
-        for (const sentence of this.matureSentences) {
-            if (!seenTexts.has(sentence.text)) {
-                uniqueSentences.push(sentence);
-                seenTexts.add(sentence.text);
-            }
-        }
-
-        return uniqueSentences.map(sentence => sentence.text).join(' ');
+        return this.joinWords(this.mergedTranscript);
     }
 
-    /**
-     * Get the current working text (latest utterance).
-     */
     getCurrentText(): string {
         return this.currentUtteranceText;
     }
 
-    /**
-     * Get full accumulated transcription text.
-     * Uses live buffer to prevent duplicates: concatenates mature sentences + live text.
-     */
-    getFullText(): string {
-        const matureText = this.getMatureText();
-        const liveText = this.liveBufferText;
-
-        // Build full text by combining mature sentences (from array) + live buffer
-        // This prevents duplicates by using the tracked live portion only
-        if (matureText && liveText) {
-            return `${matureText} ${liveText}`.trim();
-        }
-        
-        return matureText || liveText || '';
-    }
-
-    /**
-     * Get the immature text (text after mature cursor).
-     */
     getImmatureText(): string {
-        // Return the live buffer as the immature text
-        return this.liveBufferText || '';
+        return this.joinWords(this.lastImmatureWords);
     }
 
-    /**
-     * Create a result object for external consumption.
-     */
-    private createResult(sentenceResult?: SentenceDetectionResult | null): MergerResult {
+    getFullText(): string {
+        const mature = this.getMatureText();
+        const immature = this.getImmatureText();
+        if (mature && immature) return `${mature} ${immature}`.trim();
+        return mature || immature || '';
+    }
+
+    getMatureCursorTime(): number {
+        return this.matureCursorTime;
+    }
+
+    getPendingSentence(): MergerSentence | null {
+        return this.pendingSentence;
+    }
+
+    private createResult(context: CreateResultContext = {}): MergerResult {
         return {
             matureText: this.getMatureText(),
             currentText: this.getCurrentText(),
             fullText: this.getFullText(),
             immatureText: this.getImmatureText(),
             matureCursorTime: this.matureCursorTime,
-            totalSentences: sentenceResult?.totalSentences || 0,
-            matureSentences: sentenceResult?.matureSentences || [],
-            allMatureSentences: this.matureSentences,
+            totalSentences: context.totalSentences ?? 0,
+            matureSentences: context.matureSentences ?? [],
+            allMatureSentences: [...this.matureSentences],
             pendingSentence: this.pendingSentence,
-            usedPreciseTimestamps: sentenceResult?.usedPreciseTimestamps || false,
+            usedPreciseTimestamps: context.usedPreciseTimestamps ?? false,
             stats: { ...this.stats },
-            utteranceCount: this.utterances.length,
+            utteranceCount: this.utteranceCount,
             lastUtteranceText: this.currentUtteranceText,
         };
     }
 
-    /**
-     * Check if a sentence text ends with proper punctuation.
-     */
-    isSentenceCompleteByPunctuation(text: string): boolean {
-        if (!text || typeof text !== 'string') return false;
-        const trimmed = text.trim();
-        if (trimmed.endsWith('...')) return false;
-        return /[.!?]$/.test(trimmed);
-    }
-
-    /**
-     * Finalize the currently pending last-ended sentence due to inactivity timeout.
-     * Called externally when VAD detects extended silence or a timer expires.
-     */
-    finalizePendingSentenceByTimeout(): MergerResult | null {
-        if (!this.config.enableTimeoutFinalization || !this.pendingSentence) {
-            return null;
-        }
-
-        const candidate = this.pendingSentence;
-
-        // Only finalize if sentence ends with proper punctuation
-        if (!this.isSentenceCompleteByPunctuation(candidate.text)) {
-            if (this.config.debug) {
-                console.log(
-                    `[UtteranceMerger] Skipping timeout finalization -- sentence doesn't end with proper punctuation: "${candidate.text}"`
-                );
-            }
-            return null;
-        }
-
-        // Avoid duplicates (bounded scan of recent entries only)
-        const dedupStart = Math.max(0, this.matureSentences.length - DEDUP_SCAN_WINDOW);
-        let exists = false;
-        for (let d = this.matureSentences.length - 1; d >= dedupStart; d--) {
-            const existing = this.matureSentences[d];
-            if (
-                existing.text === candidate.text &&
-                Math.abs((existing.wordEndTime ?? 0) - (candidate.wordEndTime ?? 0)) < 0.1
-            ) {
-                exists = true;
-                break;
-            }
-        }
-
-        if (!exists) {
-            const matured: MergerSentence = { ...candidate, isMature: true };
-            this.matureSentences.push(matured);
-            this.stats.matureSentencesCreated++;
-            
-            // Update the live buffer reference point when sentence finalizes by timeout
-            this.lastFinalizedSentenceEnd = matured.endWordIndex;
-            if (this.config.debug) {
-                console.log(`[DEBUG] Timeout finalized: "${matured.text}" at word index ${matured.endWordIndex}`);
-                console.log(`[DEBUG] Total mature now: ${this.matureSentences.length}`);
-            }
-            // Prune old mature sentences to bound memory
-            if (this.matureSentences.length > MAX_MATURE_SENTENCES) {
-                this.matureSentences = this.matureSentences.slice(-MAX_MATURE_SENTENCES);
-            }
-            // Advance cursor
-            this.updateMatureCursor([matured], candidate.wordEndTime || 0);
-            if (this.config.debug) {
-                console.log(
-                    `[UtteranceMerger] Timeout finalized sentence: "${candidate.text}" @ ${candidate.wordEndTime?.toFixed?.(2) ?? candidate.wordEndTime}s`
-                );
-            }
-        }
-
-        this.pendingSentence = null;
-        return this.createResult();
-    }
-
-    /**
-     * Get the current mature cursor time (used by WindowBuilder).
-     */
-    getMatureCursorTime(): number {
-        return this.matureCursorTime;
-    }
-
-    /**
-     * Get the pending sentence (if any).
-     */
-    getPendingSentence(): MergerSentence | null {
-        return this.pendingSentence;
-    }
-
-    /**
-     * Reset the merger state.
-     */
     reset(): void {
-        this.utterances = [];
-        this.matureSentences = [];
-        this.currentUtteranceText = '';
+        this.mergedTranscript = [];
+        this.lastImmatureWords = [];
         this.matureCursorTime = 0;
+        this.finalizedSentencesMeta = [];
+        this.matureSentences = [];
         this.pendingSentence = null;
-        // Reset live buffer tracking
-        this.liveBufferText = '';
-        this.lastFinalizedSentenceEnd = -1;
+        this.currentUtteranceText = '';
+        this.utteranceCount = 0;
+        this.sentenceSequence = 0;
         this.stats = {
             utterancesProcessed: 0,
             sentencesDetected: 0,
             matureSentencesCreated: 0,
             matureCursorUpdates: 0,
         };
-
-        this.sentenceDetector.reset();
-
-        if (this.config.debug) {
-            console.log('[UtteranceMerger] Reset complete');
-        }
     }
 
-    /**
-     * Update configuration.
-     */
     updateConfig(newConfig: Partial<UtteranceBasedMergerConfig>): void {
+        const previousUseNlp = this.config.useNLP;
         this.config = { ...this.config, ...newConfig };
-
-        if (
-            newConfig.debug !== undefined ||
-            newConfig.minSentenceLength !== undefined ||
-            newConfig.useNLP !== undefined
-        ) {
-            this.sentenceDetector.updateConfig({
-                useNLP: this.config.useNLP,
-                debug: this.config.debug,
-                minSentenceLength: this.config.minSentenceLength,
-            });
-        }
-
-        if (this.config.debug) {
-            console.log('[UtteranceMerger] Config updated:', this.config);
+        if (previousUseNlp !== this.config.useNLP || this.nlp === null) {
+            this.initializeNLP();
         }
     }
 
-    /**
-     * Get current statistics.
-     */
-    getStats(): MergerStats & { sentenceDetectorStats: ReturnType<SentenceBoundaryDetector['getStats']>; matureSentenceCount: number; utteranceCount: number } {
+    getStats(): MergerStats & {
+        sentenceDetectorStats: {
+            nlpAvailable: boolean;
+            usingNLP: boolean;
+            cacheSize: number;
+            maxCacheSize: number;
+        };
+        matureSentenceCount: number;
+        utteranceCount: number;
+    } {
         return {
             ...this.stats,
-            sentenceDetectorStats: this.sentenceDetector.getStats(),
+            sentenceDetectorStats: {
+                nlpAvailable: !!this.nlp,
+                usingNLP: this.config.useNLP && !!this.nlp,
+                cacheSize: 0,
+                maxCacheSize: 0,
+            },
             matureSentenceCount: this.matureSentences.length,
-            utteranceCount: this.utterances.length,
+            utteranceCount: this.utteranceCount,
         };
     }
 }
-
 
 export default UtteranceBasedMerger;
