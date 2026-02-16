@@ -362,6 +362,12 @@ const App: Component = () => {
             appStore.setImmatureText(flushResult.immatureText);
             appStore.setMatureCursorTime(flushResult.matureCursorTime);
             appStore.setTranscript(flushResult.fullText);
+            appStore.appendV4SentenceEntries(flushResult.matureSentences);
+            appStore.setV4MergerStats({
+              sentencesFinalized: flushResult.matureSentenceCount,
+              cursorUpdates: flushResult.stats?.matureCursorUpdates || 0,
+              utterancesProcessed: flushResult.stats?.utterancesProcessed || 0,
+            });
             // Advance window builder cursor
             windowBuilder.advanceMatureCursorByTime(flushResult.matureCursorTime);
           }
@@ -434,6 +440,7 @@ const App: Component = () => {
       appStore.setImmatureText(result.immatureText);
       appStore.setTranscript(result.fullText);
       appStore.setPendingText(result.immatureText);
+      appStore.appendV4SentenceEntries(result.matureSentences);
       appStore.setInferenceLatency(inferenceMs);
 
       // Update RTF
@@ -877,16 +884,18 @@ const App: Component = () => {
       />
 
       <div class="flex-1 flex overflow-hidden relative">
-        <main class="flex-1 overflow-y-auto custom-scrollbar px-6 flex flex-col items-center">
-          <div class="max-w-3xl w-full py-12 lg:py-20">
+        <main class="flex-1 overflow-y-auto custom-scrollbar px-4 sm:px-6 lg:px-10 xl:px-14 2xl:px-20 flex flex-col items-center">
+          <div class="w-full max-w-[1680px] py-8 md:py-10 lg:py-12">
             <TranscriptionDisplay
               confirmedText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.matureText() : appStore.transcript()}
               pendingText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.immatureText() : appStore.pendingText()}
+              sentenceEntries={appStore.v4SentenceEntries()}
+              isV4Mode={appStore.transcriptionMode() === 'v4-utterance'}
               isRecording={isRecording()}
               lcsLength={appStore.mergeInfo().lcsLength}
               anchorValid={appStore.mergeInfo().anchorValid}
               showConfidence={appStore.transcriptionMode() === 'v3-streaming'}
-              class="min-h-[40vh]"
+              class="min-h-[56vh]"
             />
           </div>
         </main>

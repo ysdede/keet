@@ -163,7 +163,7 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
                 <span class="text-sm text-[var(--color-earthy-dark-brown)] tabular-nums shrink-0">{formatInterval(appStore.v4InferenceIntervalMs())}</span>
               </div>
               <input
-                type="range" min="320" max="8000" step="80"
+                type="range" min="160" max="8000" step="80"
                 value={appStore.v4InferenceIntervalMs()}
                 onInput={(e) => appStore.setV4InferenceIntervalMs(parseInt(e.currentTarget.value))}
                 class="debug-slider w-full h-2 rounded-full appearance-none cursor-pointer bg-[var(--color-earthy-sage)]/30"
