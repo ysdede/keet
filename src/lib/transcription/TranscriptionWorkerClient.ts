@@ -11,6 +11,15 @@ import { ModelState, ModelProgress, TranscriptionResult } from './types';
 import { TokenStreamResult, TokenStreamConfig } from './TokenStreamTranscriber';
 import type { MergerResult, UtteranceBasedMergerConfig } from './UtteranceBasedMerger';
 
+/** Finalized sentence emitted by the v4 merger for UI/log rendering */
+export interface V4SentenceEntry {
+    id: string;
+    text: string;
+    startTime: number;
+    endTime: number;
+    emittedAt: number;
+}
+
 /** Result from v4 utterance-based processing */
 export interface V4ProcessResult {
     matureText: string;
@@ -22,6 +31,7 @@ export interface V4ProcessResult {
     matureSentenceCount: number;
     pendingSentence: string | null;
     stats: any;
+    matureSentences: V4SentenceEntry[];
 }
 
 /** Incremental cache parameters for v4 transcription */
