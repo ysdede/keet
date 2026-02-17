@@ -35,7 +35,11 @@ if (!parakeetVersion) {
   parakeetSource = localVersion ? 'local (fallback)' : 'unknown';
 }
 
-const onnxVersion = keetPkg?.dependencies?.['onnxruntime-web'] || 'unknown';
+const onnxVersion =
+  keetPkg?.dependencies?.['onnxruntime-web'] ||
+  localParakeetPkg?.dependencies?.['onnxruntime-web'] ||
+  npmParakeetPkg?.dependencies?.['onnxruntime-web'] ||
+  'unknown';
 
 if (useLocalParakeet) {
   if (localParakeetExists) {
@@ -55,15 +59,15 @@ if (useLocalParakeet) {
 // Optional HTTPS setup
 let httpsConfig = false;
 try {
-  const keyPath = path.resolve('./localhost-key.pem');
-  const certPath = path.resolve('./localhost.pem');
+  const keyPath = path.resolve('./key.pem');
+  const certPath = path.resolve('./cert.pem');
 
   if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     httpsConfig = {
       key: fs.readFileSync(keyPath),
       cert: fs.readFileSync(certPath),
     };
-    console.log('✅ HTTPS enabled with local certificates');
+    console.log('HTTPS enabled with local certificates.');
   }
 } catch (err) {
   httpsConfig = false;
