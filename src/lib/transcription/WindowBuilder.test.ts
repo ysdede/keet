@@ -31,6 +31,25 @@ function createMockRingBuffer(
     };
 }
 
+function createMutableMockRingBuffer(
+    baseFrame: number,
+    currentFrameRef: { value: number },
+    sampleRate: number = 16000
+): IRingBuffer {
+    return {
+        sampleRate,
+        maxFrames: 16000 * 120,
+        write: () => {},
+        read: () => new Float32Array(0),
+        getCurrentFrame: () => currentFrameRef.value,
+        getFillCount: () => Math.max(0, currentFrameRef.value - baseFrame),
+        getSize: () => 16000 * 120,
+        getCurrentTime: () => currentFrameRef.value / sampleRate,
+        getBaseFrameOffset: () => baseFrame,
+        reset: () => {},
+    };
+}
+
 describe('WindowBuilder', () => {
     const sampleRate = 16000;
 
@@ -61,19 +80,6 @@ describe('WindowBuilder', () => {
             expect(win!.durationSeconds).toBeGreaterThanOrEqual(1.5);
         });
 
-        it('should clamp stale start hint to ring base', () => {
-            const ring = createMockRingBuffer(sampleRate * 10, sampleRate * 14);
-            const builder = new WindowBuilder(ring, null, {
-                sampleRate,
-                minDurationSec: 3,
-                maxDurationSec: 30,
-                minInitialDurationSec: 1.0,
-            });
-
-            const win = builder.buildWindow(sampleRate * 4);
-            expect(win).not.toBeNull();
-            expect(win!.startFrame).toBe(sampleRate * 10);
-        });
     });
 
     describe('mature cursor and sentence bookkeeping', () => {
@@ -123,6 +129,29 @@ describe('WindowBuilder', () => {
             const win = builder.buildWindow();
             expect(win).not.toBeNull();
             expect(win!.durationSeconds).toBeGreaterThanOrEqual(3);
+        });
+
+        it('should keep window start anchored to mature cursor while head grows', () => {
+            const frameRef = { value: sampleRate * 10 };
+            const ring = createMutableMockRingBuffer(0, frameRef);
+            const builder = new WindowBuilder(ring, null, {
+                sampleRate,
+                minDurationSec: 3,
+                maxDurationSec: 30,
+            });
+            builder.markSentenceEnd(sampleRate * 2);
+            builder.advanceMatureCursor(sampleRate * 2);
+
+            const first = builder.buildWindow();
+            expect(first).not.toBeNull();
+            expect(first!.startFrame).toBe(sampleRate * 2);
+            expect(first!.endFrame).toBe(sampleRate * 10);
+
+            frameRef.value = sampleRate * 12;
+            const second = builder.buildWindow();
+            expect(second).not.toBeNull();
+            expect(second!.startFrame).toBe(sampleRate * 2);
+            expect(second!.endFrame).toBe(sampleRate * 12);
         });
     });
 

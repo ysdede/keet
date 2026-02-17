@@ -35,7 +35,6 @@ let v4AudioChunkUnsubscribe: (() => void) | null = null;
 let v4MelChunkUnsubscribe: (() => void) | null = null;
 let v4InferenceBusy = false;
 let v4LastInferenceTime = 0;
-let v4LastInferenceEndSample = 0;
 // Global sample counter for audio chunks (tracks total samples written to BufferWorker)
 let v4GlobalSampleOffset = 0;
 // Throttle UI updates from TEN-VAD to at most once per frame
@@ -387,11 +386,9 @@ const App: Component = () => {
       return;
     }
 
-    // Build window from cursor to current position, using last inference end
-    // as a lower bound to avoid stale window growth when cursor lags.
-    const ringBaseForHint = audioEngine.getRingBuffer().getBaseFrameOffset();
-    const startHintFrame = Math.max(v4LastInferenceEndSample, ringBaseForHint);
-    const window = windowBuilder.buildWindow(startHintFrame);
+    // Build window from mature cursor to current position.
+    // Keep overlap semantics stable for streaming sentence formation.
+    const window = windowBuilder.buildWindow();
     if (!window) {
       if (shouldLogV4Tick(v4TickCount)) {
         const rb = audioEngine.getRingBuffer();
@@ -432,7 +429,12 @@ const App: Component = () => {
 
       // Calculate incremental cache parameters
       const cursorFrame = windowBuilder.getMatureCursorFrame();
-      const prefixSeconds = cursorFrame > 0 ? (window.startFrame - cursorFrame) / 16000 : 0;
+      const rawPrefixSeconds = cursorFrame > 0 ? (window.startFrame - cursorFrame) / 16000 : 0;
+      // Guard decoder cache reuse: prefix must exist in the current window.
+      const prefixSeconds =
+        rawPrefixSeconds > 0 && rawPrefixSeconds < window.durationSeconds
+          ? rawPrefixSeconds
+          : 0;
 
       const result: V4ProcessResult = await workerClient.processV4ChunkWithFeatures({
         features: features.features,
@@ -448,8 +450,6 @@ const App: Component = () => {
       });
 
       const inferenceMs = performance.now() - inferenceStart;
-      v4LastInferenceEndSample = Math.max(v4LastInferenceEndSample, window.endFrame);
-
       // Update UI state
       appStore.setMatureText(result.matureText);
       appStore.setImmatureText(result.immatureText);
@@ -524,7 +524,6 @@ const App: Component = () => {
     windowBuilder = null;
     v4InferenceBusy = false;
     v4LastInferenceTime = 0;
-    v4LastInferenceEndSample = 0;
     v4GlobalSampleOffset = 0;
   };
 
@@ -650,7 +649,6 @@ const App: Component = () => {
 
           // Reset global sample counter
           v4GlobalSampleOffset = 0;
-          v4LastInferenceEndSample = 0;
 
           // Feed audio chunks to mel worker from the main v4 audio handler below
           v4MelChunkUnsubscribe = null;
@@ -808,7 +806,7 @@ const App: Component = () => {
             {
               sampleRate: 16000,
               minDurationSec: 3.0,
-              maxDurationSec: 12.0,
+              maxDurationSec: 30.0,
               minInitialDurationSec: 1.5,
               useVadBoundaries: false, // VAD boundaries now managed by BufferWorker
               vadSilenceThreshold: 0.3,
