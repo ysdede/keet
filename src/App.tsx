@@ -35,6 +35,7 @@ let v4AudioChunkUnsubscribe: (() => void) | null = null;
 let v4MelChunkUnsubscribe: (() => void) | null = null;
 let v4InferenceBusy = false;
 let v4LastInferenceTime = 0;
+let v4LastInferenceEndSample = 0;
 // Global sample counter for audio chunks (tracks total samples written to BufferWorker)
 let v4GlobalSampleOffset = 0;
 // Throttle UI updates from TEN-VAD to at most once per frame
@@ -48,6 +49,10 @@ let pendingVadState: {
   sileroProbability?: number;
 } | null = null;
 let vadUpdateScheduled = false;
+const V4_TRACE_LOGS = false;
+
+const shouldLogV4Tick = (tick: number, every = 20): boolean =>
+  V4_TRACE_LOGS && (appStore.showDebugPanel() || tick <= 5 || tick % every === 0);
 
 const scheduleSileroUpdate = (prob: number) => {
   pendingSileroProb = prob;
@@ -284,14 +289,18 @@ const App: Component = () => {
     // Skip inference if model is not ready (but still allow audio/mel/VAD to process)
     if (appStore.modelState() !== 'ready') {
       if (!v4ModelNotReadyLogged) {
-        console.log('[v4Tick] Model not ready yet - audio is being captured and preprocessed');
+        if (V4_TRACE_LOGS) {
+          console.log('[v4Tick] Model not ready yet - audio is being captured and preprocessed');
+        }
         v4ModelNotReadyLogged = true;
       }
       return;
     }
     // Reset the flag once model becomes ready
     if (v4ModelNotReadyLogged) {
-      console.log('[v4Tick] Model is now ready - starting inference');
+      if (V4_TRACE_LOGS) {
+        console.log('[v4Tick] Model is now ready - starting inference');
+      }
       v4ModelNotReadyLogged = false;
       // Initialize the v4 service now that model is ready
       await workerClient.initV4Service({ debug: false });
@@ -326,7 +335,7 @@ const App: Component = () => {
       }
     }
 
-    if (v4TickCount <= 5 || v4TickCount % 20 === 0) {
+    if (shouldLogV4Tick(v4TickCount)) {
       const vadState = appStore.vadState();
       const rb = audioEngine.getRingBuffer();
       const rbFrame = rb.getCurrentFrame();
@@ -340,7 +349,7 @@ const App: Component = () => {
     }
 
     // Periodic buffer worker state dump (every 40 ticks)
-    if (v4TickCount % 40 === 0 && bufferClient) {
+    if (shouldLogV4Tick(v4TickCount, 40) && bufferClient) {
       try {
         const state = await bufferClient.getState();
         const layerSummary = Object.entries(state.layers)
@@ -378,10 +387,13 @@ const App: Component = () => {
       return;
     }
 
-    // Build window from cursor to current position
-    const window = windowBuilder.buildWindow();
+    // Build window from cursor to current position, using last inference end
+    // as a lower bound to avoid stale window growth when cursor lags.
+    const ringBaseForHint = audioEngine.getRingBuffer().getBaseFrameOffset();
+    const startHintFrame = Math.max(v4LastInferenceEndSample, ringBaseForHint);
+    const window = windowBuilder.buildWindow(startHintFrame);
     if (!window) {
-      if (v4TickCount <= 10 || v4TickCount % 20 === 0) {
+      if (shouldLogV4Tick(v4TickCount)) {
         const rb = audioEngine.getRingBuffer();
         const rbHead = rb.getCurrentFrame();
         const rbBase = rb.getBaseFrameOffset();
@@ -394,7 +406,9 @@ const App: Component = () => {
       return;
     }
 
-    console.log(`[v4Tick #${v4TickCount}] Window [${window.startFrame}:${window.endFrame}] ${window.durationSeconds.toFixed(2)}s (initial=${window.isInitial})`);
+    if (shouldLogV4Tick(v4TickCount)) {
+      console.log(`[v4Tick #${v4TickCount}] Window [${window.startFrame}:${window.endFrame}] ${window.durationSeconds.toFixed(2)}s (initial=${window.isInitial})`);
+    }
 
     v4InferenceBusy = true;
     v4LastInferenceTime = now;
@@ -434,6 +448,7 @@ const App: Component = () => {
       });
 
       const inferenceMs = performance.now() - inferenceStart;
+      v4LastInferenceEndSample = Math.max(v4LastInferenceEndSample, window.endFrame);
 
       // Update UI state
       appStore.setMatureText(result.matureText);
@@ -509,6 +524,7 @@ const App: Component = () => {
     windowBuilder = null;
     v4InferenceBusy = false;
     v4LastInferenceTime = 0;
+    v4LastInferenceEndSample = 0;
     v4GlobalSampleOffset = 0;
   };
 
@@ -589,8 +605,8 @@ const App: Component = () => {
           const bufferConfig: BufferWorkerConfig = {
             sampleRate: 16000,
             layers: {
-              audio: { hopSamples: 1, entryDimension: 1, maxDurationSec: 120 },
-              mel: { hopSamples: 160, entryDimension: 128, maxDurationSec: 120 },
+              audio: { hopSamples: 1, entryDimension: 1, maxDurationSec: 5 },
+              mel: { hopSamples: 160, entryDimension: 128, maxDurationSec: 5 },
               energyVad: { hopSamples: 1280, entryDimension: 1, maxDurationSec: 120 },
               inferenceVad: { hopSamples: 256, entryDimension: 1, maxDurationSec: 120 },
             },
@@ -634,6 +650,7 @@ const App: Component = () => {
 
           // Reset global sample counter
           v4GlobalSampleOffset = 0;
+          v4LastInferenceEndSample = 0;
 
           // Feed audio chunks to mel worker from the main v4 audio handler below
           v4MelChunkUnsubscribe = null;
@@ -791,11 +808,11 @@ const App: Component = () => {
             {
               sampleRate: 16000,
               minDurationSec: 3.0,
-              maxDurationSec: 30.0,
+              maxDurationSec: 12.0,
               minInitialDurationSec: 1.5,
               useVadBoundaries: false, // VAD boundaries now managed by BufferWorker
               vadSilenceThreshold: 0.3,
-              debug: true, // Enable debug logging for diagnostics
+              debug: false,
             }
           );
         }
