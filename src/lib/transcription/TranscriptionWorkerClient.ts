@@ -91,11 +91,11 @@ export class TranscriptionWorkerClient {
         }
     }
 
-    private sendRequest(type: string, payload?: any): Promise<any> {
+    private sendRequest(type: string, payload?: any, transfer: Transferable[] = []): Promise<any> {
         const id = this.messageId++;
         return new Promise((resolve, reject) => {
             this.pendingPromises.set(id, { resolve, reject });
-            this.worker.postMessage({ type, payload, id });
+            this.worker.postMessage({ type, payload, id }, transfer);
         });
     }
 
@@ -121,7 +121,7 @@ export class TranscriptionWorkerClient {
     }
 
     async processV3Chunk(audio: Float32Array, startTime?: number): Promise<TokenStreamResult> {
-        return this.sendRequest('PROCESS_V3_CHUNK', { audio, startTime });
+        return this.sendRequest('PROCESS_V3_CHUNK', { audio, startTime }, [audio.buffer]);
     }
 
     /**
@@ -137,7 +137,7 @@ export class TranscriptionWorkerClient {
     ): Promise<TokenStreamResult> {
         return this.sendRequest('PROCESS_V3_CHUNK_WITH_FEATURES', {
             features, T, melBins, startTime, overlapSeconds,
-        });
+        }, [features.buffer]);
     }
 
     async transcribeSegment(audio: Float32Array): Promise<TranscriptionResult> {
@@ -174,7 +174,7 @@ export class TranscriptionWorkerClient {
         segmentId?: string;
         incrementalCache?: V4IncrementalCache;
     }): Promise<V4ProcessResult> {
-        return this.sendRequest('PROCESS_V4_CHUNK_WITH_FEATURES', params);
+        return this.sendRequest('PROCESS_V4_CHUNK_WITH_FEATURES', params, [params.features.buffer]);
     }
 
     /**

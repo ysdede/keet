@@ -506,11 +506,6 @@ export class AudioEngine implements IAudioEngine {
             ? resampleLinear(rawChunk, sampleRate, this.targetSampleRate)
             : rawChunk;
 
-        // 0.5. Notify audio chunk subscribers (e.g., mel worker)
-        for (const cb of this.audioChunkCallbacks) {
-            cb(chunk);
-        }
-
         // Calculate chunk energy (Peak Amplitude) + SMA for VAD compatibility
         let maxAbs = (!needsResample && precomputedMaxAbs !== undefined) ? precomputedMaxAbs : 0;
         if (precomputedMaxAbs === undefined || needsResample) {
@@ -549,6 +544,12 @@ export class AudioEngine implements IAudioEngine {
 
         // 2.5 Update visualization buffer
         this.updateVisualizationBuffer(chunk);
+
+        // 2.55. Notify audio chunk subscribers (e.g., mel worker)
+        // MOVED to after internal processing so subscribers can safely transfer the buffer (zero-copy)
+        for (const cb of this.audioChunkCallbacks) {
+            cb(chunk);
+        }
 
         // 2.6 Update metrics
         const stats = this.audioProcessor.getStats();
