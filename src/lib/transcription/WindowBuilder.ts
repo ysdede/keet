@@ -159,15 +159,19 @@ export class WindowBuilder {
      * The caller should use the returned startFrame/endFrame to extract audio
      * from the ring buffer and request mel features from the mel worker.
      */
-    buildWindow(): TranscriptionWindow | null {
+    buildWindow(startHintFrame?: number): TranscriptionWindow | null {
         const endFrame = this.ringBuffer.getCurrentFrame();
         const baseFrame = this.ringBuffer.getBaseFrameOffset();
+        const clampedStartHint = startHintFrame !== undefined
+            ? Math.min(endFrame, Math.max(baseFrame, Math.floor(startHintFrame)))
+            : undefined;
 
         if (endFrame === baseFrame) {
             return null; // no data
         }
 
-        const availableFrames = endFrame - baseFrame;
+        const initialStartFrame = clampedStartHint ?? baseFrame;
+        const availableFrames = endFrame - initialStartFrame;
 
         // ---- Initial mode (before first sentence) ----
         if (!this.firstSentenceReceived) {
@@ -185,19 +189,19 @@ export class WindowBuilder {
                 return null;
             }
 
-            // Start from base, up to max duration
+            // Start from base (or hint), up to max duration
             const maxFrames = Math.round(this.config.maxDurationSec * this.config.sampleRate);
-            const clippedEnd = Math.min(endFrame, baseFrame + maxFrames);
-            const duration = (clippedEnd - baseFrame) / this.config.sampleRate;
+            const clippedEnd = Math.min(endFrame, initialStartFrame + maxFrames);
+            const duration = (clippedEnd - initialStartFrame) / this.config.sampleRate;
 
             if (this.config.debug) {
                 console.log(
-                    `[WindowBuilder] Initial window [${baseFrame}:${clippedEnd}] (${duration.toFixed(2)}s)`
+                    `[WindowBuilder] Initial window [${initialStartFrame}:${clippedEnd}] (${duration.toFixed(2)}s)`
                 );
             }
 
             return {
-                startFrame: baseFrame,
+                startFrame: initialStartFrame,
                 endFrame: clippedEnd,
                 durationSeconds: duration,
                 isInitial: true,
@@ -216,6 +220,15 @@ export class WindowBuilder {
             startFrame = this.sentenceEnds[0];
         } else {
             startFrame = baseFrame;
+        }
+
+        if (clampedStartHint !== undefined && startFrame < clampedStartHint) {
+            if (this.config.debug) {
+                console.log(
+                    `[WindowBuilder] Applying start hint: ${startFrame} -> ${clampedStartHint}`
+                );
+            }
+            startFrame = clampedStartHint;
         }
 
         // Ensure start frame is within valid buffer range

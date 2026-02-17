@@ -80,7 +80,9 @@ export class AudioEngine implements IAudioEngine {
     // Subscribers for visualization updates
     private visualizationCallbacks: Array<(data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void> = [];
     private lastVisualizationNotifyTime: number = 0;
-    private readonly VISUALIZATION_NOTIFY_INTERVAL_MS = 16; // ~60fps for responsive oscilloscope
+    private readonly VISUALIZATION_NOTIFY_INTERVAL_MS = 33; // ~30fps in foreground
+    private readonly VISUALIZATION_NOTIFY_HIDDEN_INTERVAL_MS = 250; // Lower cadence for hidden tab
+    private readonly HOT_PATH_DEBUG_LOGS = false;
 
     // Recent segments for visualization (stores timing info only)
     private recentSegments: Array<{ startTime: number; endTime: number; isProcessed: boolean }> = [];
@@ -565,7 +567,7 @@ export class AudioEngine implements IAudioEngine {
         // Log when energy crosses threshold if state is close to changing
         const isSpeech = energy > this.config.energyThreshold;
         const wasSpeaking = this.metrics.isSpeaking;
-        if (isSpeech !== wasSpeaking) {
+        if (this.HOT_PATH_DEBUG_LOGS && isSpeech !== wasSpeaking) {
             console.debug(`[AudioEngine] Energy threshold crossed: ${energy.toFixed(6)} > ${this.config.energyThreshold} = ${isSpeech}`);
         }
 
@@ -594,7 +596,7 @@ export class AudioEngine implements IAudioEngine {
         this.metrics.isSpeaking = stateInfo.inSpeech;
 
         // Periodic debug log
-        if (Math.random() < 0.05) {
+        if (this.HOT_PATH_DEBUG_LOGS && Math.random() < 0.05) {
             console.debug(`[AudioEngine] Metrics: E=${energy.toFixed(6)}, NF=${this.metrics.noiseFloor.toFixed(6)}, SNR=${this.metrics.currentSNR.toFixed(2)}, Speaking=${this.metrics.isSpeaking}`);
         }
 
@@ -656,7 +658,7 @@ export class AudioEngine implements IAudioEngine {
                             timestamp: Date.now(),
                         };
                         this.notifySegment(audioSegment);
-                    } else {
+                    } else if (this.HOT_PATH_DEBUG_LOGS) {
                         console.log('[AudioEngine] Filtered out noise segment:', {
                             duration: metrics.duration,
                             power: normalizedPowerAt16k,
@@ -998,11 +1000,15 @@ export class AudioEngine implements IAudioEngine {
 
     /**
      * Notify visualization subscribers with updated data.
-     * Throttled to ~30fps to avoid UI stuttering.
+     * Throttled in foreground/background to reduce unnecessary UI churn.
      */
     private notifyVisualizationUpdate(): void {
         const now = performance.now();
-        if (now - this.lastVisualizationNotifyTime < this.VISUALIZATION_NOTIFY_INTERVAL_MS) {
+        const minInterval =
+            (typeof document !== 'undefined' && document.visibilityState !== 'visible')
+                ? this.VISUALIZATION_NOTIFY_HIDDEN_INTERVAL_MS
+                : this.VISUALIZATION_NOTIFY_INTERVAL_MS;
+        if (now - this.lastVisualizationNotifyTime < minInterval) {
             return;
         }
         this.lastVisualizationNotifyTime = now;
