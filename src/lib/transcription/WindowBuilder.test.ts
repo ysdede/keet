@@ -60,6 +60,20 @@ describe('WindowBuilder', () => {
             expect(win!.startFrame).toBe(0);
             expect(win!.durationSeconds).toBeGreaterThanOrEqual(1.5);
         });
+
+        it('should clamp stale start hint to ring base', () => {
+            const ring = createMockRingBuffer(sampleRate * 10, sampleRate * 14);
+            const builder = new WindowBuilder(ring, null, {
+                sampleRate,
+                minDurationSec: 3,
+                maxDurationSec: 30,
+                minInitialDurationSec: 1.0,
+            });
+
+            const win = builder.buildWindow(sampleRate * 4);
+            expect(win).not.toBeNull();
+            expect(win!.startFrame).toBe(sampleRate * 10);
+        });
     });
 
     describe('mature cursor and sentence bookkeeping', () => {
