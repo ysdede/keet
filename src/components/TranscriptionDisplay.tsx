@@ -13,17 +13,18 @@ export interface TranscriptionDisplayProps {
 
 export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props) => {
     let containerRef: HTMLDivElement | undefined;
-    let scrollScheduled = false;
+    let scrollTimeout: number | undefined;
 
     const scrollToBottom = () => {
-        if (scrollScheduled) return;
-        scrollScheduled = true;
-        requestAnimationFrame(() => {
-            scrollScheduled = false;
-            if (containerRef) {
-                containerRef.scrollTop = containerRef.scrollHeight;
-            }
-        });
+        if (scrollTimeout) clearTimeout(scrollTimeout);
+        scrollTimeout = window.setTimeout(() => {
+            requestAnimationFrame(() => {
+                if (containerRef) {
+                    containerRef.scrollTop = containerRef.scrollHeight;
+                }
+            });
+            scrollTimeout = undefined;
+        }, 50);
     };
 
     const hasContent = createMemo(() =>
@@ -35,12 +36,14 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
     onMount(() => {
         if (containerRef) {
             observer = new MutationObserver(scrollToBottom);
-            observer.observe(containerRef, { childList: true, subtree: true });
+            // Explicitly disable characterData observation to reduce callback frequency
+            observer.observe(containerRef, { childList: true, subtree: true, characterData: false });
         }
     });
 
     onCleanup(() => {
         observer?.disconnect();
+        if (scrollTimeout) clearTimeout(scrollTimeout);
     });
 
     return (
