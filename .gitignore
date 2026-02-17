@@ -1,7 +1,5 @@
 # Dependencies
-bower_components/
 node_modules/
-package-lock.json
 
 # Build and Distribution
 build/
@@ -15,7 +13,6 @@ dist-ssr/
 .env
 .env.local
 .env.*.local
-*.local
 *.pem
 
 # Logs
@@ -58,7 +55,8 @@ metrics/*.json
 # Misc
 .grunt/
 *.wim
-docs/
 legacy/
 public/models/
 performance-trace.json.gz
+conductor/
+*.gz
