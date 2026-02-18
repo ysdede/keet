@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { Component, Show, For, batch, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { appStore } from './stores/appStore';
 import { CompactWaveform, ModelLoadingOverlay, DebugPanel, TranscriptionDisplay, SettingsContent } from './components';
 import { getModelDisplayName, MODELS } from './components/ModelLoadingOverlay';
@@ -360,15 +360,17 @@ const App: Component = () => {
         try {
           const flushResult = await workerClient.v4FinalizeTimeout();
           if (flushResult) {
-            appStore.setMatureText(flushResult.matureText);
-            appStore.setImmatureText(flushResult.immatureText);
-            appStore.setMatureCursorTime(flushResult.matureCursorTime);
-            appStore.setTranscript(flushResult.fullText);
-            appStore.appendV4SentenceEntries(flushResult.matureSentences);
-            appStore.setV4MergerStats({
-              sentencesFinalized: flushResult.matureSentenceCount,
-              cursorUpdates: flushResult.stats?.matureCursorUpdates || 0,
-              utterancesProcessed: flushResult.stats?.utterancesProcessed || 0,
+            batch(() => {
+              appStore.setMatureText(flushResult.matureText);
+              appStore.setImmatureText(flushResult.immatureText);
+              appStore.setMatureCursorTime(flushResult.matureCursorTime);
+              appStore.setTranscript(flushResult.fullText);
+              appStore.appendV4SentenceEntries(flushResult.matureSentences);
+              appStore.setV4MergerStats({
+                sentencesFinalized: flushResult.matureSentenceCount,
+                cursorUpdates: flushResult.stats?.matureCursorUpdates || 0,
+                utterancesProcessed: flushResult.stats?.utterancesProcessed || 0,
+              });
             });
             // Advance window builder cursor
             windowBuilder.advanceMatureCursorByTime(flushResult.matureCursorTime);
@@ -444,45 +446,46 @@ const App: Component = () => {
       });
 
       const inferenceMs = performance.now() - inferenceStart;
-      // Update UI state
-      appStore.setMatureText(result.matureText);
-      appStore.setImmatureText(result.immatureText);
-      appStore.setTranscript(result.fullText);
-      appStore.setPendingText(result.immatureText);
-      appStore.appendV4SentenceEntries(result.matureSentences);
-      appStore.setInferenceLatency(inferenceMs);
-
-      // Update RTF
       const audioDurationMs = window.durationSeconds * 1000;
-      appStore.setRtf(inferenceMs / audioDurationMs);
+      const shouldAdvanceCursor = result.matureCursorTime > windowBuilder.getMatureCursorTime();
+      const ring = audioEngine.getRingBuffer();
+      batch(() => {
+        // Update UI state
+        appStore.setMatureText(result.matureText);
+        appStore.setImmatureText(result.immatureText);
+        appStore.setTranscript(result.fullText);
+        appStore.setPendingText(result.immatureText);
+        appStore.appendV4SentenceEntries(result.matureSentences);
+        appStore.setInferenceLatency(inferenceMs);
+        appStore.setRtf(inferenceMs / audioDurationMs);
+
+        if (shouldAdvanceCursor) {
+          appStore.setMatureCursorTime(result.matureCursorTime);
+        }
+
+        appStore.setV4MergerStats({
+          sentencesFinalized: result.matureSentenceCount,
+          cursorUpdates: result.stats?.matureCursorUpdates || 0,
+          utterancesProcessed: result.stats?.utterancesProcessed || 0,
+        });
+
+        appStore.setBufferMetrics({
+          fillRatio: ring.getFillCount() / ring.getSize(),
+          latencyMs: (ring.getFillCount() / 16000) * 1000,
+        });
+
+        if (result.metrics) {
+          appStore.setSystemMetrics({
+            throughput: 0,
+            modelConfidence: 0,
+          });
+        }
+      });
 
       // Advance cursor if merger advanced it
-      if (result.matureCursorTime > windowBuilder.getMatureCursorTime()) {
-        appStore.setMatureCursorTime(result.matureCursorTime);
+      if (shouldAdvanceCursor) {
         windowBuilder.advanceMatureCursorByTime(result.matureCursorTime);
         windowBuilder.markSentenceEnd(Math.round(result.matureCursorTime * 16000));
-      }
-
-      // Update stats
-      appStore.setV4MergerStats({
-        sentencesFinalized: result.matureSentenceCount,
-        cursorUpdates: result.stats?.matureCursorUpdates || 0,
-        utterancesProcessed: result.stats?.utterancesProcessed || 0,
-      });
-
-      // Update buffer metrics
-      const ring = audioEngine.getRingBuffer();
-      appStore.setBufferMetrics({
-        fillRatio: ring.getFillCount() / ring.getSize(),
-        latencyMs: (ring.getFillCount() / 16000) * 1000,
-      });
-
-      // Update metrics
-      if (result.metrics) {
-        appStore.setSystemMetrics({
-          throughput: 0,
-          modelConfidence: 0,
-        });
       }
     } catch (err: any) {
       console.error('[v4Tick] Inference error:', err);
