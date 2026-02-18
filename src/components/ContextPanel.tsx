@@ -3,13 +3,19 @@ import { appStore } from '../stores/appStore';
 import { getModelDisplayName, MODELS } from './ModelLoadingOverlay';
 
 interface ContextPanelProps {
+  /** Controls dialog visibility. */
   isOpen: boolean;
+  /** Closes the dialog and restores focus to the main UI flow. */
   onClose: () => void;
+  /** Starts model loading for the selected ASR model. */
   onLoadModel: () => void;
+  /** Opens the developer/debug panel. */
   onOpenDebug: () => void;
+  /** Called when the selected input device changes. */
   onDeviceSelect?: (id: string) => void;
 }
 
+/** Modal panel for quick access to model, audio input, backend, and debug actions. */
 export const ContextPanel: Component<ContextPanelProps> = (props) => {
   createEffect(() => {
     if (!props.isOpen) return;

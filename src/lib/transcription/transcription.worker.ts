@@ -1,5 +1,5 @@
 /**
- * Keet v4.0 - Transcription Web Worker
+ * Keet v1.1 - Transcription Web Worker
  * 
  * Runs heavy AI inference and text merging in a background thread
  * to prevent UI stuttering on the main thread.
@@ -314,3 +314,4 @@ self.onmessage = async (e: MessageEvent) => {
         postMessage({ type: 'ERROR', payload: err.message, id });
     }
 };
+

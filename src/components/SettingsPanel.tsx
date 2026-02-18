@@ -8,16 +8,23 @@ const formatInterval = (ms: number) => {
   return `${ms}ms`;
 };
 
+/** Visible section preset for the embeddable settings content. */
 export type SettingsPanelSection = 'full' | 'audio' | 'model';
 
 export interface SettingsContentProps {
   /** When 'audio' or 'model', only that section is shown (e.g. hover on mic or load button). */
   section?: SettingsPanelSection;
+  /** Closes the parent surface that hosts this settings content. */
   onClose: () => void;
+  /** Triggers model loading for the selected model ID. */
   onLoadModel: () => void;
+  /** Optional callback to load local model files. */
   onLocalLoad?: (files: FileList) => void;
+  /** Opens the debug/diagnostics panel. */
   onOpenDebug: () => void;
+  /** Called when audio input device selection changes. */
   onDeviceSelect?: (id: string) => void;
+  /** Audio engine used to apply live config updates. */
   audioEngine?: AudioEngine | null;
   /** When true, panel expands upward (bar in lower half); content order is reversed so ASR model stays adjacent to the bar. */
   expandUp?: () => boolean;

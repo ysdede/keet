@@ -7,6 +7,7 @@
 
 // ---- Layer Identifiers ----
 
+/** Logical layer identifiers managed by BufferWorker. */
 export type LayerId = 'audio' | 'mel' | 'energyVad' | 'inferenceVad';
 
 // ---- Layer Configuration ----
@@ -31,6 +32,7 @@ export interface BufferWorkerConfig {
 
 // ---- Messages: Main Thread -> Worker ----
 
+/** Union of request messages accepted by BufferWorker. */
 export type BufferWorkerRequest =
     | { type: 'INIT'; id: number; payload: BufferWorkerConfig }
     | { type: 'WRITE'; id?: number; payload: WritePayload }
@@ -107,6 +109,7 @@ export interface RangeQuery {
 
 // ---- Messages: Worker -> Main Thread ----
 
+/** Union of response messages emitted by BufferWorker. */
 export type BufferWorkerResponse =
     | { type: 'INIT'; id: number; payload: { success: boolean } }
     | { type: 'HAS_SPEECH'; id: number; payload: HasSpeechResult }
@@ -117,21 +120,33 @@ export type BufferWorkerResponse =
     | { type: 'RESET'; id: number; payload: { success: boolean } }
     | { type: 'ERROR'; id: number; payload: string };
 
+/** Result payload for threshold-based speech presence queries. */
 export interface HasSpeechResult {
+    /** Whether any entry in range exceeded threshold. */
     hasSpeech: boolean;
+    /** Maximum probability seen in range. */
     maxProb: number;
+    /** Number of entries scanned. */
     entriesChecked: number;
 }
 
+/** Consolidated result for energy/inference VAD summary query. */
 export interface VadSummaryResult {
+    /** Energy layer result. */
     energy: HasSpeechResult;
+    /** Inference layer result when requested, else null. */
     inference: HasSpeechResult | null;
+    /** Final speech decision using requested semantics. */
     hasSpeech: boolean;
+    /** Trailing silence duration in seconds from energy layer. */
     silenceTailDurationSec: number;
 }
 
+/** Range query response across one or more layers. */
 export interface RangeResult {
+    /** Requested start sample (inclusive). */
     startSample: number;
+    /** Requested end sample (exclusive). */
     endSample: number;
     /** Per-layer data slices, keyed by LayerId */
     layers: Partial<Record<LayerId, LayerSlice>>;
@@ -166,12 +181,14 @@ export interface BufferState {
 
 // ---- TEN-VAD Worker Messages ----
 
+/** Union of request messages accepted by TEN-VAD worker. */
 export type TenVADRequest =
     | { type: 'INIT'; id: number; payload: TenVADConfig }
     | { type: 'PROCESS'; id?: number; payload: { samples: Float32Array; globalSampleOffset: number } }
     | { type: 'RESET'; id: number; payload?: undefined }
     | { type: 'DISPOSE'; id: number; payload?: undefined };
 
+/** Configuration for TEN-VAD worker initialization. */
 export interface TenVADConfig {
     /** TEN-VAD hop size in samples (default: 256 at 16kHz = 16ms) */
     hopSize: number;
@@ -181,6 +198,7 @@ export interface TenVADConfig {
     wasmPath?: string;
 }
 
+/** Union of response messages emitted by TEN-VAD worker. */
 export type TenVADResponse =
     | { type: 'INIT'; id: number; payload: { success: boolean; version?: string } }
     | { type: 'RESULT'; id?: number; payload: TenVADResult }
@@ -188,6 +206,7 @@ export type TenVADResponse =
     | { type: 'DISPOSE'; id: number; payload: { success: boolean } }
     | { type: 'ERROR'; id: number; payload: string };
 
+/** Inference result payload from TEN-VAD worker processing. */
 export interface TenVADResult {
     /** Per-hop probabilities for this chunk */
     probabilities: Float32Array;

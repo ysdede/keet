@@ -59,6 +59,7 @@ export interface SentenceBoundaryDetectorConfig {
     maxRetainedSentences: number;
 }
 
+/** Detects sentence endings from ASR words using NLP with heuristic fallback. */
 export class SentenceBoundaryDetector {
     private config: SentenceBoundaryDetectorConfig;
     private nlp: any | null = null;
