@@ -67,6 +67,9 @@ export class AudioEngine implements IAudioEngine {
     private visualizationBufferPosition: number = 0;
     private visualizationBufferSize: number = 0;
 
+    // Visualization Notify Buffer (reused for notification loop to reduce GC)
+    private visualizationNotifyBuffer: Float32Array | null = null;
+
     // Metrics for UI components
     private metrics: AudioMetrics = {
         currentEnergy: 0,
@@ -848,18 +851,23 @@ export class AudioEngine implements IAudioEngine {
     /**
      * Get visualization data subsampled to fit the target width.
      * Returns min/max pairs for each pixel to preserve peaks in the waveform.
-     * Zero-allocation except for the returned result.
+     *
      * @param targetWidth - The desired number of data points (e.g., canvas width).
+     * @param outBuffer - Optional pre-allocated buffer to write into. Must be length targetWidth * 2.
+     *                    If provided, no new allocation occurs.
      * @returns Float32Array containing alternating min/max values, length targetWidth * 2.
      */
-    getVisualizationData(targetWidth: number): Float32Array {
+    getVisualizationData(targetWidth: number, outBuffer?: Float32Array): Float32Array {
         if (!this.visualizationSummary || !targetWidth || targetWidth <= 0) {
             return new Float32Array(0);
         }
 
         // If targetWidth is close to or less than our summary size, use the summary (MUCH faster)
         if (targetWidth <= this.VIS_SUMMARY_SIZE) {
-            const subsampledBuffer = new Float32Array(targetWidth * 2);
+            const outSize = targetWidth * 2;
+            const subsampledBuffer = (outBuffer && outBuffer.length === outSize)
+                ? outBuffer
+                : new Float32Array(outSize);
             const samplesPerTarget = this.VIS_SUMMARY_SIZE / targetWidth;
 
             for (let i = 0; i < targetWidth; i++) {
@@ -891,16 +899,20 @@ export class AudioEngine implements IAudioEngine {
             return subsampledBuffer;
         }
 
-        return this.getVisualizationDataFromRaw(targetWidth);
+        return this.getVisualizationDataFromRaw(targetWidth, outBuffer);
     }
 
-    private getVisualizationDataFromRaw(targetWidth: number): Float32Array {
+    private getVisualizationDataFromRaw(targetWidth: number, outBuffer?: Float32Array): Float32Array {
         if (!this.visualizationBuffer) return new Float32Array(0);
         const buffer = this.visualizationBuffer;
         const bufferLength = this.visualizationBufferSize;
         const pos = this.visualizationBufferPosition;
         const samplesPerPoint = bufferLength / targetWidth;
-        const subsampledBuffer = new Float32Array(targetWidth * 2);
+
+        const outSize = targetWidth * 2;
+        const subsampledBuffer = (outBuffer && outBuffer.length === outSize)
+            ? outBuffer
+            : new Float32Array(outSize);
 
         // Logical index s maps to physical index:
         // if s < wrapS: pos + s
@@ -1013,7 +1025,14 @@ export class AudioEngine implements IAudioEngine {
         }
         this.lastVisualizationNotifyTime = now;
 
-        const data = this.getVisualizationData(400); // 400 points is enough for modern displays and saves CPU
+        // Ensure reuse buffer is ready (400 points * 2 min/max = 800 floats)
+        const targetWidth = 400;
+        const targetSize = targetWidth * 2;
+        if (!this.visualizationNotifyBuffer || this.visualizationNotifyBuffer.length !== targetSize) {
+            this.visualizationNotifyBuffer = new Float32Array(targetSize);
+        }
+
+        const data = this.getVisualizationData(targetWidth, this.visualizationNotifyBuffer); // 400 points is enough for modern displays and saves CPU
         const bufferEndTime = this.ringBuffer.getCurrentTime();
         this.visualizationCallbacks.forEach((cb) => cb(data, this.getMetrics(), bufferEndTime));
     }
