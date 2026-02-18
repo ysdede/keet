@@ -284,7 +284,7 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                         }`}
                         onClick={() => setActiveTab('merged')}
                     >
-                        <span>Merged</span>
+                        <span>Timeline</span>
                         <span class={`px-1.5 py-0.5 rounded text-[10px] leading-none ${
                             activeTab() === 'merged'
                                 ? 'bg-white/20'
