@@ -1,0 +1,21 @@
+# CodeRabbit: docstring coverage and generation style for keet (SolidJS + Vite, TypeScript)
+# See: https://docs.coderabbit.ai/pr-reviews/pre-merge-checks
+#      https://docs.coderabbit.ai/finishing-touches/docstrings
+
+reviews:
+  pre_merge_checks:
+    docstrings:
+      mode: "warning"
+      threshold: 80
+
+code_generation:
+  docstrings:
+    path_instructions:
+      - path: "src/**/*.{ts,tsx}"
+        instructions: |
+          Use JSDoc/TSDoc. Match repo style: @param with units (Hz, s, ms, frames).
+          SolidJS: document Props interface (inline /** */ per prop) and component in one line.
+          Public/exported APIs first; trivial functions one-liner only. No behavior change.
+      - path: "**/*test*"
+        instructions: |
+          Concise; focus on what is tested and expected behavior.
