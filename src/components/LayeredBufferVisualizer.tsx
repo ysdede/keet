@@ -60,6 +60,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     let canvasRef: HTMLCanvasElement | undefined;
     let ctx: CanvasRenderingContext2D | null = null;
     let animationFrameId: number;
+    let disposed = false;
 
     const getWindowDuration = () => props.windowDuration || 8.0;
 
@@ -81,6 +82,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     let cachedDpr = window.devicePixelRatio || 1;
     let resizeObserver: ResizeObserver | null = null;
     let dprMediaQuery: MediaQueryList | null = null;
+    let dprChangeHandler: ((this: MediaQueryList, ev: MediaQueryListEvent) => any) | null = null;
 
     /** Recompute physical canvas dimensions from cached logical size + DPR. */
     const updateCanvasDimensions = (logicalW: number, logicalH: number) => {
@@ -121,6 +123,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     } | null = null;
 
     onMount(() => {
+        disposed = false;
         if (canvasRef) {
             ctx = canvasRef.getContext('2d', { alpha: false });
 
@@ -136,8 +139,12 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
 
             // Watch for DPR changes (browser zoom, display change)
             const setupDprWatch = () => {
+                if (dprMediaQuery && dprChangeHandler) {
+                    dprMediaQuery.removeEventListener('change', dprChangeHandler);
+                }
                 dprMediaQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
                 const onDprChange = () => {
+                    if (disposed) return;
                     if (canvasRef) {
                         const rect = canvasRef.getBoundingClientRect(); // one-time on zoom change only
                         updateCanvasDimensions(rect.width, rect.height);
@@ -145,6 +152,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
                     // Re-register for the next change at the new DPR
                     setupDprWatch();
                 };
+                dprChangeHandler = onDprChange;
                 dprMediaQuery.addEventListener('change', onDprChange, { once: true });
             };
             setupDprWatch();
@@ -162,14 +170,21 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     });
 
     onCleanup(() => {
+        disposed = true;
         cancelAnimationFrame(animationFrameId);
         if (resizeObserver) {
             resizeObserver.disconnect();
             resizeObserver = null;
         }
+        if (dprMediaQuery && dprChangeHandler) {
+            dprMediaQuery.removeEventListener('change', dprChangeHandler);
+        }
+        dprMediaQuery = null;
+        dprChangeHandler = null;
     });
 
     const loop = (now: number = performance.now()) => {
+        if (disposed) return;
         if (!ctx || !canvasRef || !props.audioEngine) {
             animationFrameId = requestAnimationFrame(loop);
             return;
@@ -223,6 +238,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
                 // Request RAW (unnormalized) features for fixed dB scaling.
                 // ASR transcription still uses normalized features (default).
                 props.melClient.getFeatures(fetchStartSample, fetchEndSample, false).then(features => {
+                    if (disposed) return;
                     if (features && specCtx && specCanvas) {
                         // Store with time alignment info
                         cachedSpecData = {

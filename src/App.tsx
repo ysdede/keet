@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { Component, Show, For, batch, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { appStore } from './stores/appStore';
 import { CompactWaveform, ModelLoadingOverlay, DebugPanel, TranscriptionDisplay, SettingsContent } from './components';
 import { getModelDisplayName, MODELS } from './components/ModelLoadingOverlay';
@@ -49,6 +49,29 @@ let pendingVadState: {
 } | null = null;
 let vadUpdateScheduled = false;
 const V4_TRACE_LOGS = false;
+const V4_CACHE_TELEMETRY_LOG_EVERY = 40;
+const v4CacheTelemetry = {
+  enabled: 0,
+  bypassNonPositivePrefix: 0,
+  bypassOutsideWindow: 0,
+};
+
+const trackV4CacheTelemetry = (
+  bucket: keyof typeof v4CacheTelemetry,
+  detail: { rawPrefixSeconds: number; windowDurationSeconds: number }
+) => {
+  v4CacheTelemetry[bucket]++;
+  const total = v4CacheTelemetry.enabled
+    + v4CacheTelemetry.bypassNonPositivePrefix
+    + v4CacheTelemetry.bypassOutsideWindow;
+  if (!V4_TRACE_LOGS || total % V4_CACHE_TELEMETRY_LOG_EVERY !== 0) return;
+  console.log(
+    `[v4CacheTelemetry] total=${total}, enabled=${v4CacheTelemetry.enabled}, ` +
+    `bypass_non_positive=${v4CacheTelemetry.bypassNonPositivePrefix}, ` +
+    `bypass_outside_window=${v4CacheTelemetry.bypassOutsideWindow}, ` +
+    `rawPrefix=${detail.rawPrefixSeconds.toFixed(4)}s, window=${detail.windowDurationSeconds.toFixed(4)}s`
+  );
+};
 
 const shouldLogV4Tick = (tick: number, every = 20): boolean =>
   V4_TRACE_LOGS && (appStore.showDebugPanel() || tick <= 5 || tick % every === 0);
@@ -317,22 +340,15 @@ const App: Component = () => {
     const currentSample = v4GlobalSampleOffset;
     const startSample = cursorSample > 0 ? cursorSample : 0;
 
-    let hasSpeech = false;
-    if (currentSample > startSample) {
-      // Check energy VAD first (always available, low latency)
-      const energyResult = await bufferClient.hasSpeech('energyVad', startSample, currentSample, 0.3);
-
-      // When inference VAD is ready, require BOTH energy AND inference to agree
-      // This prevents false positives from music/noise that has high energy but no speech
-      if (tenVADClient?.isReady()) {
-        const inferenceResult = await bufferClient.hasSpeech('inferenceVad', startSample, currentSample, 0.5);
-        // Require both energy and inference VAD to agree (AND logic)
-        hasSpeech = energyResult.hasSpeech && inferenceResult.hasSpeech;
-      } else {
-        // Fall back to energy-only if inference VAD is not available
-        hasSpeech = energyResult.hasSpeech;
-      }
-    }
+    const requireInference = tenVADClient?.isReady() ?? false;
+    const vadSummary = await bufferClient.getVadSummary({
+      startSample,
+      endSample: currentSample,
+      energyThreshold: 0.3,
+      inferenceThreshold: 0.5,
+      requireInference,
+    });
+    const hasSpeech = vadSummary.hasSpeech;
 
     if (shouldLogV4Tick(v4TickCount)) {
       const vadState = appStore.vadState();
@@ -359,22 +375,25 @@ const App: Component = () => {
     }
 
     if (!hasSpeech) {
-      // Check for silence-based flush using BufferWorker
-      const silenceDuration = await bufferClient.getSilenceTailDuration('energyVad', 0.3);
+      // Check for silence-based flush using BufferWorker summary.
+      // Tail silence is always computed from energyVad for parity.
+      const silenceDuration = vadSummary.silenceTailDurationSec;
       if (silenceDuration >= appStore.v4SilenceFlushSec()) {
         // Flush pending sentence via timeout finalization
         try {
           const flushResult = await workerClient.v4FinalizeTimeout();
           if (flushResult) {
-            appStore.setMatureText(flushResult.matureText);
-            appStore.setImmatureText(flushResult.immatureText);
-            appStore.setMatureCursorTime(flushResult.matureCursorTime);
-            appStore.setTranscript(flushResult.fullText);
-            appStore.appendV4SentenceEntries(flushResult.matureSentences);
-            appStore.setV4MergerStats({
-              sentencesFinalized: flushResult.matureSentenceCount,
-              cursorUpdates: flushResult.stats?.matureCursorUpdates || 0,
-              utterancesProcessed: flushResult.stats?.utterancesProcessed || 0,
+            batch(() => {
+              appStore.setMatureText(flushResult.matureText);
+              appStore.setImmatureText(flushResult.immatureText);
+              appStore.setMatureCursorTime(flushResult.matureCursorTime);
+              appStore.setTranscript(flushResult.fullText);
+              appStore.appendV4SentenceEntries(flushResult.matureSentences);
+              appStore.setV4MergerStats({
+                sentencesFinalized: flushResult.matureSentenceCount,
+                cursorUpdates: flushResult.stats?.matureCursorUpdates || 0,
+                utterancesProcessed: flushResult.stats?.utterancesProcessed || 0,
+              });
             });
             // Advance window builder cursor
             windowBuilder.advanceMatureCursorByTime(flushResult.matureCursorTime);
@@ -431,10 +450,27 @@ const App: Component = () => {
       const cursorFrame = windowBuilder.getMatureCursorFrame();
       const rawPrefixSeconds = cursorFrame > 0 ? (window.startFrame - cursorFrame) / 16000 : 0;
       // Guard decoder cache reuse: prefix must exist in the current window.
-      const prefixSeconds =
-        rawPrefixSeconds > 0 && rawPrefixSeconds < window.durationSeconds
-          ? rawPrefixSeconds
-          : 0;
+      let incrementalCache: { cacheKey: string; prefixSeconds: number } | undefined;
+      if (rawPrefixSeconds <= 0) {
+        trackV4CacheTelemetry('bypassNonPositivePrefix', {
+          rawPrefixSeconds,
+          windowDurationSeconds: window.durationSeconds,
+        });
+      } else if (rawPrefixSeconds >= window.durationSeconds) {
+        trackV4CacheTelemetry('bypassOutsideWindow', {
+          rawPrefixSeconds,
+          windowDurationSeconds: window.durationSeconds,
+        });
+      } else {
+        incrementalCache = {
+          cacheKey: 'v4-stream',
+          prefixSeconds: rawPrefixSeconds,
+        };
+        trackV4CacheTelemetry('enabled', {
+          rawPrefixSeconds,
+          windowDurationSeconds: window.durationSeconds,
+        });
+      }
 
       const result: V4ProcessResult = await workerClient.processV4ChunkWithFeatures({
         features: features.features,
@@ -443,52 +479,50 @@ const App: Component = () => {
         timeOffset,
         endTime: window.endFrame / 16000,
         segmentId: `v4_${Date.now()}`,
-        incrementalCache: prefixSeconds > 0 ? {
-          cacheKey: 'v4-stream',
-          prefixSeconds,
-        } : undefined,
+        incrementalCache,
       });
 
       const inferenceMs = performance.now() - inferenceStart;
-      // Update UI state
-      appStore.setMatureText(result.matureText);
-      appStore.setImmatureText(result.immatureText);
-      appStore.setTranscript(result.fullText);
-      appStore.setPendingText(result.immatureText);
-      appStore.appendV4SentenceEntries(result.matureSentences);
-      appStore.setInferenceLatency(inferenceMs);
-
-      // Update RTF
       const audioDurationMs = window.durationSeconds * 1000;
-      appStore.setRtf(inferenceMs / audioDurationMs);
+      const shouldAdvanceCursor = result.matureCursorTime > windowBuilder.getMatureCursorTime();
+      const ring = audioEngine.getRingBuffer();
+      batch(() => {
+        // Update UI state
+        appStore.setMatureText(result.matureText);
+        appStore.setImmatureText(result.immatureText);
+        appStore.setTranscript(result.fullText);
+        appStore.setPendingText(result.immatureText);
+        appStore.appendV4SentenceEntries(result.matureSentences);
+        appStore.setInferenceLatency(inferenceMs);
+        appStore.setRtf(inferenceMs / audioDurationMs);
+
+        if (shouldAdvanceCursor) {
+          appStore.setMatureCursorTime(result.matureCursorTime);
+        }
+
+        appStore.setV4MergerStats({
+          sentencesFinalized: result.matureSentenceCount,
+          cursorUpdates: result.stats?.matureCursorUpdates || 0,
+          utterancesProcessed: result.stats?.utterancesProcessed || 0,
+        });
+
+        appStore.setBufferMetrics({
+          fillRatio: ring.getFillCount() / ring.getSize(),
+          latencyMs: (ring.getFillCount() / 16000) * 1000,
+        });
+
+        if (result.metrics) {
+          appStore.setSystemMetrics({
+            throughput: 0,
+            modelConfidence: 0,
+          });
+        }
+      });
 
       // Advance cursor if merger advanced it
-      if (result.matureCursorTime > windowBuilder.getMatureCursorTime()) {
-        appStore.setMatureCursorTime(result.matureCursorTime);
+      if (shouldAdvanceCursor) {
         windowBuilder.advanceMatureCursorByTime(result.matureCursorTime);
         windowBuilder.markSentenceEnd(Math.round(result.matureCursorTime * 16000));
-      }
-
-      // Update stats
-      appStore.setV4MergerStats({
-        sentencesFinalized: result.matureSentenceCount,
-        cursorUpdates: result.stats?.matureCursorUpdates || 0,
-        utterancesProcessed: result.stats?.utterancesProcessed || 0,
-      });
-
-      // Update buffer metrics
-      const ring = audioEngine.getRingBuffer();
-      appStore.setBufferMetrics({
-        fillRatio: ring.getFillCount() / ring.getSize(),
-        latencyMs: (ring.getFillCount() / 16000) * 1000,
-      });
-
-      // Update metrics
-      if (result.metrics) {
-        appStore.setSystemMetrics({
-          throughput: 0,
-          modelConfidence: 0,
-        });
       }
     } catch (err: any) {
       console.error('[v4Tick] Inference error:', err);
@@ -525,6 +559,9 @@ const App: Component = () => {
     v4InferenceBusy = false;
     v4LastInferenceTime = 0;
     v4GlobalSampleOffset = 0;
+    v4CacheTelemetry.enabled = 0;
+    v4CacheTelemetry.bypassNonPositivePrefix = 0;
+    v4CacheTelemetry.bypassOutsideWindow = 0;
   };
 
   const toggleRecording = async () => {
