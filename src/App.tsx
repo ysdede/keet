@@ -317,22 +317,15 @@ const App: Component = () => {
     const currentSample = v4GlobalSampleOffset;
     const startSample = cursorSample > 0 ? cursorSample : 0;
 
-    let hasSpeech = false;
-    if (currentSample > startSample) {
-      // Check energy VAD first (always available, low latency)
-      const energyResult = await bufferClient.hasSpeech('energyVad', startSample, currentSample, 0.3);
-
-      // When inference VAD is ready, require BOTH energy AND inference to agree
-      // This prevents false positives from music/noise that has high energy but no speech
-      if (tenVADClient?.isReady()) {
-        const inferenceResult = await bufferClient.hasSpeech('inferenceVad', startSample, currentSample, 0.5);
-        // Require both energy and inference VAD to agree (AND logic)
-        hasSpeech = energyResult.hasSpeech && inferenceResult.hasSpeech;
-      } else {
-        // Fall back to energy-only if inference VAD is not available
-        hasSpeech = energyResult.hasSpeech;
-      }
-    }
+    const requireInference = tenVADClient?.isReady() ?? false;
+    const vadSummary = await bufferClient.getVadSummary({
+      startSample,
+      endSample: currentSample,
+      energyThreshold: 0.3,
+      inferenceThreshold: 0.5,
+      requireInference,
+    });
+    const hasSpeech = vadSummary.hasSpeech;
 
     if (shouldLogV4Tick(v4TickCount)) {
       const vadState = appStore.vadState();
@@ -359,8 +352,9 @@ const App: Component = () => {
     }
 
     if (!hasSpeech) {
-      // Check for silence-based flush using BufferWorker
-      const silenceDuration = await bufferClient.getSilenceTailDuration('energyVad', 0.3);
+      // Check for silence-based flush using BufferWorker summary.
+      // Tail silence is always computed from energyVad for parity.
+      const silenceDuration = vadSummary.silenceTailDurationSec;
       if (silenceDuration >= appStore.v4SilenceFlushSec()) {
         // Flush pending sentence via timeout finalization
         try {
