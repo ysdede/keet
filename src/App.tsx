@@ -124,6 +124,7 @@ const scheduleVadStateUpdate = (next: {
 const Header: Component<{
   onToggleDebug: () => void;
 }> = (props) => {
+  const appVersion = `v${__KEET_VERSION__}`;
   const sessionLabel = () =>
     appStore.modelState() === 'ready' ? getModelDisplayName(appStore.selectedModelId()) : 'Session';
   return (
@@ -134,7 +135,10 @@ const Header: Component<{
             <span class="material-symbols-outlined text-xl">auto_awesome</span>
           </div>
           <div>
-            <h1 class="text-lg font-semibold tracking-tight text-[var(--color-earthy-dark-brown)]">keet</h1>
+            <div class="flex items-baseline gap-1.5">
+              <h1 class="text-lg font-semibold tracking-tight text-[var(--color-earthy-dark-brown)]">keet</h1>
+              <span class="text-[9px] uppercase tracking-[0.14em] text-[var(--color-earthy-soft-brown)]/80 font-medium">{appVersion}</span>
+            </div>
             <p class="text-[10px] uppercase tracking-[0.2em] text-[var(--color-earthy-soft-brown)] font-medium">{sessionLabel()}</p>
           </div>
         </div>
