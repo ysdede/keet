@@ -37,7 +37,7 @@ export const MODELS = [
  * @returns Display name if known, otherwise the raw ID.
  */
 export function getModelDisplayName(id: string): string {
-    return (MODELS.find((m) => m.id === id)?.name ?? id) || 'Unknown model';
+    return MODELS.find((m) => m.id === id)?.name ?? id;
 }
 
 /** Modal flow for selecting, downloading, and initializing ASR models. */
