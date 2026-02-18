@@ -12,11 +12,11 @@
 /** Audio capture and chunking configuration. */
 export interface AudioConfig {
   /** Input sample rate in Hz (typically 16000). */
-  sampleRate: number;      // 16000 Hz
+  sampleRate: number;
   /** Number of channels (mono = 1). */
-  channels: number;        // 1 (mono)
+  channels: number;
   /** Chunk size in samples (frame-aligned to VAD/transcription windows). */
-  chunkSize: number;       // Frame-aligned (40/80/120ms)
+  chunkSize: number;
 }
 
 /** A captured PCM audio chunk with timing metadata. */
@@ -24,9 +24,9 @@ export interface AudioChunk {
   /** Mono PCM samples. */
   samples: Float32Array;
   /** Absolute capture timestamp in ms. */
-  timestamp: number;       // Absolute time in ms
+  timestamp: number;
   /** Chunk duration in ms. */
-  duration: number;        // Duration in ms
+  duration: number;
 }
 
 // ============================================
@@ -38,7 +38,7 @@ export interface VADResult {
   /** Whether speech is detected. */
   isSpeech: boolean;
   /** RMS energy in the range 0-1. */
-  energy: number;          // RMS energy level (0-1)
+  energy: number;
   /** Detection timestamp in ms. */
   timestamp: number;
 }
@@ -46,11 +46,11 @@ export interface VADResult {
 /** Runtime configuration for energy-based VAD. */
 export interface VADConfig {
   /** Energy threshold for speech activation. */
-  energyThreshold: number; // Default: 0.01
+  energyThreshold: number;
   /** Minimum speech duration in ms before activation. */
-  minSpeechDuration: number; // Default: 100ms
+  minSpeechDuration: number;
   /** Minimum silence duration in ms before deactivation. */
-  minSilenceDuration: number; // Default: 300ms
+  minSilenceDuration: number;
 }
 
 // ============================================
@@ -77,7 +77,7 @@ export interface Token {
   startTime: number;
   /** End timestamp in seconds. */
   endTime: number;
-  /** Optional confidence score in the range 0-1. */
+  /** Confidence score in the range 0-1. */
   confidence: number;
 }
 
