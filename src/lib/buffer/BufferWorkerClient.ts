@@ -10,6 +10,7 @@ import type {
     BufferWorkerConfig,
     BufferWorkerResponse,
     HasSpeechResult,
+    VadSummaryQuery,
     VadSummaryResult,
     RangeResult,
     BufferState,
@@ -143,13 +144,7 @@ export class BufferWorkerClient {
      * - requireInference=false => energy only
      * - silence tail always computed from energy layer
      */
-    async getVadSummary(params: {
-        startSample: number;
-        endSample: number;
-        energyThreshold: number;
-        inferenceThreshold: number;
-        requireInference: boolean;
-    }): Promise<VadSummaryResult> {
+    async getVadSummary(params: VadSummaryQuery): Promise<VadSummaryResult> {
         return this.sendRequest('GET_VAD_SUMMARY', params);
     }
 
