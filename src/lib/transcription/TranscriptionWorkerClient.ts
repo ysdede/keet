@@ -101,12 +101,16 @@ export class TranscriptionWorkerClient {
         }
     }
 
-    private sendRequest(type: string, payload?: any): Promise<any> {
+    private sendRequest(type: string, payload?: any, transfer?: Transferable[]): Promise<any> {
         const id = this.messageId++;
         return new Promise((resolve, reject) => {
             this.pendingPromises.set(id, { resolve, reject });
-            this.worker.postMessage({ type, payload, id });
+            this.worker.postMessage({ type, payload, id }, transfer || []);
         });
+    }
+
+    private transferList(buffer: ArrayBufferLike, transferOwnership?: boolean): Transferable[] {
+        return transferOwnership === false ? [] : [buffer as ArrayBuffer];
     }
 
     // API Methods
@@ -126,12 +130,24 @@ export class TranscriptionWorkerClient {
         return this.sendRequest('INIT_V3_SERVICE', { config });
     }
 
-    async processChunk(audio: Float32Array): Promise<TranscriptionResult> {
-        return this.sendRequest('PROCESS_CHUNK', audio);
+    /**
+     * Default behavior transfers `audio.buffer` to worker ownership.
+     * Pass `transferOwnership: false` when the caller must keep using `audio`.
+     */
+    async processChunk(audio: Float32Array, options: { transferOwnership?: boolean } = {}): Promise<TranscriptionResult> {
+        return this.sendRequest('PROCESS_CHUNK', audio, this.transferList(audio.buffer, options.transferOwnership));
     }
 
-    async processV3Chunk(audio: Float32Array, startTime?: number): Promise<TokenStreamResult> {
-        return this.sendRequest('PROCESS_V3_CHUNK', { audio, startTime });
+    /**
+     * Default behavior transfers `audio.buffer` to worker ownership.
+     * Pass `transferOwnership: false` when the caller must keep using `audio`.
+     */
+    async processV3Chunk(
+        audio: Float32Array,
+        startTime?: number,
+        options: { transferOwnership?: boolean } = {},
+    ): Promise<TokenStreamResult> {
+        return this.sendRequest('PROCESS_V3_CHUNK', { audio, startTime }, this.transferList(audio.buffer, options.transferOwnership));
     }
 
     /**
@@ -144,14 +160,19 @@ export class TranscriptionWorkerClient {
         melBins: number,
         startTime?: number,
         overlapSeconds?: number,
+        options: { transferOwnership?: boolean } = {},
     ): Promise<TokenStreamResult> {
         return this.sendRequest('PROCESS_V3_CHUNK_WITH_FEATURES', {
             features, T, melBins, startTime, overlapSeconds,
-        });
+        }, this.transferList(features.buffer, options.transferOwnership));
     }
 
-    async transcribeSegment(audio: Float32Array): Promise<TranscriptionResult> {
-        return this.sendRequest('TRANSCRIBE_SEGMENT', audio);
+    /**
+     * Default behavior transfers `audio.buffer` to worker ownership.
+     * Pass `transferOwnership: false` when the caller must keep using `audio`.
+     */
+    async transcribeSegment(audio: Float32Array, options: { transferOwnership?: boolean } = {}): Promise<TranscriptionResult> {
+        return this.sendRequest('TRANSCRIBE_SEGMENT', audio, this.transferList(audio.buffer, options.transferOwnership));
     }
 
     async reset(): Promise<void> {
@@ -183,8 +204,14 @@ export class TranscriptionWorkerClient {
         endTime?: number;
         segmentId?: string;
         incrementalCache?: V4IncrementalCache;
+        transferOwnership?: boolean;
     }): Promise<V4ProcessResult> {
-        return this.sendRequest('PROCESS_V4_CHUNK_WITH_FEATURES', params);
+        const { transferOwnership, ...payload } = params;
+        return this.sendRequest(
+            'PROCESS_V4_CHUNK_WITH_FEATURES',
+            payload,
+            this.transferList(payload.features.buffer, transferOwnership),
+        );
     }
 
     /**

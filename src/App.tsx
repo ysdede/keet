@@ -48,6 +48,10 @@ let pendingVadState: {
   sileroProbability?: number;
 } | null = null;
 let vadUpdateScheduled = false;
+const V4_TRACE_LOGS = false;
+
+const shouldLogV4Tick = (tick: number, every = 20): boolean =>
+  V4_TRACE_LOGS && (appStore.showDebugPanel() || tick <= 5 || tick % every === 0);
 
 const scheduleSileroUpdate = (prob: number) => {
   pendingSileroProb = prob;
@@ -284,14 +288,18 @@ const App: Component = () => {
     // Skip inference if model is not ready (but still allow audio/mel/VAD to process)
     if (appStore.modelState() !== 'ready') {
       if (!v4ModelNotReadyLogged) {
-        console.log('[v4Tick] Model not ready yet - audio is being captured and preprocessed');
+        if (V4_TRACE_LOGS) {
+          console.log('[v4Tick] Model not ready yet - audio is being captured and preprocessed');
+        }
         v4ModelNotReadyLogged = true;
       }
       return;
     }
     // Reset the flag once model becomes ready
     if (v4ModelNotReadyLogged) {
-      console.log('[v4Tick] Model is now ready - starting inference');
+      if (V4_TRACE_LOGS) {
+        console.log('[v4Tick] Model is now ready - starting inference');
+      }
       v4ModelNotReadyLogged = false;
       // Initialize the v4 service now that model is ready
       await workerClient.initV4Service({ debug: false });
@@ -326,7 +334,7 @@ const App: Component = () => {
       }
     }
 
-    if (v4TickCount <= 5 || v4TickCount % 20 === 0) {
+    if (shouldLogV4Tick(v4TickCount)) {
       const vadState = appStore.vadState();
       const rb = audioEngine.getRingBuffer();
       const rbFrame = rb.getCurrentFrame();
@@ -340,7 +348,7 @@ const App: Component = () => {
     }
 
     // Periodic buffer worker state dump (every 40 ticks)
-    if (v4TickCount % 40 === 0 && bufferClient) {
+    if (shouldLogV4Tick(v4TickCount, 40) && bufferClient) {
       try {
         const state = await bufferClient.getState();
         const layerSummary = Object.entries(state.layers)
@@ -378,10 +386,11 @@ const App: Component = () => {
       return;
     }
 
-    // Build window from cursor to current position
+    // Build window from mature cursor to current position.
+    // Keep overlap semantics stable for streaming sentence formation.
     const window = windowBuilder.buildWindow();
     if (!window) {
-      if (v4TickCount <= 10 || v4TickCount % 20 === 0) {
+      if (shouldLogV4Tick(v4TickCount)) {
         const rb = audioEngine.getRingBuffer();
         const rbHead = rb.getCurrentFrame();
         const rbBase = rb.getBaseFrameOffset();
@@ -394,7 +403,9 @@ const App: Component = () => {
       return;
     }
 
-    console.log(`[v4Tick #${v4TickCount}] Window [${window.startFrame}:${window.endFrame}] ${window.durationSeconds.toFixed(2)}s (initial=${window.isInitial})`);
+    if (shouldLogV4Tick(v4TickCount)) {
+      console.log(`[v4Tick #${v4TickCount}] Window [${window.startFrame}:${window.endFrame}] ${window.durationSeconds.toFixed(2)}s (initial=${window.isInitial})`);
+    }
 
     v4InferenceBusy = true;
     v4LastInferenceTime = now;
@@ -418,7 +429,12 @@ const App: Component = () => {
 
       // Calculate incremental cache parameters
       const cursorFrame = windowBuilder.getMatureCursorFrame();
-      const prefixSeconds = cursorFrame > 0 ? (window.startFrame - cursorFrame) / 16000 : 0;
+      const rawPrefixSeconds = cursorFrame > 0 ? (window.startFrame - cursorFrame) / 16000 : 0;
+      // Guard decoder cache reuse: prefix must exist in the current window.
+      const prefixSeconds =
+        rawPrefixSeconds > 0 && rawPrefixSeconds < window.durationSeconds
+          ? rawPrefixSeconds
+          : 0;
 
       const result: V4ProcessResult = await workerClient.processV4ChunkWithFeatures({
         features: features.features,
@@ -434,7 +450,6 @@ const App: Component = () => {
       });
 
       const inferenceMs = performance.now() - inferenceStart;
-
       // Update UI state
       appStore.setMatureText(result.matureText);
       appStore.setImmatureText(result.immatureText);
@@ -589,8 +604,8 @@ const App: Component = () => {
           const bufferConfig: BufferWorkerConfig = {
             sampleRate: 16000,
             layers: {
-              audio: { hopSamples: 1, entryDimension: 1, maxDurationSec: 120 },
-              mel: { hopSamples: 160, entryDimension: 128, maxDurationSec: 120 },
+              audio: { hopSamples: 1, entryDimension: 1, maxDurationSec: 5 },
+              mel: { hopSamples: 160, entryDimension: 128, maxDurationSec: 5 },
               energyVad: { hopSamples: 1280, entryDimension: 1, maxDurationSec: 120 },
               inferenceVad: { hopSamples: 256, entryDimension: 1, maxDurationSec: 120 },
             },
@@ -795,7 +810,7 @@ const App: Component = () => {
               minInitialDurationSec: 1.5,
               useVadBoundaries: false, // VAD boundaries now managed by BufferWorker
               vadSilenceThreshold: 0.3,
-              debug: true, // Enable debug logging for diagnostics
+              debug: false,
             }
           );
         }
