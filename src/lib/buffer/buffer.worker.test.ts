@@ -151,4 +151,65 @@ describe('buffer.worker', () => {
         expect(response.type).toBe('RESET');
         expect(response.payload?.success).toBe(true);
     });
+
+    it('should preserve scalar layer values via QUERY_RANGE', async () => {
+        await sendRequest(worker, 'INIT', defaultConfig(), nextId++);
+
+        worker.postMessage({ type: 'WRITE', payload: { layer: 'energyVad', data: [0.1], globalSampleOffset: 0 } });
+        worker.postMessage({ type: 'WRITE', payload: { layer: 'energyVad', data: [0.5], globalSampleOffset: 1280 } });
+        worker.postMessage({ type: 'WRITE', payload: { layer: 'energyVad', data: [0.9], globalSampleOffset: 2560 } });
+        await new Promise((r) => setTimeout(r, 50));
+
+        const response = await sendRequest(
+            worker,
+            'QUERY_RANGE',
+            { startSample: 0, endSample: 1280 * 3, layers: ['energyVad'] },
+            nextId++
+        );
+
+        expect(response.type).toBe('QUERY_RANGE');
+        const slice = response.payload?.layers?.energyVad;
+        expect(slice).toBeTruthy();
+        expect(slice.entryDimension).toBe(1);
+        expect(slice.entryCount).toBe(3);
+        expect(slice.data.length).toBe(3);
+        expect(slice.data[0]).toBeCloseTo(0.1, 5);
+        expect(slice.data[1]).toBeCloseTo(0.5, 5);
+        expect(slice.data[2]).toBeCloseTo(0.9, 5);
+    });
+
+    it('should preserve vector layer values via QUERY_RANGE', async () => {
+        await sendRequest(worker, 'INIT', defaultConfig(), nextId++);
+
+        const dim = 128;
+        const entryA = Float32Array.from({ length: dim }, (_, i) => i);
+        const entryB = Float32Array.from({ length: dim }, (_, i) => i + 1000);
+        const flat = new Float32Array(dim * 2);
+        flat.set(entryA, 0);
+        flat.set(entryB, dim);
+
+        worker.postMessage({
+            type: 'WRITE_BATCH',
+            payload: { layer: 'mel', data: flat, globalSampleOffset: 0 },
+        });
+        await new Promise((r) => setTimeout(r, 50));
+
+        const response = await sendRequest(
+            worker,
+            'QUERY_RANGE',
+            { startSample: 0, endSample: 320, layers: ['mel'] },
+            nextId++
+        );
+
+        expect(response.type).toBe('QUERY_RANGE');
+        const slice = response.payload?.layers?.mel;
+        expect(slice).toBeTruthy();
+        expect(slice.entryDimension).toBe(dim);
+        expect(slice.entryCount).toBe(2);
+        expect(slice.data.length).toBe(dim * 2);
+        expect(slice.data[0]).toBeCloseTo(0, 5);
+        expect(slice.data[dim - 1]).toBeCloseTo(dim - 1, 5);
+        expect(slice.data[dim]).toBeCloseTo(1000, 5);
+        expect(slice.data[dim * 2 - 1]).toBeCloseTo(1000 + dim - 1, 5);
+    });
 });

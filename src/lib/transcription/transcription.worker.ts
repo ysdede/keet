@@ -225,8 +225,7 @@ self.onmessage = async (e: MessageEvent) => {
                         melBins: payload.melBins,
                     },
                     returnTimestamps: true,
-                    returnTokenIds: true,
-                    returnFrameIndices: true,
+                    enableProfiling: false,
                     timeOffset: payload.timeOffset || 0,
                     // Incremental decoder cache for the overlap prefix
                     ...(payload.incrementalCache ? {
