@@ -396,6 +396,38 @@ def compare_kpis(current, baseline):
         }
     return out
 
+
+def score_transcription_bottleneck(total_ms, gc_ms, long_count, long_max_ms):
+    return total_ms + gc_ms * 5 + long_count * 6 + long_max_ms * 2
+
+
+def score_main_render_bottleneck(main_total_ms, render):
+    raf = render.get('fire_animation_frame', {})
+    page = render.get('page_animator_scripted', {})
+    commit = render.get('commit', {})
+    layout = render.get('update_layout_tree', {})
+    return (
+        main_total_ms * 0.15
+        + to_float(page.get('total_ms'))
+        + to_float(commit.get('total_ms'))
+        + to_float(layout.get('total_ms'))
+        + to_float(raf.get('rate_per_s')) * 10
+    )
+
+
+def score_worker_bottleneck(total_ms, handle_post_message_total_ms):
+    return total_ms + handle_post_message_total_ms * 2
+
+
+def score_audio_worklet_bottleneck(total_ms, p95_ms, max_ms):
+    return total_ms + p95_ms * 20 + max_ms * 5
+
+
+def format_evidence(ev, limit=4):
+    keys = list(ev.keys())[:limit]
+    return ', '.join(f"{k}={ev[k]}" for k in keys)
+
+
 def rank_bottlenecks(duration_s, main, thread_by_tid, roles, gc, render, aw_thread, aw_ints):
     rows = []
 
@@ -407,7 +439,7 @@ def rank_bottlenecks(duration_s, main, thread_by_tid, roles, gc, render, aw_thre
         tx_long = tx.get('long_tasks', {})
         tx_long_count = int(tx_long.get('count', 0))
         tx_long_max = to_float(tx_long.get('max_ms'))
-        score = tx_total + tx_gc * 5 + tx_long_count * 6 + tx_long_max * 2
+        score = score_transcription_bottleneck(tx_total, tx_gc, tx_long_count, tx_long_max)
         rows.append({
             'category': 'transcription_worker_hot_path',
             'title': 'Transcription worker hot path',
@@ -428,13 +460,7 @@ def rank_bottlenecks(duration_s, main, thread_by_tid, roles, gc, render, aw_thre
     page = render.get('page_animator_scripted', {})
     commit = render.get('commit', {})
     layout = render.get('update_layout_tree', {})
-    render_score = (
-        main_total * 0.15
-        + to_float(page.get('total_ms'))
-        + to_float(commit.get('total_ms'))
-        + to_float(layout.get('total_ms'))
-        + to_float(raf.get('rate_per_s')) * 10
-    )
+    render_score = score_main_render_bottleneck(main_total, render)
     rows.append({
         'category': 'main_thread_render_churn',
         'title': 'Main-thread animation/render churn',
@@ -461,7 +487,7 @@ def rank_bottlenecks(duration_s, main, thread_by_tid, roles, gc, render, aw_thre
             continue
         hp = ws.get('handle_post_message', {})
         total = to_float(ws.get('total_dur_ms'))
-        score = total + to_float(hp.get('total_ms')) * 2
+        score = score_worker_bottleneck(total, to_float(hp.get('total_ms')))
         rows.append({
             'category': f'{role}_worker',
             'title': title,
@@ -479,7 +505,7 @@ def rank_bottlenecks(duration_s, main, thread_by_tid, roles, gc, render, aw_thre
     aw_p95 = to_float(aw_ints.get('interval_ms', {}).get('p95'))
     aw_max = to_float(aw_ints.get('interval_ms', {}).get('max'))
     if aw_total > 0 or aw_p95 > 0:
-        score = aw_total + aw_p95 * 20 + aw_max * 5
+        score = score_audio_worklet_bottleneck(aw_total, aw_p95, aw_max)
         rows.append({
             'category': 'audio_worklet_scheduling',
             'title': 'AudioWorklet scheduling pressure',
@@ -514,7 +540,7 @@ def build_markdown(summary):
     lines.append('|---:|---|---|---|')
     for row in summary.get('bottlenecks', []):
         ev = row.get('evidence', {})
-        ev_bits = ', '.join([f"{k}={ev[k]}" for k in list(ev.keys())[:4]])
+        ev_bits = format_evidence(ev)
         lines.append(f"| {row['rank']} | {row['title']} | {row['impact']} | {ev_bits} |")
     lines.append('')
 
@@ -570,7 +596,7 @@ def print_report(summary):
     print('Ranked Bottlenecks')
     for row in summary.get('bottlenecks', []):
         ev = row.get('evidence', {})
-        ev_bits = ', '.join([f"{k}={ev[k]}" for k in list(ev.keys())[:4]])
+        ev_bits = format_evidence(ev)
         print(f"  {row['rank']:>2}. {row['title']} | impact={row['impact']} | score={row['score']} | {ev_bits}")
 
     print('')
