@@ -49,6 +49,29 @@ let pendingVadState: {
 } | null = null;
 let vadUpdateScheduled = false;
 const V4_TRACE_LOGS = false;
+const V4_CACHE_TELEMETRY_LOG_EVERY = 40;
+const v4CacheTelemetry = {
+  enabled: 0,
+  bypassNonPositivePrefix: 0,
+  bypassOutsideWindow: 0,
+};
+
+const trackV4CacheTelemetry = (
+  bucket: keyof typeof v4CacheTelemetry,
+  detail: { rawPrefixSeconds: number; windowDurationSeconds: number }
+) => {
+  v4CacheTelemetry[bucket]++;
+  const total = v4CacheTelemetry.enabled
+    + v4CacheTelemetry.bypassNonPositivePrefix
+    + v4CacheTelemetry.bypassOutsideWindow;
+  if (!V4_TRACE_LOGS || total % V4_CACHE_TELEMETRY_LOG_EVERY !== 0) return;
+  console.log(
+    `[v4CacheTelemetry] total=${total}, enabled=${v4CacheTelemetry.enabled}, ` +
+    `bypass_non_positive=${v4CacheTelemetry.bypassNonPositivePrefix}, ` +
+    `bypass_outside_window=${v4CacheTelemetry.bypassOutsideWindow}, ` +
+    `rawPrefix=${detail.rawPrefixSeconds.toFixed(4)}s, window=${detail.windowDurationSeconds.toFixed(4)}s`
+  );
+};
 
 const shouldLogV4Tick = (tick: number, every = 20): boolean =>
   V4_TRACE_LOGS && (appStore.showDebugPanel() || tick <= 5 || tick % every === 0);
@@ -427,10 +450,27 @@ const App: Component = () => {
       const cursorFrame = windowBuilder.getMatureCursorFrame();
       const rawPrefixSeconds = cursorFrame > 0 ? (window.startFrame - cursorFrame) / 16000 : 0;
       // Guard decoder cache reuse: prefix must exist in the current window.
-      const prefixSeconds =
-        rawPrefixSeconds > 0 && rawPrefixSeconds < window.durationSeconds
-          ? rawPrefixSeconds
-          : 0;
+      let incrementalCache: { cacheKey: string; prefixSeconds: number } | undefined;
+      if (rawPrefixSeconds <= 0) {
+        trackV4CacheTelemetry('bypassNonPositivePrefix', {
+          rawPrefixSeconds,
+          windowDurationSeconds: window.durationSeconds,
+        });
+      } else if (rawPrefixSeconds >= window.durationSeconds) {
+        trackV4CacheTelemetry('bypassOutsideWindow', {
+          rawPrefixSeconds,
+          windowDurationSeconds: window.durationSeconds,
+        });
+      } else {
+        incrementalCache = {
+          cacheKey: 'v4-stream',
+          prefixSeconds: rawPrefixSeconds,
+        };
+        trackV4CacheTelemetry('enabled', {
+          rawPrefixSeconds,
+          windowDurationSeconds: window.durationSeconds,
+        });
+      }
 
       const result: V4ProcessResult = await workerClient.processV4ChunkWithFeatures({
         features: features.features,
@@ -439,10 +479,7 @@ const App: Component = () => {
         timeOffset,
         endTime: window.endFrame / 16000,
         segmentId: `v4_${Date.now()}`,
-        incrementalCache: prefixSeconds > 0 ? {
-          cacheKey: 'v4-stream',
-          prefixSeconds,
-        } : undefined,
+        incrementalCache,
       });
 
       const inferenceMs = performance.now() - inferenceStart;

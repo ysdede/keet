@@ -60,6 +60,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     let canvasRef: HTMLCanvasElement | undefined;
     let ctx: CanvasRenderingContext2D | null = null;
     let animationFrameId: number;
+    let disposed = false;
 
     const getWindowDuration = () => props.windowDuration || 8.0;
 
@@ -121,6 +122,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     } | null = null;
 
     onMount(() => {
+        disposed = false;
         if (canvasRef) {
             ctx = canvasRef.getContext('2d', { alpha: false });
 
@@ -138,6 +140,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
             const setupDprWatch = () => {
                 dprMediaQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
                 const onDprChange = () => {
+                    if (disposed) return;
                     if (canvasRef) {
                         const rect = canvasRef.getBoundingClientRect(); // one-time on zoom change only
                         updateCanvasDimensions(rect.width, rect.height);
@@ -162,6 +165,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     });
 
     onCleanup(() => {
+        disposed = true;
         cancelAnimationFrame(animationFrameId);
         if (resizeObserver) {
             resizeObserver.disconnect();
@@ -170,6 +174,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     });
 
     const loop = (now: number = performance.now()) => {
+        if (disposed) return;
         if (!ctx || !canvasRef || !props.audioEngine) {
             animationFrameId = requestAnimationFrame(loop);
             return;
@@ -223,6 +228,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
                 // Request RAW (unnormalized) features for fixed dB scaling.
                 // ASR transcription still uses normalized features (default).
                 props.melClient.getFeatures(fetchStartSample, fetchEndSample, false).then(features => {
+                    if (disposed) return;
                     if (features && specCtx && specCanvas) {
                         // Store with time alignment info
                         cachedSpecData = {
