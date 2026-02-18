@@ -559,6 +559,9 @@ const App: Component = () => {
     v4InferenceBusy = false;
     v4LastInferenceTime = 0;
     v4GlobalSampleOffset = 0;
+    v4CacheTelemetry.enabled = 0;
+    v4CacheTelemetry.bypassNonPositivePrefix = 0;
+    v4CacheTelemetry.bypassOutsideWindow = 0;
   };
 
   const toggleRecording = async () => {

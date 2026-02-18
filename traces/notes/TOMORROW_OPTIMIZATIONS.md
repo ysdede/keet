@@ -61,7 +61,7 @@ Context:
 - `#2` Worker response payload slimming:
   - Deferred in this conservative pass to avoid v4 worker payload/interface churn and regression risk.
 - `#4` Mel feature transfer reuse/pooling:
-  - Deferred due higher risk around transferable ownership and cross-worker lifecycle coordination.
+  - Deferred due to higher risk around transferable ownership and cross-worker lifecycle coordination.
 
 ### TODO
 - Revisit `#2` with explicit payload contract/perf benchmarks before changing worker response shapes.
