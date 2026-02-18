@@ -1,5 +1,5 @@
 /**
- * Keet v3.0 - Transcription Module
+ * Keet v1.1 - Transcription Module
  */
 
 export * from './types';
@@ -9,3 +9,4 @@ export { TokenStreamTranscriber } from './TokenStreamTranscriber';
 export type { TokenStreamConfig, TokenStreamCallbacks, TokenStreamResult } from './TokenStreamTranscriber';
 export { TranscriptionWorkerClient } from './TranscriptionWorkerClient';
 export type { MergerResult } from './UtteranceBasedMerger';
+

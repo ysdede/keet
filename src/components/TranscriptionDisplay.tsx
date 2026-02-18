@@ -2,15 +2,25 @@ import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup
 import type { V4SentenceEntry } from '../lib/transcription/TranscriptionWorkerClient';
 
 export interface TranscriptionDisplayProps {
+    /** Stable/finalized transcript text. */
     confirmedText: string;
+    /** Live in-progress text that can still change. */
     pendingText: string;
+    /** Optional finalized sentence metadata for v4 merged view. */
     sentenceEntries?: V4SentenceEntry[];
+    /** Enables v4-specific merged/live tabs and sentence timeline UI. */
     isV4Mode?: boolean;
+    /** Whether recording is currently active. */
     isRecording: boolean;
+    /** Longest common subsequence length used by v3 debug indicators. */
     lcsLength?: number;
+    /** Whether the current v3 anchor lock is valid. */
     anchorValid?: boolean;
+    /** Toggles confidence badges in token-level displays. */
     showConfidence?: boolean;
+    /** Placeholder text when transcript content is empty. */
     placeholder?: string;
+    /** Optional class forwarded to the root container. */
     class?: string;
 }
 
@@ -51,6 +61,7 @@ const getInitialMergedSplitRatio = (): number => {
     return 0.5;
 };
 
+/** Transcript panel that combines finalized text, live tokens, and v4 sentence history. */
 export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props) => {
     let liveContainerRef: HTMLDivElement | undefined;
     let mergedContainerRef: HTMLDivElement | undefined;

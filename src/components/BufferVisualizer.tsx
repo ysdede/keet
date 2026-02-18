@@ -22,6 +22,7 @@ interface BufferVisualizerProps {
   visible?: boolean;
 }
 
+/** Real-time waveform and segment visualizer backed by `AudioEngine` snapshots. */
 export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
   // Canvas element ref
   let canvasRef: HTMLCanvasElement | undefined;

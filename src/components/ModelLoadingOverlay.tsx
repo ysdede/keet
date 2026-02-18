@@ -1,28 +1,46 @@
 import { Component, Show, For, createEffect } from 'solid-js';
 
 interface ModelLoadingOverlayProps {
+    /** Whether the overlay dialog is rendered. */
     isVisible: boolean;
+    /** Download progress percentage in the range 0-100. */
     progress: number;
+    /** Primary status text shown to the user. */
     message: string;
+    /** Current file being downloaded/processed. */
     file?: string;
+    /** Active inference backend. */
     backend: 'webgpu' | 'wasm';
+    /** Model loading lifecycle state. */
     state: 'unloaded' | 'loading' | 'ready' | 'error';
+    /** Currently selected model identifier. */
     selectedModelId: string;
+    /** Updates the selected model identifier. */
     onModelSelect: (id: string) => void;
+    /** Starts model initialization/download. */
     onStart: () => void;
+    /** Loads a model bundle from local files. */
     onLocalLoad: (files: FileList) => void;
+    /** Optional close handler for dismissible overlay usage. */
     onClose?: () => void;
 }
 
+/** Built-in ASR model options available in the loader UI. */
 export const MODELS = [
     { id: 'parakeet-tdt-0.6b-v2', name: 'Parakeet v2', desc: 'English optimized' },
     { id: 'parakeet-tdt-0.6b-v3', name: 'Parakeet v3', desc: 'Multilingual Streaming' },
 ];
 
+/**
+ * Resolves a human-readable model label.
+ * @param id - Internal model ID.
+ * @returns Display name if known, otherwise the raw ID.
+ */
 export function getModelDisplayName(id: string): string {
-    return (MODELS.find((m) => m.id === id)?.name ?? id) || 'Unknown model';
+    return MODELS.find((m) => m.id === id)?.name ?? id;
 }
 
+/** Modal flow for selecting, downloading, and initializing ASR models. */
 export const ModelLoadingOverlay: Component<ModelLoadingOverlayProps> = (props) => {
     const progressWidth = () => `${Math.max(0, Math.min(100, props.progress))}%`;
     let fileInput: HTMLInputElement | undefined;

@@ -15,10 +15,12 @@ import { formatDuration } from './utils/time';
 
 // Singleton instances
 let audioEngine: AudioEngine | null = null;
+/** Reactive handle to the active `AudioEngine` instance for child components. */
 export const [audioEngineSignal, setAudioEngineSignal] = createSignal<AudioEngine | null>(null);
 
 let workerClient: TranscriptionWorkerClient | null = null;
 let melClient: MelWorkerClient | null = null;
+/** Reactive handle to the active mel worker client used by debug visualizers. */
 export const [melClientSignal, setMelClientSignal] = createSignal<MelWorkerClient | null>(null);
 let segmentUnsubscribe: (() => void) | null = null;
 let windowUnsubscribe: (() => void) | null = null;

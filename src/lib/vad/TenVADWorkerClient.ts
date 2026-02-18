@@ -9,8 +9,10 @@
 
 import type { TenVADConfig, TenVADResponse, TenVADResult } from '../buffer/types';
 
+/** Callback invoked for each streaming TEN-VAD inference result. */
 export type TenVADResultCallback = (result: TenVADResult) => void;
 
+/** Main-thread streaming client for the TEN-VAD web worker. */
 export class TenVADWorkerClient {
     private worker: Worker;
     private messageId = 0;

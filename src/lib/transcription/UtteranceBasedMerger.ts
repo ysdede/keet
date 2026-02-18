@@ -130,6 +130,7 @@ interface CreateResultContext {
 
 const SENTENCE_END_RE = /[.!?]$/;
 
+/** Merges utterance-level ASR outputs into mature and immature sentence streams. */
 export class UtteranceBasedMerger {
     private config: UtteranceBasedMergerConfig;
     private nlp: any | null = null;

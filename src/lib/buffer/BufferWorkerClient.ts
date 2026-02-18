@@ -16,6 +16,7 @@ import type {
     BufferState,
 } from './types';
 
+/** Main-thread API for the centralized multi-layer buffer worker. */
 export class BufferWorkerClient {
     private worker: Worker;
     private messageId = 0;

@@ -5,9 +5,13 @@ import { normalizeMelForDisplay } from '../lib/audio/mel-display';
 import { appStore } from '../stores/appStore';
 
 interface LayeredBufferVisualizerProps {
+    /** Audio engine used for waveform and timing data. */
     audioEngine?: AudioEngine;
+    /** Mel worker client used to fetch spectrogram frames. */
     melClient?: MelWorkerClient;
+    /** Total canvas height in CSS pixels. */
     height?: number; // Total height
+    /** Visible history window in seconds (default: 8.0). */
     windowDuration?: number; // default 8.0s
 }
 
@@ -56,6 +60,7 @@ const COLORMAP_LUT = (() => {
     return lut;
 })();
 
+/** Combined waveform/spectrogram timeline optimized for low-overhead debug rendering. */
 export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = (props) => {
     let canvasRef: HTMLCanvasElement | undefined;
     let ctx: CanvasRenderingContext2D | null = null;
