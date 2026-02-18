@@ -212,4 +212,72 @@ describe('buffer.worker', () => {
         expect(slice.data[dim]).toBeCloseTo(1000, 5);
         expect(slice.data[dim * 2 - 1]).toBeCloseTo(1000 + dim - 1, 5);
     });
+
+    it('should return consolidated VAD summary with energy-only and energy+inference semantics', async () => {
+        await sendRequest(worker, 'INIT', defaultConfig(), nextId++);
+
+        worker.postMessage({ type: 'WRITE', payload: { layer: 'energyVad', data: [0.9], globalSampleOffset: 0 } });
+        worker.postMessage({ type: 'WRITE', payload: { layer: 'inferenceVad', data: [0.1], globalSampleOffset: 0 } });
+        await new Promise((r) => setTimeout(r, 50));
+
+        const energyOnly = await sendRequest(
+            worker,
+            'GET_VAD_SUMMARY',
+            {
+                startSample: 0,
+                endSample: 1280,
+                energyThreshold: 0.3,
+                inferenceThreshold: 0.5,
+                requireInference: false,
+            },
+            nextId++,
+        );
+        expect(energyOnly.type).toBe('GET_VAD_SUMMARY');
+        expect(energyOnly.payload?.energy?.hasSpeech).toBe(true);
+        expect(energyOnly.payload?.inference).toBeNull();
+        expect(energyOnly.payload?.hasSpeech).toBe(true);
+
+        const requiresInference = await sendRequest(
+            worker,
+            'GET_VAD_SUMMARY',
+            {
+                startSample: 0,
+                endSample: 1280,
+                energyThreshold: 0.3,
+                inferenceThreshold: 0.5,
+                requireInference: true,
+            },
+            nextId++,
+        );
+        expect(requiresInference.type).toBe('GET_VAD_SUMMARY');
+        expect(requiresInference.payload?.energy?.hasSpeech).toBe(true);
+        expect(requiresInference.payload?.inference?.hasSpeech).toBe(false);
+        expect(requiresInference.payload?.hasSpeech).toBe(false);
+    });
+
+    it('should include energy silence tail duration in consolidated VAD summary', async () => {
+        await sendRequest(worker, 'INIT', defaultConfig(), nextId++);
+
+        worker.postMessage({ type: 'WRITE', payload: { layer: 'energyVad', data: [0.9], globalSampleOffset: 0 } });
+        worker.postMessage({ type: 'WRITE', payload: { layer: 'energyVad', data: [0.1], globalSampleOffset: 1280 } });
+        worker.postMessage({ type: 'WRITE', payload: { layer: 'energyVad', data: [0.1], globalSampleOffset: 2560 } });
+        await new Promise((r) => setTimeout(r, 50));
+
+        const summary = await sendRequest(
+            worker,
+            'GET_VAD_SUMMARY',
+            {
+                startSample: 2560,
+                endSample: 3840,
+                energyThreshold: 0.3,
+                inferenceThreshold: 0.5,
+                requireInference: false,
+            },
+            nextId++,
+        );
+
+        expect(summary.type).toBe('GET_VAD_SUMMARY');
+        expect(summary.payload?.hasSpeech).toBe(false);
+        expect(summary.payload?.silenceTailDurationSec).toBeCloseTo((2 * 1280) / 16000, 5);
+    });
 });

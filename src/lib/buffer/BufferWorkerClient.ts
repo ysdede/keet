@@ -10,6 +10,7 @@ import type {
     BufferWorkerConfig,
     BufferWorkerResponse,
     HasSpeechResult,
+    VadSummaryResult,
     RangeResult,
     BufferState,
 } from './types';
@@ -133,6 +134,23 @@ export class BufferWorkerClient {
         threshold: number,
     ): Promise<HasSpeechResult> {
         return this.sendRequest('HAS_SPEECH', { layer, startSample, endSample, threshold });
+    }
+
+    /**
+     * Consolidated VAD query used by v4Tick to reduce worker round-trips.
+     * Preserves existing semantics:
+     * - requireInference=true => energy && inference
+     * - requireInference=false => energy only
+     * - silence tail always computed from energy layer
+     */
+    async getVadSummary(params: {
+        startSample: number;
+        endSample: number;
+        energyThreshold: number;
+        inferenceThreshold: number;
+        requireInference: boolean;
+    }): Promise<VadSummaryResult> {
+        return this.sendRequest('GET_VAD_SUMMARY', params);
     }
 
     /**
