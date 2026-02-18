@@ -25,9 +25,11 @@ import type {
     WritePayload,
     WriteBatchPayload,
     HasSpeechQuery,
+    VadSummaryQuery,
     SilenceTailQuery,
     RangeQuery,
     HasSpeechResult,
+    VadSummaryResult,
     RangeResult,
     LayerSlice,
     BufferState,
@@ -242,6 +244,9 @@ self.onmessage = (e: MessageEvent<BufferWorkerRequest>) => {
             case 'HAS_SPEECH':
                 handleHasSpeech(msg.id, msg.payload);
                 break;
+            case 'GET_VAD_SUMMARY':
+                handleGetVadSummary(msg.id, msg.payload);
+                break;
             case 'GET_SILENCE_TAIL':
                 handleGetSilenceTail(msg.id, msg.payload);
                 break;
@@ -327,6 +332,56 @@ function handleHasSpeech(id: number, query: HasSpeechQuery): void {
 
     const result = layer.hasSpeechInRange(query.startSample, query.endSample, query.threshold);
     respond({ type: 'HAS_SPEECH', id, payload: result });
+}
+
+function emptyHasSpeech(): HasSpeechResult {
+    return { hasSpeech: false, maxProb: 0, entriesChecked: 0 };
+}
+
+function handleGetVadSummary(id: number, query: VadSummaryQuery): void {
+    if (!layers || !config) {
+        const empty = emptyHasSpeech();
+        const result: VadSummaryResult = {
+            energy: empty,
+            inference: query.requireInference ? empty : null,
+            hasSpeech: false,
+            silenceTailDurationSec: 0,
+        };
+        respond({ type: 'GET_VAD_SUMMARY', id, payload: result });
+        return;
+    }
+
+    const startSample = Math.min(query.startSample, query.endSample);
+    const endSample = Math.max(query.startSample, query.endSample);
+
+    const energyLayer = layers.energyVad;
+    const inferenceLayer = layers.inferenceVad;
+
+    const energy = energyLayer
+        ? energyLayer.hasSpeechInRange(startSample, endSample, query.energyThreshold)
+        : emptyHasSpeech();
+    const inference = query.requireInference
+        ? (inferenceLayer
+            ? inferenceLayer.hasSpeechInRange(startSample, endSample, query.inferenceThreshold)
+            : emptyHasSpeech())
+        : null;
+
+    const hasSpeech = query.requireInference
+        ? energy.hasSpeech && Boolean(inference?.hasSpeech)
+        : energy.hasSpeech;
+
+    const silenceTailDurationSec = energyLayer
+        ? energyLayer.getSilenceTailDuration(query.energyThreshold, config.sampleRate)
+        : 0;
+
+    const result: VadSummaryResult = {
+        energy,
+        inference,
+        hasSpeech,
+        silenceTailDurationSec,
+    };
+
+    respond({ type: 'GET_VAD_SUMMARY', id, payload: result });
 }
 
 function handleGetSilenceTail(id: number, query: SilenceTailQuery): void {

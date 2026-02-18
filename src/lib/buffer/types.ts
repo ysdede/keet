@@ -36,6 +36,7 @@ export type BufferWorkerRequest =
     | { type: 'WRITE'; id?: number; payload: WritePayload }
     | { type: 'WRITE_BATCH'; id?: number; payload: WriteBatchPayload }
     | { type: 'HAS_SPEECH'; id: number; payload: HasSpeechQuery }
+    | { type: 'GET_VAD_SUMMARY'; id: number; payload: VadSummaryQuery }
     | { type: 'GET_SILENCE_TAIL'; id: number; payload: SilenceTailQuery }
     | { type: 'QUERY_RANGE'; id: number; payload: RangeQuery }
     | { type: 'GET_STATE'; id: number; payload?: undefined }
@@ -80,6 +81,20 @@ export interface HasSpeechQuery {
     threshold: number;
 }
 
+/** Consolidated VAD query used by v4Tick to reduce worker round-trips. */
+export interface VadSummaryQuery {
+    /** Start sample (global, inclusive) */
+    startSample: number;
+    /** End sample (global, exclusive) */
+    endSample: number;
+    /** Energy VAD threshold */
+    energyThreshold: number;
+    /** Inference VAD threshold */
+    inferenceThreshold: number;
+    /** If true, speech requires energy && inference; otherwise energy only */
+    requireInference: boolean;
+}
+
 /** Query data for an arbitrary sample range. */
 export interface RangeQuery {
     /** Start sample (global, inclusive) */
@@ -95,6 +110,7 @@ export interface RangeQuery {
 export type BufferWorkerResponse =
     | { type: 'INIT'; id: number; payload: { success: boolean } }
     | { type: 'HAS_SPEECH'; id: number; payload: HasSpeechResult }
+    | { type: 'GET_VAD_SUMMARY'; id: number; payload: VadSummaryResult }
     | { type: 'GET_SILENCE_TAIL'; id: number; payload: { durationSec: number } }
     | { type: 'QUERY_RANGE'; id: number; payload: RangeResult }
     | { type: 'GET_STATE'; id: number; payload: BufferState }
@@ -105,6 +121,13 @@ export interface HasSpeechResult {
     hasSpeech: boolean;
     maxProb: number;
     entriesChecked: number;
+}
+
+export interface VadSummaryResult {
+    energy: HasSpeechResult;
+    inference: HasSpeechResult | null;
+    hasSpeech: boolean;
+    silenceTailDurationSec: number;
 }
 
 export interface RangeResult {
