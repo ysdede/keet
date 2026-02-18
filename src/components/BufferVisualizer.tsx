@@ -434,7 +434,8 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
       // Subscribe to updates
       const sub = engine.onVisualizationUpdate((data, newMetrics, endTime) => {
         if (visible()) {
-          setWaveformData(data);
+          // AudioEngine may reuse internal notify buffers; store an owned snapshot.
+          setWaveformData(new Float32Array(data));
           setMetrics(newMetrics);
           setBufferEndTime(endTime);
 
