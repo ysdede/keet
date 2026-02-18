@@ -323,13 +323,42 @@ def path_to(g: G, par: List[int], pedge: List[str], node: Optional[int]) -> Dict
 
 
 @dataclass
+class HeapGraph:
+    raw: G
+    idom: List[int]
+    retained: List[int]
+    dfsn: List[int]
+    children: List[List[int]]
+    reach: int
+    parent: List[int]
+    parent_edge: List[str]
+
+    @classmethod
+    def from_payload(cls, payload: Dict[str, Any], root: int = 0) -> "HeapGraph":
+        g = G(payload)
+        dom = dominators(g, root)
+        parent, parent_edge = bfs_paths(g, root)
+        return cls(
+            raw=g,
+            idom=dom["idom"],
+            retained=dom["ret"],
+            dfsn=dom["dfsn"],
+            children=dom["child"],
+            reach=dom["reach"],
+            parent=parent,
+            parent_edge=parent_edge,
+        )
+
+    def path_to(self, node: Optional[int]) -> Dict[str, Any]:
+        return path_to(self.raw, self.parent, self.parent_edge, node)
+
+
+@dataclass
 class A:
     cap: CaptureFile
     issues: List[str]
+    hg: HeapGraph
     g: G
-    dom: Dict[str, Any]
-    par: List[int]
-    pedge: List[str]
     c_count: Counter
     c_self: Counter
     t_count: Counter
@@ -342,19 +371,18 @@ class A:
 
 def analyze_cap(cap: CaptureFile, payload: Dict[str, Any], strict: bool, top_n: int) -> A:
     issues = validate(payload, strict)
-    g = G(payload)
-    dom = dominators(g, 0)
-    par, pedge = bfs_paths(g, 0)
+    hg = HeapGraph.from_payload(payload, root=0)
+    g = hg.raw
     c_count, c_self, t_count, t_self = Counter(), Counter(), Counter(), Counter()
     for i in range(g.n):
         c_count[g.name[i]] += 1
         c_self[g.name[i]] += g.selfs[i]
         t_count[g.typ[i]] += 1
         t_self[g.typ[i]] += g.selfs[i]
-    ret = dom["ret"]
+    ret = hg.retained
     top_ret = []
     for i in range(g.n):
-        if i == 0 or dom["dfsn"][i] == 0:
+        if i == 0 or hg.dfsn[i] == 0:
             continue
         if g.typ[i] == "synthetic" and g.name[i].startswith("("):
             continue
@@ -362,7 +390,7 @@ def analyze_cap(cap: CaptureFile, payload: Dict[str, Any], strict: bool, top_n: 
     top_ret.sort(key=lambda x: (x["retained_size"], x["self_size"]), reverse=True)
     det_nodes = [i for i, d in enumerate(g.det) if d]
     det_set = set(det_nodes)
-    det_roots = [i for i in det_nodes if dom["idom"][i] == -1 or dom["idom"][i] == i or dom["idom"][i] not in det_set]
+    det_roots = [i for i in det_nodes if hg.idom[i] == -1 or hg.idom[i] == i or hg.idom[i] not in det_set]
     detached = {
         "detached_node_count": len(det_nodes),
         "detached_self_size": int(sum(g.selfs[i] for i in det_nodes)),
@@ -376,7 +404,7 @@ def analyze_cap(cap: CaptureFile, payload: Dict[str, Any], strict: bool, top_n: 
     for bid, label, pats in BUCKETS:
         idxs = det_nodes if bid == "detached_dom" else [i for i, ln in enumerate(names_l) if any(p in ln for p in pats)]
         sidx = set(idxs)
-        roots = [i for i in idxs if dom["idom"][i] == -1 or dom["idom"][i] == i or dom["idom"][i] not in sidx]
+        roots = [i for i in idxs if hg.idom[i] == -1 or hg.idom[i] == i or hg.idom[i] not in sidx]
         buckets[bid] = {
             "label": label,
             "count": len(idxs),
@@ -415,7 +443,7 @@ def analyze_cap(cap: CaptureFile, payload: Dict[str, Any], strict: bool, top_n: 
                     thr = iv[pos]
                     ss = sum(s for oid, s in zip(g.oid, g.selfs) if oid <= thr)
                     timeline["survivor_pressure_checkpoints"].append({"checkpoint": cp, "id_threshold": thr, "survivor_self_size": ss, "survivor_ratio": ss / tot})
-    return A(cap, issues, g, dom, par, pedge, c_count, c_self, t_count, t_self, buckets, top_ret, detached, timeline)
+    return A(cap, issues, hg, g, c_count, c_self, t_count, t_self, buckets, top_ret, detached, timeline)
 
 
 def top_counter(c: Counter, n: int) -> List[Dict[str, Any]]:
@@ -432,7 +460,7 @@ def summary(a: A, n: int) -> Dict[str, Any]:
         "node_count": a.g.n,
         "edge_count": a.g.e,
         "strong_edge_count": a.g.strong_edges,
-        "reachable_nodes": a.dom["reach"],
+        "reachable_nodes": a.hg.reach,
         "total_heap_self_size": int(sum(a.g.selfs)),
         "extra_native_bytes": a.g.extra_native,
         "constructor_count_top": top_counter(a.c_count, n),
@@ -622,177 +650,205 @@ def conf(clear_path: bool, mono: bool, cap_count: int, browser_amb: bool = False
     return "low", "Growth signal present but owner ambiguity remains."
 
 
-def findings(analyses: List[A], comparisons: List[Dict[str, Any]], top_n: int) -> List[Dict[str, Any]]:
+def _finding_jsarraybufferdata(analyses: List[A], comparisons: List[Dict[str, Any]], top_n: int) -> Optional[Dict[str, Any]]:
     if len(analyses) < 2:
-        return []
+        return None
     old, new = analyses[0], analyses[-1]
     anchor = compare(old, new, top_n)
     old_max = max(old.g.oid) if old.g.oid else None
-    out: List[Dict[str, Any]] = []
-
     d = ctor_delta(anchor, "system / JSArrayBufferData")
-    if d and d["delta_self_size"] > 0:
-        node = best_node(new, "system / JSArrayBufferData", old_max) or best_node(new, "system / JSArrayBufferData")
-        p = path_to(new.g, new.par, new.pedge, node)
-        clear = any(t in p["path_text"].lower() for t in ["ringbuffer", "pendingpromises", "visualizationbuffer", "features"])
-        c, cr = conf(clear, monotonic(comparisons, "system / JSArrayBufferData"), len(analyses))
-        out.append(
-            {
-                "symptom": "Typed-array backing store grew between captures.",
-                "suspected_owner": path_owner_hint(p["path_text"]),
-                "evidence": {
-                    "constructor": "system / JSArrayBufferData",
-                    "delta_self_size": d["delta_self_size"],
-                    "older_self_size": d["older_self_size"],
-                    "newer_self_size": d["newer_self_size"],
-                    "older_count": d["older_count"],
-                    "newer_count": d["newer_count"],
-                    "capture_window": {"older": old.cap.id, "newer": new.cap.id},
-                },
-                "retention_path": p,
-                "impact": "Backing-store growth raises long-session memory pressure and GC cost.",
-                "impact_bytes": int(d["delta_self_size"]),
-                "why_degrades_performance": "Long-lived native backing stores shrink free headroom and increase memory-management overhead.",
-                "confidence": c,
-                "confidence_reason": cr,
-                "false_positive_checks": [
-                    "If fixed-size warmup/pool behavior, growth should plateau after forced-GC idle.",
-                    "If intended buffers, constructor count should stabilize during steady state.",
-                ],
-                "next_validation": [
-                    "Run forced-GC idle A/B snapshots and check JSArrayBufferData plateau.",
-                    "Run 10-minute active session then stop/drain and verify post-drain baseline.",
-                ],
-            }
-        )
+    if not d or d["delta_self_size"] <= 0:
+        return None
+    node = best_node(new, "system / JSArrayBufferData", old_max) or best_node(new, "system / JSArrayBufferData")
+    p = new.hg.path_to(node)
+    clear = any(t in p["path_text"].lower() for t in ["ringbuffer", "pendingpromises", "visualizationbuffer", "features"])
+    c, cr = conf(clear, monotonic(comparisons, "system / JSArrayBufferData"), len(analyses))
+    return {
+        "symptom": "Typed-array backing store grew between captures.",
+        "suspected_owner": path_owner_hint(p["path_text"]),
+        "evidence": {
+            "constructor": "system / JSArrayBufferData",
+            "delta_self_size": d["delta_self_size"],
+            "older_self_size": d["older_self_size"],
+            "newer_self_size": d["newer_self_size"],
+            "older_count": d["older_count"],
+            "newer_count": d["newer_count"],
+            "capture_window": {"older": old.cap.id, "newer": new.cap.id},
+        },
+        "retention_path": p,
+        "impact": "Backing-store growth raises long-session memory pressure and GC cost.",
+        "impact_bytes": int(d["delta_self_size"]),
+        "why_degrades_performance": "Long-lived native backing stores shrink free headroom and increase memory-management overhead.",
+        "confidence": c,
+        "confidence_reason": cr,
+        "false_positive_checks": [
+            "If fixed-size warmup/pool behavior, growth should plateau after forced-GC idle.",
+            "If intended buffers, constructor count should stabilize during steady state.",
+        ],
+        "next_validation": [
+            "Run forced-GC idle A/B snapshots and check JSArrayBufferData plateau.",
+            "Run 10-minute active session then stop/drain and verify post-drain baseline.",
+        ],
+    }
 
+
+def _finding_pending_promises(analyses: List[A], comparisons: List[Dict[str, Any]], top_n: int) -> Optional[Dict[str, Any]]:
+    if len(analyses) < 2:
+        return None
+    old, new = analyses[0], analyses[-1]
     po, pn = pending_info(old), pending_info(new)
-    if pn["entry_count"] > po["entry_count"] or pn["max_feature_buffer_size"] > po["max_feature_buffer_size"]:
-        p = path_to(new.g, new.par, new.pedge, pn["max_feature_buffer_node"])
-        c, cr = conf("pendingpromises" in p["path_text"].lower(), False, len(analyses))
-        out.append(
-            {
-                "symptom": "pendingPromises map retained additional unresolved worker-result state.",
-                "suspected_owner": "pendingPromises map on worker client object.",
-                "evidence": {
-                    "older_pending": po,
-                    "newer_pending": pn,
-                    "entry_delta": int(pn["entry_count"] - po["entry_count"]),
-                    "feature_buffer_delta": int(pn["max_feature_buffer_size"] - po["max_feature_buffer_size"]),
-                    "capture_window": {"older": old.cap.id, "newer": new.cap.id},
-                },
-                "retention_path": p,
-                "impact": "Pending async entries can pin buffers/promises and raise baseline memory.",
-                "impact_bytes": int(max(0, pn["max_feature_buffer_size"] - po["max_feature_buffer_size"])),
-                "why_degrades_performance": "Pinned async state delays reclamation of large payload objects.",
-                "confidence": c,
-                "confidence_reason": cr,
-                "false_positive_checks": [
-                    "Transient in-flight work may appear mid-capture.",
-                    "Confirm behavior after explicit stop and queue drain."
-                ],
-                "next_validation": [
-                    "Capture active stream then stop/drain; verify pending entry count returns to zero.",
-                    "Capture post-drain forced-GC snapshot and compare retained feature buffers.",
-                ],
-            }
-        )
+    if pn["entry_count"] <= po["entry_count"] and pn["max_feature_buffer_size"] <= po["max_feature_buffer_size"]:
+        return None
+    p = new.hg.path_to(pn["max_feature_buffer_node"])
+    c, cr = conf("pendingpromises" in p["path_text"].lower(), False, len(analyses))
+    return {
+        "symptom": "pendingPromises map retained additional unresolved worker-result state.",
+        "suspected_owner": "pendingPromises map on worker client object.",
+        "evidence": {
+            "older_pending": po,
+            "newer_pending": pn,
+            "entry_delta": int(pn["entry_count"] - po["entry_count"]),
+            "feature_buffer_delta": int(pn["max_feature_buffer_size"] - po["max_feature_buffer_size"]),
+            "capture_window": {"older": old.cap.id, "newer": new.cap.id},
+        },
+        "retention_path": p,
+        "impact": "Pending async entries can pin buffers/promises and raise baseline memory.",
+        "impact_bytes": int(max(0, pn["max_feature_buffer_size"] - po["max_feature_buffer_size"])),
+        "why_degrades_performance": "Pinned async state delays reclamation of large payload objects.",
+        "confidence": c,
+        "confidence_reason": cr,
+        "false_positive_checks": [
+            "Transient in-flight work may appear mid-capture.",
+            "Confirm behavior after explicit stop and queue drain."
+        ],
+        "next_validation": [
+            "Capture active stream then stop/drain; verify pending entry count returns to zero.",
+            "Capture post-drain forced-GC snapshot and compare retained feature buffers.",
+        ],
+    }
 
+
+def _finding_detached_dom(analyses: List[A], comparisons: List[Dict[str, Any]], top_n: int) -> Optional[Dict[str, Any]]:
+    if len(analyses) < 2:
+        return None
+    old, new = analyses[0], analyses[-1]
     dd = int(new.detached["detached_node_count"] - old.detached["detached_node_count"])
     dr = int(new.detached["detached_retained_unique_estimate"] - old.detached["detached_retained_unique_estimate"])
-    if dd > 0 or dr > 0:
-        top = new.detached["top_detached_nodes"][0]["node_index"] if new.detached["top_detached_nodes"] else None
-        p = path_to(new.g, new.par, new.pedge, top)
-        out.append(
-            {
-                "symptom": "Detached DOM node count increased between captures.",
-                "suspected_owner": "UI subtree mount/unmount lifecycle.",
-                "evidence": {
-                    "older_detached_count": old.detached["detached_node_count"],
-                    "newer_detached_count": new.detached["detached_node_count"],
-                    "delta_detached_count": dd,
-                    "older_detached_retained_unique_estimate": old.detached["detached_retained_unique_estimate"],
-                    "newer_detached_retained_unique_estimate": new.detached["detached_retained_unique_estimate"],
-                    "delta_detached_retained_unique_estimate": dr,
-                },
-                "retention_path": p,
-                "impact": "Detached trees may accumulate UI memory overhead over long sessions.",
-                "impact_bytes": int(max(0, dr)),
-                "why_degrades_performance": "Detached nodes keep style/layout related objects alive.",
-                "confidence": "low",
-                "confidence_reason": "Single-pair signal with relatively small retained impact.",
-                "false_positive_checks": [
-                    "Minor detached-node fluctuations can be normal reconciliation noise.",
-                    "Require repeated post-GC growth for leak confirmation."
-                ],
-                "next_validation": [
-                    "Run repeated UI toggle cycles and compare post-GC detached retained deltas.",
-                    "Capture idle-after-interaction to confirm reclamation."
-                ],
-            }
-        )
+    if dd <= 0 and dr <= 0:
+        return None
+    top = new.detached["top_detached_nodes"][0]["node_index"] if new.detached["top_detached_nodes"] else None
+    p = new.hg.path_to(top)
+    return {
+        "symptom": "Detached DOM node count increased between captures.",
+        "suspected_owner": "UI subtree mount/unmount lifecycle.",
+        "evidence": {
+            "older_detached_count": old.detached["detached_node_count"],
+            "newer_detached_count": new.detached["detached_node_count"],
+            "delta_detached_count": dd,
+            "older_detached_retained_unique_estimate": old.detached["detached_retained_unique_estimate"],
+            "newer_detached_retained_unique_estimate": new.detached["detached_retained_unique_estimate"],
+            "delta_detached_retained_unique_estimate": dr,
+        },
+        "retention_path": p,
+        "impact": "Detached trees may accumulate UI memory overhead over long sessions.",
+        "impact_bytes": int(max(0, dr)),
+        "why_degrades_performance": "Detached nodes keep style/layout related objects alive.",
+        "confidence": "low",
+        "confidence_reason": "Single-pair signal with relatively small retained impact.",
+        "false_positive_checks": [
+            "Minor detached-node fluctuations can be normal reconciliation noise.",
+            "Require repeated post-GC growth for leak confirmation."
+        ],
+        "next_validation": [
+            "Run repeated UI toggle cycles and compare post-GC detached retained deltas.",
+            "Capture idle-after-interaction to confirm reclamation."
+        ],
+    }
 
+
+def _finding_performance_timing(analyses: List[A], comparisons: List[Dict[str, Any]], top_n: int) -> Optional[Dict[str, Any]]:
+    if len(analyses) < 2:
+        return None
+    old, new = analyses[0], analyses[-1]
+    anchor = compare(old, new, top_n)
     pd = ctor_delta(anchor, "PerformanceEventTiming")
-    if pd and pd["delta_self_size"] > 0:
-        node = best_node(new, "PerformanceEventTiming")
-        p = path_to(new.g, new.par, new.pedge, node)
-        c, cr = conf(False, False, len(analyses), browser_amb=True)
-        out.append(
-            {
-                "symptom": "PerformanceEventTiming objects increased across captures.",
-                "suspected_owner": path_owner_hint(p["path_text"]),
-                "evidence": {"constructor": "PerformanceEventTiming", "delta_self_size": pd["delta_self_size"], "older_count": pd["older_count"], "newer_count": pd["newer_count"]},
-                "retention_path": p,
-                "impact": "May raise background memory overhead and diagnostics noise.",
-                "impact_bytes": int(pd["delta_self_size"]),
-                "why_degrades_performance": "Large timing-entry arrays increase retained object graph scanning.",
-                "confidence": c,
-                "confidence_reason": cr,
-                "false_positive_checks": [
-                    "Browser timing buffers are expected unless app collections retain entries indefinitely.",
-                    "Need repeated post-GC idling to distinguish bounded vs unbounded accumulation."
-                ],
-                "next_validation": [
-                    "Capture post-GC idle snapshots without interaction and verify plateau.",
-                    "Inspect observer draining behavior in targeted run."
-                ],
-            }
-        )
+    if not pd or pd["delta_self_size"] <= 0:
+        return None
+    node = best_node(new, "PerformanceEventTiming")
+    p = new.hg.path_to(node)
+    c, cr = conf(False, False, len(analyses), browser_amb=True)
+    return {
+        "symptom": "PerformanceEventTiming objects increased across captures.",
+        "suspected_owner": path_owner_hint(p["path_text"]),
+        "evidence": {"constructor": "PerformanceEventTiming", "delta_self_size": pd["delta_self_size"], "older_count": pd["older_count"], "newer_count": pd["newer_count"]},
+        "retention_path": p,
+        "impact": "May raise background memory overhead and diagnostics noise.",
+        "impact_bytes": int(pd["delta_self_size"]),
+        "why_degrades_performance": "Large timing-entry arrays increase retained object graph scanning.",
+        "confidence": c,
+        "confidence_reason": cr,
+        "false_positive_checks": [
+            "Browser timing buffers are expected unless app collections retain entries indefinitely.",
+            "Need repeated post-GC idling to distinguish bounded vs unbounded accumulation."
+        ],
+        "next_validation": [
+            "Capture post-GC idle snapshots without interaction and verify plateau.",
+            "Inspect observer draining behavior in targeted run."
+        ],
+    }
 
+
+def _finding_timeline_bursts(analyses: List[A], comparisons: List[Dict[str, Any]], top_n: int) -> Optional[Dict[str, Any]]:
     tls = [a for a in analyses if a.timeline.get("sample_count", 0) > 0]
-    if tls:
-        t = tls[-1].timeline
-        bursts = t.get("top_id_growth_bursts", [])
-        cps = t.get("survivor_pressure_checkpoints", [])
-        mr = float(bursts[0]["id_per_us"]) if bursts else 0.0
-        r75 = 0.0
-        for cp in cps:
-            if abs(cp.get("checkpoint", -1) - 0.75) < 1e-9:
-                r75 = float(cp.get("survivor_ratio", 0.0))
-                break
-        if mr > 0:
-            c = "medium" if r75 >= 0.30 else "low"
-            out.append(
-                {
-                    "symptom": "Timeline shows bursty allocation and non-trivial survivor baseline.",
-                    "suspected_owner": "Mixed runtime/app allocation churn during active processing.",
-                    "evidence": {"capture_id": tls[-1].cap.id, "sample_count": t.get("sample_count", 0), "duration_seconds": t.get("duration_seconds", 0.0), "max_id_growth_rate_per_us": mr, "survivor_ratio_at_75pct": r75},
-                    "retention_path": {"reachable": False, "path_nodes": [], "path_text": "N/A (aggregate timeline signal)"},
-                    "impact": "Allocation churn with survivors can increase GC frequency and pause overhead.",
-                    "impact_bytes": int(cps[-1]["survivor_self_size"] if cps else 0),
-                    "why_degrades_performance": "Bursty allocation increases mutator interruptions; survivors raise old-generation pressure.",
-                    "confidence": c,
-                    "confidence_reason": "Aggregate signal needs repeated runs for leak-level certainty.",
-                    "false_positive_checks": [
-                        "Single run may include warmup transients.",
-                        "Need active-vs-idle repetition to prove persistent churn."
-                    ],
-                    "next_validation": [
-                        "Record timeline during steady-state idle after warmup.",
-                        "Repeat 10-minute active run and compare burst/survivor profile."
-                    ],
-                }
-            )
+    if not tls:
+        return None
+    t = tls[-1].timeline
+    bursts = t.get("top_id_growth_bursts", [])
+    cps = t.get("survivor_pressure_checkpoints", [])
+    mr = float(bursts[0]["id_per_us"]) if bursts else 0.0
+    if mr <= 0:
+        return None
+    r75 = 0.0
+    for cp in cps:
+        if abs(cp.get("checkpoint", -1) - 0.75) < 1e-9:
+            r75 = float(cp.get("survivor_ratio", 0.0))
+            break
+    c = "medium" if r75 >= 0.30 else "low"
+    return {
+        "symptom": "Timeline shows bursty allocation and non-trivial survivor baseline.",
+        "suspected_owner": "Mixed runtime/app allocation churn during active processing.",
+        "evidence": {"capture_id": tls[-1].cap.id, "sample_count": t.get("sample_count", 0), "duration_seconds": t.get("duration_seconds", 0.0), "max_id_growth_rate_per_us": mr, "survivor_ratio_at_75pct": r75},
+        "retention_path": {"reachable": False, "path_nodes": [], "path_text": "N/A (aggregate timeline signal)"},
+        "impact": "Allocation churn with survivors can increase GC frequency and pause overhead.",
+        "impact_bytes": int(cps[-1]["survivor_self_size"] if cps else 0),
+        "why_degrades_performance": "Bursty allocation increases mutator interruptions; survivors raise old-generation pressure.",
+        "confidence": c,
+        "confidence_reason": "Aggregate signal needs repeated runs for leak-level certainty.",
+        "false_positive_checks": [
+            "Single run may include warmup transients.",
+            "Need active-vs-idle repetition to prove persistent churn."
+        ],
+        "next_validation": [
+            "Record timeline during steady-state idle after warmup.",
+            "Repeat 10-minute active run and compare burst/survivor profile."
+        ],
+    }
+
+
+def findings(analyses: List[A], comparisons: List[Dict[str, Any]], top_n: int) -> List[Dict[str, Any]]:
+    if len(analyses) < 2:
+        return []
+    out: List[Dict[str, Any]] = []
+    for detector in [
+        _finding_jsarraybufferdata,
+        _finding_pending_promises,
+        _finding_detached_dom,
+        _finding_performance_timing,
+        _finding_timeline_bursts,
+    ]:
+        f = detector(analyses, comparisons, top_n)
+        if f:
+            out.append(f)
 
     w = {"high": 3, "medium": 2, "low": 1}
     for f in out:
@@ -823,6 +879,23 @@ def report_obj(analyses: List[A], comparisons: List[Dict[str, Any]], findings_li
             "commands_used": [cmd],
         },
     }
+
+
+def _md_table(headers: List[str], rows: List[List[str]]) -> List[str]:
+    lines = ["| " + " | ".join(headers) + " |", "|" + "|".join("---" for _ in headers) + "|"]
+    for row in rows:
+        lines.append("| " + " | ".join(row) + " |")
+    return lines
+
+
+def _md_top_growing_constructors(rep: Dict[str, Any]) -> List[str]:
+    rows = rep["appendix"].get("top_growing_constructors", [])
+    if not rows:
+        return ["- No constructor growth rows."]
+    return _md_table(
+        ["Constructor", "Delta Self", "Delta Count"],
+        [[f"`{r['constructor']}`", str(r["delta_self_size"]), str(r["delta_count"])] for r in rows],
+    )
 
 
 def report_md(rep: Dict[str, Any], analyses: List[A], cmd: str) -> str:
@@ -897,16 +970,12 @@ def report_md(rep: Dict[str, Any], analyses: List[A], cmd: str) -> str:
         "### Top growing constructors/types",
         "",
     ]
-    tc = rep["appendix"]["top_growing_constructors"]
-    if tc:
-        ls += ["| Constructor | Delta Self | Delta Count |", "|---|---:|---:|"]
-        for r in tc:
-            ls.append(f"| `{r['constructor']}` | {r['delta_self_size']} | {r['delta_count']} |")
-    else:
-        ls.append("- No constructor growth rows.")
-    ls += ["", "### Largest retained objects/groups", "", "| Node | Constructor | Type | Self | Retained |", "|---:|---|---|---:|---:|"]
-    for r in analyses[-1].top_ret[:20]:
-        ls.append(f"| {r['node_index']} | `{r['constructor']}` | `{r['node_type']}` | {r['self_size']} | {r['retained_size']} |")
+    ls += _md_top_growing_constructors(rep)
+    ls += ["", "### Largest retained objects/groups", ""]
+    ls += _md_table(
+        ["Node", "Constructor", "Type", "Self", "Retained"],
+        [[str(r["node_index"]), f"`{r['constructor']}`", f"`{r['node_type']}`", str(r["self_size"]), str(r["retained_size"])] for r in analyses[-1].top_ret[:20]],
+    )
     ls += ["", "### CLI commands used", ""]
     for c in rep["appendix"]["commands_used"]:
         ls.append(f"- `{c}`")
