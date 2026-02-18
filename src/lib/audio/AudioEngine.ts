@@ -851,10 +851,10 @@ export class AudioEngine implements IAudioEngine {
     /**
      * Get visualization data subsampled to fit the target width.
      * Returns min/max pairs for each pixel to preserve peaks in the waveform.
-     * Zero-allocation when `outBuffer` is provided and has length `targetWidth * 2`;
-     * otherwise allocates a new Float32Array for the returned result.
+     *
      * @param targetWidth - The desired number of data points (e.g., canvas width).
-     * @param outBuffer - Optional preallocated output buffer of length `targetWidth * 2`.
+     * @param outBuffer - Optional pre-allocated buffer to write into. Must be length targetWidth * 2.
+     *                    If provided, no new allocation occurs.
      * @returns Float32Array containing alternating min/max values, length targetWidth * 2.
      */
     getVisualizationData(targetWidth: number, outBuffer?: Float32Array): Float32Array {
