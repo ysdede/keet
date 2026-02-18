@@ -82,6 +82,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     let cachedDpr = window.devicePixelRatio || 1;
     let resizeObserver: ResizeObserver | null = null;
     let dprMediaQuery: MediaQueryList | null = null;
+    let dprChangeHandler: ((this: MediaQueryList, ev: MediaQueryListEvent) => any) | null = null;
 
     /** Recompute physical canvas dimensions from cached logical size + DPR. */
     const updateCanvasDimensions = (logicalW: number, logicalH: number) => {
@@ -138,6 +139,9 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
 
             // Watch for DPR changes (browser zoom, display change)
             const setupDprWatch = () => {
+                if (dprMediaQuery && dprChangeHandler) {
+                    dprMediaQuery.removeEventListener('change', dprChangeHandler);
+                }
                 dprMediaQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
                 const onDprChange = () => {
                     if (disposed) return;
@@ -148,6 +152,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
                     // Re-register for the next change at the new DPR
                     setupDprWatch();
                 };
+                dprChangeHandler = onDprChange;
                 dprMediaQuery.addEventListener('change', onDprChange, { once: true });
             };
             setupDprWatch();
@@ -171,6 +176,11 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
             resizeObserver.disconnect();
             resizeObserver = null;
         }
+        if (dprMediaQuery && dprChangeHandler) {
+            dprMediaQuery.removeEventListener('change', dprChangeHandler);
+        }
+        dprMediaQuery = null;
+        dprChangeHandler = null;
     });
 
     const loop = (now: number = performance.now()) => {
