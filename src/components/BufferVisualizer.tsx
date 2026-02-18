@@ -434,7 +434,7 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
       // Subscribe to updates
       const sub = engine.onVisualizationUpdate((data, newMetrics, endTime) => {
         if (visible()) {
-          setWaveformData(data);
+          setWaveformData(new Float32Array(data));
           setMetrics(newMetrics);
           setBufferEndTime(endTime);
 
