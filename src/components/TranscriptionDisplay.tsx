@@ -150,12 +150,19 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
 
     const finalizedEntries = createMemo(() => props.sentenceEntries ?? []);
     const mergedCount = createMemo(() => finalizedEntries().length + (props.pendingText?.trim() ? 1 : 0));
-    const fullTextBody = createMemo(() => {
-        const finalized = finalizedEntries()
+    const finalizedMergedText = createMemo(() => {
+        // Avoid rebuilding the full finalized corpus while user is on Live tab.
+        if (props.isV4Mode && activeTab() !== 'merged') {
+            return '';
+        }
+        return finalizedEntries()
             .map((entry) => entry.text.trim())
             .filter((text) => text.length > 0)
             .join(' ')
             .trim();
+    });
+    const fullTextBody = createMemo(() => {
+        const finalized = finalizedMergedText();
         const live = props.pendingText.trim();
         if (finalized && live) return `${finalized} ${live}`.trim();
         return finalized || live || '';
