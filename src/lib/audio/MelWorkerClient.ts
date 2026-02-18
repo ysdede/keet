@@ -15,12 +15,17 @@
  *   // features = { features: Float32Array, T: number, melBins: number }
  */
 
+/** Mel feature block returned from the mel worker for a queried sample range. */
 export interface MelFeatures {
+    /** Flattened mel features in mel-major layout. */
     features: Float32Array;
+    /** Number of time frames. */
     T: number;
+    /** Number of mel bins per frame. */
     melBins: number;
 }
 
+/** Promise-based main-thread client for the mel feature worker. */
 export class MelWorkerClient {
     private worker: Worker;
     private messageId = 0;

@@ -1,5 +1,5 @@
 /**
- * Keet v3.0 - App Store
+ * Keet v1.1 - App Store
  * 
  * Central state management using SolidJS signals.
  * Manages recording state, model status, and transcript.
@@ -10,14 +10,20 @@ import type { RecordingState, ModelState, BackendType } from '../types';
 import type { V4SentenceEntry } from '../lib/transcription/TranscriptionWorkerClient';
 
 export interface DebugToken {
+  /** Stable token identifier used by debug token rendering. */
   id: string;
+  /** Token text emitted by streaming decode. */
   text: string;
+  /** Decoder confidence in the range 0-1. */
   confidence: number;
 }
 
 export interface SystemMetrics {
+  /** Throughput in tokens per second. */
   throughput: number; // tokens/sec
+  /** Aggregate model confidence in the range 0-1. */
   modelConfidence: number; // 0-1
+  /** Optional GPU/VRAM usage label for diagnostics UI. */
   vramUsage?: string;
 }
 
@@ -26,28 +32,41 @@ export type TranscriptionMode = 'v2-utterance' | 'v3-streaming' | 'v4-utterance'
 
 /** Merge info for v3 streaming mode */
 export interface MergeInfo {
+  /** Longest common subsequence length for overlap merge. */
   lcsLength: number;
+  /** Whether current anchor tokens are considered stable. */
   anchorValid: boolean;
+  /** Number of chunks merged in the active stream session. */
   chunkCount: number;
+  /** Optional anchor tokens used to lock merge alignment. */
   anchorTokens?: string[];
 }
 
 /** VAD state for UI display */
 export interface VADState {
+  /** Speech activity decision for current frame/window. */
   isSpeech: boolean;
+  /** Energy estimate for current analysis window. */
   energy: number;
+  /** Signal-to-noise ratio in dB. */
   snr: number;
+  /** Silero VAD probability in the range 0-1. */
   sileroProbability: number;
+  /** Hybrid VAD state label for UI/debug surfaces. */
   hybridState: string;
 }
 
 /** Merger stats for v4 mode */
 export interface V4MergerStats {
+  /** Number of finalized sentences emitted by v4 merger. */
   sentencesFinalized: number;
+  /** Number of mature cursor updates applied. */
   cursorUpdates: number;
+  /** Number of utterance windows processed. */
   utterancesProcessed: number;
 }
 
+/** Creates the root application store with state signals, setters, and UI actions. */
 export function createAppStore() {
   // Recording state
   const [recordingState, setRecordingState] = createSignal<RecordingState>('idle');
@@ -347,5 +366,7 @@ export function createAppStore() {
 }
 
 // Create singleton store
+/** Singleton app store instance used across the UI and processing pipeline. */
 export const appStore = createRoot(createAppStore);
+
 
