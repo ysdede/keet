@@ -1,5 +1,5 @@
 /**
- * Keet v2.0 - Entry Point
+ * Keet v1.1 - Entry Point
  * 
  * Privacy-first, offline-capable real-time transcription.
  */
@@ -16,3 +16,4 @@ if (!root) {
 }
 
 render(() => <App />, root);
+

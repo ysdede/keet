@@ -1,5 +1,5 @@
 /**
- * Keet v3.0 - Token Stream Transcriber
+ * Keet v1.1 - Token Stream Transcriber
  * 
  * Uses LCSPTFAMerger for overlapping window transcription with
  * token-level merging (NeMo LCS + PTFA enhancements).
@@ -14,6 +14,7 @@ import { ModelManager } from './ModelManager';
 // Import LCSPTFAMerger from parakeet.js (will be available after npm link or install)
 // For now, we'll use dynamic import to handle the case where it's linked locally
 
+/** Runtime configuration for token-stream windowing and merge behavior. */
 export interface TokenStreamConfig {
     /** Window duration in seconds (default 5.0) */
     windowDuration?: number;
@@ -34,6 +35,7 @@ export interface TokenStreamConfig {
     returnLogProbs?: boolean;
 }
 
+/** Callback hooks for token-stream updates and merge diagnostics. */
 export interface TokenStreamCallbacks {
     onConfirmedUpdate?: (text: string, tokens: any[]) => void;
     onPendingUpdate?: (text: string, tokens: any[]) => void;
@@ -41,6 +43,7 @@ export interface TokenStreamCallbacks {
     onError?: (error: Error) => void;
 }
 
+/** Aggregate output from one token-stream processing step. */
 export interface TokenStreamResult {
     /** Confirmed (stable) transcript text */
     confirmedText: string;
@@ -546,3 +549,4 @@ export class TokenStreamTranscriber {
         return { ...this._config };
     }
 }
+

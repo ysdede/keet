@@ -1,5 +1,6 @@
 import { Component } from 'solid-js';
 
+/** Floating privacy badge that explains on-device transcription guarantees. */
 export const PrivacyBadge: Component = () => {
     return (
         <div class="fixed bottom-16 right-8 z-30 group">

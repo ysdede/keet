@@ -3,9 +3,11 @@ import { AudioEngine } from '../lib/audio/types';
 import { appStore } from '../stores/appStore';
 
 interface EnergyMeterProps {
+    /** Audio engine that provides energy/SNR snapshots. */
     audioEngine?: AudioEngine;
 }
 
+/** Displays current signal energy, noise floor, and SNR-driven speech state. */
 export const EnergyMeter: Component<EnergyMeterProps> = (props) => {
     const [energy, setEnergy] = createSignal(0);
     const [metrics, setMetrics] = createSignal({ noiseFloor: 0, snr: 0, threshold: 0.02, snrThreshold: 3.0 });

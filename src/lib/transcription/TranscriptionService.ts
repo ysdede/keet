@@ -1,5 +1,5 @@
 /**
- * Keet v2.0 - Transcription Service
+ * Keet v1.1 - Transcription Service
  * 
  * High-level service for real-time transcription using parakeet.js
  * StatefulStreamingTranscriber. No complex merging logic required!
@@ -13,6 +13,7 @@ import type {
 } from './types';
 import { ModelManager } from './ModelManager';
 
+/** High-level transcription facade for streaming chunks and finalized segments. */
 export class TranscriptionService {
   private _modelManager: ModelManager;
   private _streamer: any = null; // StatefulStreamingTranscriber
@@ -202,3 +203,4 @@ export class TranscriptionService {
     }
   }
 }
+
