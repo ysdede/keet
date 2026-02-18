@@ -1,5 +1,5 @@
 /**
- * Keet v2.0 - Model Manager
+ * Keet v1.1 - Model Manager
  * 
  * Handles loading, caching, and managing parakeet.js model lifecycle.
  * Supports WebGPU with WASM fallback.
@@ -38,6 +38,7 @@ type ResolvedModelAssets = {
   preprocessorBackend?: string;
 };
 
+/** Manages model lifecycle, backend selection, and cache-aware loading. */
 export class ModelManager {
   private _state: ModelState = 'unloaded';
   private _progress: number = 0;
@@ -232,7 +233,8 @@ export class ModelManager {
       this._backend = hasWebGPU ? 'webgpu' : 'wasm';
 
       this._setProgress({ stage: 'import', progress: 20, message: 'Initialising parakeet.js...' });
-      const { ParakeetModel } = await import('parakeet.js');
+      const { ParakeetModel } = await import(
+        'parakeet.js');
 
       this._setProgress({ stage: 'compile', progress: 40, message: 'Compiling local model...' });
 
@@ -392,3 +394,4 @@ export class ModelManager {
     });
   }
 }
+

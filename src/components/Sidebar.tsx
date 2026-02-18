@@ -1,23 +1,31 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 
 interface SidebarProps {
+  /** Currently selected sidebar tab ID. */
   activeTab: string;
+  /** Switches the selected sidebar tab. */
   onTabChange: (tab: string) => void;
-  // Recording controls
+  /** Indicates whether recording is active. */
   isRecording: boolean;
+  /** Starts or stops audio capture. */
   onToggleRecording: () => void;
-  // Model state
+  /** Whether a model is loaded and ready for inference. */
   isModelReady: boolean;
+  /** Opens model selection/loading flow. */
   onLoadModel: () => void;
+  /** Current model lifecycle state. */
   modelState: string;
-  // Device selection
+  /** Available microphone devices from `enumerateDevices()`. */
   availableDevices: MediaDeviceInfo[];
+  /** Selected microphone device ID. */
   selectedDeviceId: string;
+  /** Updates the selected microphone device. */
   onDeviceSelect: (id: string) => void;
-  // Audio feedback
+  /** Current normalized input level (0-1). */
   audioLevel: number;
 }
 
+/** Left rail with recording, model, and device actions. */
 export const Sidebar: Component<SidebarProps> = (props) => {
   const [showDevices, setShowDevices] = createSignal(false);
   let triggerContainerRef: HTMLDivElement | undefined;
