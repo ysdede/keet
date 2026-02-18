@@ -5,7 +5,9 @@ import type { MelWorkerClient } from '../lib/audio/MelWorkerClient';
 import { LayeredBufferVisualizer } from './LayeredBufferVisualizer';
 
 interface DebugPanelProps {
+  /** Live audio engine used by buffer/debug visualizers. */
   audioEngine?: AudioEngine;
+  /** Mel worker client used to render spectrogram layers. */
   melClient?: MelWorkerClient;
 }
 
@@ -15,6 +17,7 @@ const MODES: { id: TranscriptionMode; label: string; short: string }[] = [
   { id: 'v2-utterance', label: 'Legacy (v2)', short: 'v2' },
 ];
 
+/** Resizable diagnostics panel for runtime metrics, VAD state, and transcript internals. */
 export const DebugPanel: Component<DebugPanelProps> = (props) => {
   const isRecording = () => appStore.recordingState() === 'recording';
   const isV4 = () => appStore.transcriptionMode() === 'v4-utterance';

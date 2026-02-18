@@ -48,6 +48,7 @@ export interface WindowBuilderConfig {
     debug: boolean;
 }
 
+/** Builds cursor-aware transcription windows with min/max duration constraints. */
 export class WindowBuilder {
     private config: WindowBuilderConfig;
     private ringBuffer: IRingBuffer;

@@ -1,5 +1,5 @@
 /**
- * Keet v4.0 - Transcription Worker Client
+ * Keet v1.1 - Transcription Worker Client
  * 
  * Main thread bridge to the Transcription Web Worker.
  * Offloads heavy AI transcription to a background thread to prevent UI stutters.
@@ -40,6 +40,7 @@ export interface V4IncrementalCache {
     prefixSeconds: number;
 }
 
+/** Main-thread request/response client for the transcription web worker. */
 export class TranscriptionWorkerClient {
     private worker: Worker;
     private messageId = 0;
@@ -234,3 +235,4 @@ export class TranscriptionWorkerClient {
         this.pendingPromises.clear();
     }
 }
+

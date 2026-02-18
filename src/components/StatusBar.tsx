@@ -1,6 +1,7 @@
 import { Component, Show } from 'solid-js';
 import { appStore } from '../stores/appStore';
 
+/** Bottom status strip for model readiness, backend, and connectivity state. */
 export const StatusBar: Component = () => {
     const modelStatusText = () => {
         switch (appStore.modelState()) {
