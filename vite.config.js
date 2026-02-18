@@ -114,6 +114,7 @@ export default defineConfig({
     format: 'es',
   },
   define: {
+    __KEET_VERSION__: JSON.stringify(keetPkg?.version || '0.0.0'),
     __PARAKEET_VERSION__: JSON.stringify(parakeetVersion),
     __PARAKEET_SOURCE__: JSON.stringify(parakeetSource),
     __ONNXRUNTIME_VERSION__: JSON.stringify(onnxVersion),
