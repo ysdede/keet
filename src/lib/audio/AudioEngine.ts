@@ -1025,14 +1025,11 @@ export class AudioEngine implements IAudioEngine {
         }
         this.lastVisualizationNotifyTime = now;
 
-        // Ensure reuse buffer is ready (400 points * 2 min/max = 800 floats)
-        const targetWidth = 400;
-        const targetSize = targetWidth * 2;
-        if (!this.visualizationNotifyBuffer || this.visualizationNotifyBuffer.length !== targetSize) {
-            this.visualizationNotifyBuffer = new Float32Array(targetSize);
-        }
+        // Optimization: Skip computing visualization data (min/max resampling) as it is currently unused by the UI.
+        // App.tsx ignores the `data` argument and uses `getBarLevels()` (oscilloscope) instead.
+        // This avoids ~2000 loop iterations every 33ms (30fps) on the main thread.
+        const data = new Float32Array(0);
 
-        const data = this.getVisualizationData(targetWidth, this.visualizationNotifyBuffer); // 400 points is enough for modern displays and saves CPU
         const bufferEndTime = this.ringBuffer.getCurrentTime();
         this.visualizationCallbacks.forEach((cb) => cb(data, this.getMetrics(), bufferEndTime));
     }
