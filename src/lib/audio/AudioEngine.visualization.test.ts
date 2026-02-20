@@ -115,6 +115,13 @@ describe('AudioEngine Visualization', () => {
         expect(data.length).toBe(4000); // 2000 * 2
     });
 
+    it('should write into the provided output buffer when size matches', () => {
+        const out = new Float32Array(200);
+        const data = engine.getVisualizationData(100, out);
+        expect(data).toBe(out);
+        expect(data.length).toBe(200);
+    });
+
     it('should reset visualization data', () => {
         // Inject data
         const chunk = new Float32Array(16000);
@@ -184,5 +191,45 @@ describe('AudioEngine Visualization', () => {
             }
         }
         expect(foundTransition).toBe(true);
+    });
+
+    it('should publish non-empty visualization payloads to callbacks', () => {
+        const chunk = new Float32Array(1600);
+        chunk.fill(0.4);
+
+        let callbackData: Float32Array | null = null;
+        const unsubscribe = engine.onVisualizationUpdate((data) => {
+            callbackData = data;
+        });
+
+        // Avoid test flakiness from visualization throttling.
+        (engine as any).lastVisualizationNotifyTime = -1e9;
+        injectAudio(chunk);
+        unsubscribe();
+
+        expect(callbackData).toBeInstanceOf(Float32Array);
+        expect((callbackData as Float32Array).length).toBe(800); // 400 min/max pairs
+    });
+
+    it('should publish stable snapshots across update cycles', () => {
+        const chunk = new Float32Array(1600);
+        const snapshots: Float32Array[] = [];
+        const unsubscribe = engine.onVisualizationUpdate((data) => {
+            snapshots.push(data);
+        });
+
+        (engine as any).lastVisualizationNotifyTime = -1e9;
+        chunk.fill(0.2);
+        injectAudio(chunk);
+        const firstCopy = new Float32Array(snapshots[0]);
+
+        (engine as any).lastVisualizationNotifyTime = -1e9;
+        chunk.fill(0.8);
+        injectAudio(chunk);
+        unsubscribe();
+
+        expect(snapshots.length).toBeGreaterThanOrEqual(2);
+        expect(snapshots[0]).not.toBe(snapshots[1]);
+        expect(Array.from(snapshots[0])).toEqual(Array.from(firstCopy));
     });
 });
