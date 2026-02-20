@@ -1,6 +1,6 @@
 
 import { describe, it, expect } from 'vitest';
-import { AudioSegmentProcessor } from './AudioSegmentProcessor';
+import { AudioSegmentProcessor, type ProcessedSegment } from './AudioSegmentProcessor';
 
 describe('AudioSegmentProcessor', () => {
     it('should initialize without errors', () => {
@@ -65,6 +65,51 @@ describe('AudioSegmentProcessor', () => {
         const state = processor.getStateInfo();
         expect(state.inSpeech).toBe(false);
         expect(state.speechStartTime).toBeNull();
+    });
+
+    it('should proactively split segments exceeding maxDuration', () => {
+        const sampleRate = 16000;
+        const maxDuration = 0.5;
+
+        const processor = new AudioSegmentProcessor({
+            sampleRate,
+            maxSegmentDuration: maxDuration,
+            energyThreshold: 0.01,
+            minSpeechDuration: 0.1,
+            snrThreshold: 0,
+            minSnrThreshold: 0
+        });
+
+        const chunkSize = Math.round(sampleRate * 0.1);
+        const highEnergyChunk = new Float32Array(chunkSize).fill(0.5);
+        const highEnergy = 0.5;
+
+        let currentTime = 0;
+        const emittedSegments: ProcessedSegment[] = [];
+        let speechStarted = false;
+
+        // Feed 0.8s of continuous speech (8 * 100ms chunks).
+        for (let i = 0; i < 8; i++) {
+            currentTime += 0.1;
+            const segments = processor.processAudioData(highEnergyChunk, currentTime, highEnergy);
+            if (segments.length > 0) {
+                emittedSegments.push(...segments);
+            }
+
+            const state = processor.getStateInfo();
+            if (state.inSpeech) speechStarted = true;
+        }
+
+        expect(speechStarted).toBe(true);
+        expect(emittedSegments.length).toBeGreaterThan(0);
+
+        const firstSegment = emittedSegments[0];
+        expect(firstSegment.duration).toBeGreaterThanOrEqual(maxDuration);
+        expect(firstSegment.duration).toBeLessThan(maxDuration + 0.2);
+
+        const finalState = processor.getStateInfo();
+        expect(finalState.inSpeech).toBe(true);
+        expect(finalState.speechStartTime).toBeGreaterThanOrEqual(firstSegment.endTime);
     });
 
     it('should return defensive copies from getStats', () => {
