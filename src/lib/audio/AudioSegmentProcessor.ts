@@ -488,7 +488,12 @@ export class AudioSegmentProcessor {
      * Get current statistics.
      */
     getStats(): CurrentStats {
-        return this.state.currentStats;
+        const stats = this.state.currentStats;
+        return {
+            ...stats,
+            silence: { ...stats.silence },
+            speech: { ...stats.speech }
+        };
     }
 
     /**
