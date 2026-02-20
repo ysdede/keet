@@ -61,6 +61,7 @@ export class AudioEngine implements IAudioEngine {
     private visualizationSummary: Float32Array | null = null;
     private visualizationSummaryPosition: number = 0;
     private readonly VIS_SUMMARY_SIZE = 2000; // 2000 min/max pairs for 30 seconds = 15ms resolution
+    private visualizationNotifyBuffer: Float32Array | null = null;
 
     // Metrics for UI components
     private metrics: AudioMetrics = {
@@ -825,9 +826,9 @@ export class AudioEngine implements IAudioEngine {
      * Returns min/max pairs for each pixel to preserve peaks in the waveform.
      *
      * @param targetWidth - The desired number of data points (e.g., canvas width).
-     * @param outBuffer - Optional pre-allocated buffer to write into. Must be length targetWidth * 2.
+     * @param outBuffer - Optional pre-allocated buffer to write into. Must be length (clampedWidth * 2).
      *                    If provided, no new allocation occurs.
-     * @returns Float32Array containing alternating min/max values, length targetWidth * 2.
+     * @returns Float32Array containing alternating min/max values, length (clampedWidth * 2).
      */
     getVisualizationData(targetWidth: number, outBuffer?: Float32Array): Float32Array {
         if (!this.visualizationSummary || !targetWidth || targetWidth <= 0) {
@@ -836,7 +837,10 @@ export class AudioEngine implements IAudioEngine {
 
         // Clamp width to summary size to avoid upsampling artifacts
         const width = Math.min(targetWidth, this.VIS_SUMMARY_SIZE);
-        const subsampledBuffer = new Float32Array(width * 2);
+        const outSize = width * 2;
+        const subsampledBuffer = (outBuffer && outBuffer.length === outSize)
+            ? outBuffer
+            : new Float32Array(outSize);
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
 
         for (let i = 0; i < width; i++) {
@@ -916,10 +920,12 @@ export class AudioEngine implements IAudioEngine {
         }
         this.lastVisualizationNotifyTime = now;
 
-        // Optimization: Skip computing visualization data (min/max resampling) as it is currently unused by the UI.
-        // App.tsx ignores the `data` argument and uses `getBarLevels()` (oscilloscope) instead.
-        // This avoids ~2000 loop iterations every 33ms (30fps) on the main thread.
-        const data = new Float32Array(0);
+        const targetWidth = 400;
+        const targetSize = targetWidth * 2;
+        if (!this.visualizationNotifyBuffer || this.visualizationNotifyBuffer.length !== targetSize) {
+            this.visualizationNotifyBuffer = new Float32Array(targetSize);
+        }
+        const data = this.getVisualizationData(targetWidth, this.visualizationNotifyBuffer);
 
         const bufferEndTime = this.ringBuffer.getCurrentTime();
         this.visualizationCallbacks.forEach((cb) => cb(data, this.getMetrics(), bufferEndTime));
