@@ -530,7 +530,7 @@ const App: Component = () => {
         windowBuilder.advanceMatureCursorByTime(result.matureCursorTime);
         windowBuilder.markSentenceEnd(Math.round(result.matureCursorTime * 16000));
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('[v4Tick] Inference error:', err);
     } finally {
       v4InferenceBusy = false;
@@ -871,8 +871,9 @@ const App: Component = () => {
           }
           appStore.setBarLevels(audioEngine!.getBarLevels());
         });
-      } catch (err: any) {
-        appStore.setErrorMessage(err.message);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        appStore.setErrorMessage(message);
       }
     }
   };
