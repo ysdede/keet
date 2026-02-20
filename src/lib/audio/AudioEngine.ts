@@ -827,7 +827,7 @@ export class AudioEngine implements IAudioEngine {
      *
      * @param targetWidth - The desired number of data points (e.g., canvas width).
      * @param outBuffer - Optional pre-allocated buffer to write into. Must be length (clampedWidth * 2).
-     *                    If provided, no new allocation occurs.
+     *                    New allocation happens only when omitted or sized incorrectly.
      * @returns Float32Array containing alternating min/max values, length (clampedWidth * 2).
      */
     getVisualizationData(targetWidth: number, outBuffer?: Float32Array): Float32Array {
@@ -926,8 +926,9 @@ export class AudioEngine implements IAudioEngine {
             this.visualizationNotifyBuffer = new Float32Array(targetSize);
         }
         const data = this.getVisualizationData(targetWidth, this.visualizationNotifyBuffer);
+        const payload = data.slice();
 
         const bufferEndTime = this.ringBuffer.getCurrentTime();
-        this.visualizationCallbacks.forEach((cb) => cb(data, this.getMetrics(), bufferEndTime));
+        this.visualizationCallbacks.forEach((cb) => cb(payload, this.getMetrics(), bufferEndTime));
     }
 }
