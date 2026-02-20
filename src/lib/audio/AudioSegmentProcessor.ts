@@ -269,7 +269,6 @@ export class AudioSegmentProcessor {
 
                     if (this.state.speechStats.length > this.options.maxHistoryLength) {
                         this.state.speechStats.shift();
-                        this.state.cachedSpeechSummary = null;
                     }
                 }
 
