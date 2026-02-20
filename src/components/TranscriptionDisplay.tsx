@@ -57,7 +57,7 @@ const getInitialMergedSplitRatio = (): number => {
     try {
         const raw = Number(localStorage.getItem(MERGED_SPLIT_STORAGE_KEY));
         if (Number.isFinite(raw)) return clampMergedSplitRatio(raw);
-    } catch (_) {}
+    } catch (_) { }
     return 0.5;
 };
 
@@ -109,7 +109,7 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
         if (typeof localStorage === 'undefined') return;
         try {
             localStorage.setItem(MERGED_SPLIT_STORAGE_KEY, String(ratio));
-        } catch (_) {}
+        } catch (_) { }
     };
 
     const startSplitResize = (event: MouseEvent) => {
@@ -183,6 +183,7 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
         activeTab();
         props.confirmedText;
         props.pendingText;
+        props.isRecording;
         finalizedEntries().length;
         scrollToBottom();
     });
@@ -266,30 +267,27 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                 <div class="mb-4 flex items-center gap-2">
                     <button
                         type="button"
-                        class={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-colors ${
-                            activeTab() === 'live'
+                        class={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-colors ${activeTab() === 'live'
                                 ? 'bg-[var(--color-earthy-muted-green)] text-white border-[var(--color-earthy-muted-green)]'
                                 : 'bg-[var(--color-earthy-bg)] text-[var(--color-earthy-soft-brown)] border-[var(--color-earthy-sage)]/50 hover:border-[var(--color-earthy-soft-brown)]'
-                        }`}
+                            }`}
                         onClick={() => setActiveTab('live')}
                     >
                         Live
                     </button>
                     <button
                         type="button"
-                        class={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-colors flex items-center gap-2 ${
-                            activeTab() === 'merged'
+                        class={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-colors flex items-center gap-2 ${activeTab() === 'merged'
                                 ? 'bg-[var(--color-earthy-muted-green)] text-white border-[var(--color-earthy-muted-green)]'
                                 : 'bg-[var(--color-earthy-bg)] text-[var(--color-earthy-soft-brown)] border-[var(--color-earthy-sage)]/50 hover:border-[var(--color-earthy-soft-brown)]'
-                        }`}
+                            }`}
                         onClick={() => setActiveTab('merged')}
                     >
                         <span>Timeline</span>
-                        <span class={`px-1.5 py-0.5 rounded text-[10px] leading-none ${
-                            activeTab() === 'merged'
+                        <span class={`px-1.5 py-0.5 rounded text-[10px] leading-none ${activeTab() === 'merged'
                                 ? 'bg-white/20'
                                 : 'bg-[var(--color-earthy-sage)]/30'
-                        }`}>
+                            }`}>
                             {mergedCount()}
                         </span>
                     </button>
@@ -396,16 +394,14 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                                 aria-orientation="vertical"
                                 aria-label="Adjust merged split"
                             >
-                                <div class={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors ${
-                                    isSplitResizing()
+                                <div class={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors ${isSplitResizing()
                                         ? 'bg-[var(--color-earthy-muted-green)]'
                                         : 'bg-[var(--color-earthy-sage)]/70 group-hover:bg-[var(--color-earthy-soft-brown)]/80'
-                                }`} />
-                                <div class={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-10 rounded-full border transition-colors ${
-                                    isSplitResizing()
+                                    }`} />
+                                <div class={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-10 rounded-full border transition-colors ${isSplitResizing()
                                         ? 'bg-[var(--color-earthy-sage)] border-[var(--color-earthy-muted-green)]/80'
                                         : 'bg-[var(--color-earthy-bg)] border-[var(--color-earthy-sage)]/60 group-hover:border-[var(--color-earthy-soft-brown)]/80'
-                                }`} />
+                                    }`} />
                             </div>
 
                             <div
