@@ -15,6 +15,10 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@fontsource-variable/material-symbols-outlined": "^5.2.35",
+    "@fontsource/crimson-pro": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/plus-jakarta-sans": "^5.2.8",
     "@tailwindcss/vite": "^4.1.18",
     "@vitest/web-worker": "^4.0.18",
     "cross-env": "^7.0.3",
@@ -24,10 +28,6 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@fontsource-variable/material-symbols-outlined": "^5.2.35",
-    "@fontsource/crimson-pro": "^5.2.8",
-    "@fontsource/jetbrains-mono": "^5.2.8",
-    "@fontsource/plus-jakarta-sans": "^5.2.8",
     "parakeet.js": "1.2.1",
     "solid-js": "^1.9.5",
     "wink-eng-lite-web-model": "^1.8.1",
