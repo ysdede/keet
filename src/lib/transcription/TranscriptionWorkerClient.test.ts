@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { TranscriptionWorkerClient } from './TranscriptionWorkerClient';
 
 // Mock Worker class
@@ -57,12 +57,14 @@ class MockWorker {
     dispatchEvent() { return true; }
 }
 
-// Replace global Worker with MockWorker
-const originalWorker = global.Worker;
-global.Worker = MockWorker as any;
+const originalWorker = globalThis.Worker;
 
 describe('TranscriptionWorkerClient', () => {
     let client: TranscriptionWorkerClient;
+
+    beforeAll(() => {
+        vi.stubGlobal('Worker', MockWorker as unknown as typeof Worker);
+    });
 
     beforeEach(() => {
         client = new TranscriptionWorkerClient();
@@ -70,6 +72,14 @@ describe('TranscriptionWorkerClient', () => {
 
     afterEach(() => {
         client.dispose();
+    });
+
+    afterAll(() => {
+        if (originalWorker) {
+            vi.stubGlobal('Worker', originalWorker);
+        } else {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('should initialize service', async () => {
@@ -93,11 +103,4 @@ describe('TranscriptionWorkerClient', () => {
         const file = new File([''], 'model.onnx');
         await expect(client.initLocalModel([file])).resolves.toBeUndefined();
     });
-});
-
-// Restore global Worker
-afterEach(() => {
-    // global.Worker = originalWorker;
-    // We keep it mocked for all tests in this file.
-    // Ideally we restore in afterAll or use vi.stubGlobal if available but direct assignment works here.
 });
