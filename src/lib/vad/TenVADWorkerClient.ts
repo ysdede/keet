@@ -108,12 +108,14 @@ export class TenVADWorkerClient {
         this.resultCallback = null;
     }
 
+    /** Returns whether INIT has completed successfully. */
     isReady(): boolean {
         return this.ready;
     }
 
     // ---- Internal ----
 
+    /** Routes worker messages to either streaming callbacks or pending request promises. */
     private handleMessage(msg: TenVADResponse): void {
         // Streaming results don't have an id
         if (msg.type === 'RESULT') {
@@ -141,10 +143,33 @@ export class TenVADWorkerClient {
         }
     }
 
+    /**
+     * Sends a request to the worker and resolves/rejects when a matching response arrives.
+     * INIT uses a longer timeout due to model download/compile cost.
+     */
     private sendRequest(type: string, payload: any): Promise<any> {
         return new Promise((resolve, reject) => {
             const id = ++this.messageId;
-            this.pendingPromises.set(id, { resolve, reject });
+            const timeoutMs = type === 'INIT' ? 30000 : 5000;
+
+            // Guard against worker stalls: reject if no response arrives in time.
+            const timeoutId = setTimeout(() => {
+                if (this.pendingPromises.has(id)) {
+                    this.pendingPromises.delete(id);
+                    reject(new Error(`TenVAD request ${type} timed out`));
+                }
+            }, timeoutMs);
+
+            this.pendingPromises.set(id, {
+                resolve: (val) => {
+                    clearTimeout(timeoutId);
+                    resolve(val);
+                },
+                reject: (err) => {
+                    clearTimeout(timeoutId);
+                    reject(err);
+                },
+            });
             this.worker.postMessage({ type, payload, id });
         });
     }
