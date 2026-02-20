@@ -66,4 +66,18 @@ describe('AudioSegmentProcessor', () => {
         expect(state.inSpeech).toBe(false);
         expect(state.speechStartTime).toBeNull();
     });
+
+    it('should return defensive copies from getStats', () => {
+        const processor = new AudioSegmentProcessor();
+        const stats = processor.getStats();
+
+        stats.noiseFloor = 999;
+        stats.speech.avgDuration = 123;
+        stats.silence.avgEnergy = 456;
+
+        const current = processor.getStats();
+        expect(current.noiseFloor).toBe(0.005);
+        expect(current.speech.avgDuration).toBe(0);
+        expect(current.silence.avgEnergy).toBe(0);
+    });
 });
