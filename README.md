@@ -99,6 +99,11 @@ npm test
 npm run test:watch
 ```
 
+### Quality Gates
+
+- CI workflow (`.github/workflows/ci.yml`) runs `npm ci`, `npm test`, and `npm run build` for pushes and pull requests targeting `master`.
+- Prefer normal GitHub PR merge flows so commits on `master` remain traceable to PR metadata and checks.
+
 ### Build and preview
 
 ```bash
