@@ -58,6 +58,7 @@ interface ProcessorState {
     silenceEnergies: number[];
     speechStats: SegmentStats[];
     silenceStats: SegmentStats[];
+    cachedSpeechSummary: StatsSummary | null;
     currentStats: CurrentStats;
     noiseFloor: number;
     recentEnergies: number[];
@@ -264,6 +265,7 @@ export class AudioSegmentProcessor {
                         avgEnergy,
                         energyIntegral: avgEnergy * speechDuration
                     });
+                    this.state.cachedSpeechSummary = null;
 
                     if (this.state.speechStats.length > this.options.maxHistoryLength) {
                         this.state.speechStats.shift();
@@ -467,12 +469,15 @@ export class AudioSegmentProcessor {
             };
         }
 
-        if (this.state.speechStats.length > 0) {
+        if (this.state.cachedSpeechSummary) {
+            stats.speech = this.state.cachedSpeechSummary;
+        } else if (this.state.speechStats.length > 0) {
             stats.speech = {
                 avgDuration: this.average(this.state.speechStats.map(s => s.duration)),
                 avgEnergy: this.average(this.state.speechStats.map(s => s.avgEnergy)),
                 avgEnergyIntegral: this.average(this.state.speechStats.map(s => s.energyIntegral))
             };
+            this.state.cachedSpeechSummary = stats.speech;
         }
 
         this.state.currentStats = stats;
@@ -521,6 +526,7 @@ export class AudioSegmentProcessor {
             silenceEnergies: [],
             speechStats: [],
             silenceStats: [],
+            cachedSpeechSummary: null,
             currentStats: {
                 silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
                 speech: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
