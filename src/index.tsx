@@ -16,7 +16,7 @@ import '@fontsource/plus-jakarta-sans/latin-500.css';
 import '@fontsource/plus-jakarta-sans/latin-600.css';
 import '@fontsource/jetbrains-mono/latin-400.css';
 import '@fontsource/jetbrains-mono/latin-500.css';
-import '@fontsource/material-symbols-outlined/latin-400.css';
+import '@fontsource-variable/material-symbols-outlined/fill.css';
 import App from './App';
 import './index.css';
 
