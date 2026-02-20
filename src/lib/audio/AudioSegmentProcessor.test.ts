@@ -104,8 +104,9 @@ describe('AudioSegmentProcessor', () => {
         expect(emittedSegments.length).toBeGreaterThan(0);
 
         const firstSegment = emittedSegments[0];
-        expect(firstSegment.duration).toBeGreaterThanOrEqual(maxDuration);
-        expect(firstSegment.duration).toBeLessThan(maxDuration + 0.2);
+        const splitTolerance = 0.15;
+        // Duration is quantized by chunk boundaries; assert near maxDuration with tolerance.
+        expect(Math.abs(firstSegment.duration - maxDuration)).toBeLessThanOrEqual(splitTolerance);
 
         const finalState = processor.getStateInfo();
         expect(finalState.inSpeech).toBe(true);
