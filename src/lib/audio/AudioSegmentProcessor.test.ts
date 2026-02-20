@@ -77,7 +77,8 @@ describe('AudioSegmentProcessor', () => {
             energyThreshold: 0.01,
             minSpeechDuration: 0.1,
             snrThreshold: 0,
-            minSnrThreshold: 0
+            minSnrThreshold: 0,
+            logger: () => {}
         });
 
         const chunkSize = Math.round(sampleRate * 0.1);
@@ -104,7 +105,7 @@ describe('AudioSegmentProcessor', () => {
         expect(emittedSegments.length).toBeGreaterThan(0);
 
         const firstSegment = emittedSegments[0];
-        const splitTolerance = 0.15;
+        const splitTolerance = 0.1;
         // Duration is quantized by chunk boundaries; assert near maxDuration with tolerance.
         expect(Math.abs(firstSegment.duration - maxDuration)).toBeLessThanOrEqual(splitTolerance);
 
