@@ -258,18 +258,13 @@ export class AudioSegmentProcessor {
                         ? this.state.speechEnergies.reduce((a, b) => a + b, 0) / this.state.speechEnergies.length
                         : 0;
 
-                    this.state.speechStats.push({
+                    this.recordSpeechStat({
                         startTime: this.state.speechStartTime,
                         endTime: currentTime,
                         duration: speechDuration,
                         avgEnergy,
                         energyIntegral: avgEnergy * speechDuration
                     });
-                    this.state.cachedSpeechSummary = null;
-
-                    if (this.state.speechStats.length > this.options.maxHistoryLength) {
-                        this.state.speechStats.shift();
-                    }
                 }
 
                 const segment = this.createSegment(this.state.speechStartTime!, currentTime);
@@ -462,30 +457,49 @@ export class AudioSegmentProcessor {
         };
 
         if (this.state.silenceStats.length > 0) {
-            stats.silence = {
-                avgDuration: this.average(this.state.silenceStats.map(s => s.duration)),
-                avgEnergy: this.average(this.state.silenceStats.map(s => s.avgEnergy)),
-                avgEnergyIntegral: this.average(this.state.silenceStats.map(s => s.energyIntegral))
-            };
+            stats.silence = this.summarizeSegmentStats(this.state.silenceStats);
         }
 
-        if (this.state.cachedSpeechSummary) {
-            stats.speech = this.state.cachedSpeechSummary;
+        if (this.state.cachedSpeechSummary !== null) {
+            stats.speech = { ...this.state.cachedSpeechSummary };
         } else if (this.state.speechStats.length > 0) {
-            stats.speech = {
-                avgDuration: this.average(this.state.speechStats.map(s => s.duration)),
-                avgEnergy: this.average(this.state.speechStats.map(s => s.avgEnergy)),
-                avgEnergyIntegral: this.average(this.state.speechStats.map(s => s.energyIntegral))
-            };
-            this.state.cachedSpeechSummary = stats.speech;
+            const speechSummary = this.summarizeSegmentStats(this.state.speechStats);
+            this.state.cachedSpeechSummary = speechSummary;
+            stats.speech = { ...speechSummary };
         }
 
         this.state.currentStats = stats;
     }
 
-    private average(arr: number[]): number {
-        if (arr.length === 0) return 0;
-        return arr.reduce((a, b) => a + b, 0) / arr.length;
+    private recordSpeechStat(stat: SegmentStats): void {
+        this.state.speechStats.push(stat);
+        if (this.state.speechStats.length > this.options.maxHistoryLength) {
+            this.state.speechStats.shift();
+        }
+        this.state.cachedSpeechSummary = null;
+    }
+
+    private summarizeSegmentStats(segments: SegmentStats[]): StatsSummary {
+        if (segments.length === 0) {
+            return { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 };
+        }
+
+        let durationSum = 0;
+        let energySum = 0;
+        let energyIntegralSum = 0;
+
+        for (const segment of segments) {
+            durationSum += segment.duration;
+            energySum += segment.avgEnergy;
+            energyIntegralSum += segment.energyIntegral;
+        }
+
+        const count = segments.length;
+        return {
+            avgDuration: durationSum / count,
+            avgEnergy: energySum / count,
+            avgEnergyIntegral: energyIntegralSum / count
+        };
     }
 
     /**
