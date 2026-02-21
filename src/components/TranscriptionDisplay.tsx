@@ -1,5 +1,9 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import type { V4SentenceEntry } from '../lib/transcription/TranscriptionWorkerClient';
+import {
+    clampMergedSplitRatio,
+    DEFAULT_MERGED_SPLIT_RATIO,
+} from '../utils/settingsStorage';
 
 export type TranscriptViewTab = 'live' | 'merged';
 
@@ -28,6 +32,10 @@ export interface TranscriptionDisplayProps {
     activeTab?: TranscriptViewTab;
     /** Controlled tab change callback. */
     onTabChange?: (tab: TranscriptViewTab) => void;
+    /** Controlled merged split ratio for the desktop merged layout. */
+    mergedSplitRatio?: number;
+    /** Controlled merged split ratio change callback. */
+    onMergedSplitRatioChange?: (ratio: number) => void;
 }
 
 const formatClockTime = (timestamp: number): string => {
@@ -51,22 +59,6 @@ const formatAudioTime = (seconds: number): string => {
 const formatAudioRange = (startTime: number, endTime: number): string =>
     `${formatAudioTime(startTime)} -> ${formatAudioTime(endTime)}`;
 
-const MERGED_SPLIT_STORAGE_KEY = 'keet-merged-split-ratio';
-const MIN_MERGED_SPLIT_RATIO = 0.3;
-const MAX_MERGED_SPLIT_RATIO = 0.7;
-
-const clampMergedSplitRatio = (ratio: number): number =>
-    Math.min(MAX_MERGED_SPLIT_RATIO, Math.max(MIN_MERGED_SPLIT_RATIO, ratio));
-
-const getInitialMergedSplitRatio = (): number => {
-    if (typeof localStorage === 'undefined') return 0.5;
-    try {
-        const raw = Number(localStorage.getItem(MERGED_SPLIT_STORAGE_KEY));
-        if (Number.isFinite(raw)) return clampMergedSplitRatio(raw);
-    } catch (_) { }
-    return 0.5;
-};
-
 /** Transcript panel that combines finalized text, live tokens, and v4 sentence history. */
 export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props) => {
     let liveContainerRef: HTMLDivElement | undefined;
@@ -84,7 +76,16 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
         }
         setInternalActiveTab(tab);
     };
-    const [mergedSplitRatio, setMergedSplitRatio] = createSignal(getInitialMergedSplitRatio());
+    const [internalMergedSplitRatio, setInternalMergedSplitRatio] = createSignal(DEFAULT_MERGED_SPLIT_RATIO);
+    const mergedSplitRatio = () => clampMergedSplitRatio(props.mergedSplitRatio ?? internalMergedSplitRatio());
+    const setMergedSplitRatio = (ratio: number) => {
+        const nextRatio = clampMergedSplitRatio(ratio);
+        if (props.onMergedSplitRatioChange) {
+            props.onMergedSplitRatioChange(nextRatio);
+            return;
+        }
+        setInternalMergedSplitRatio(nextRatio);
+    };
     const [isSplitResizing, setIsSplitResizing] = createSignal(false);
     let splitMouseMoveHandler: ((event: MouseEvent) => void) | null = null;
     let splitMouseUpHandler: (() => void) | null = null;
@@ -119,13 +120,6 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
         });
     };
 
-    const persistMergedSplitRatio = (ratio: number) => {
-        if (typeof localStorage === 'undefined') return;
-        try {
-            localStorage.setItem(MERGED_SPLIT_STORAGE_KEY, String(ratio));
-        } catch (_) { }
-    };
-
     const startSplitResize = (event: MouseEvent) => {
         if (!mergedSplitContainerRef) return;
         event.preventDefault();
@@ -150,7 +144,6 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
             setIsSplitResizing(false);
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
-            persistMergedSplitRatio(mergedSplitRatio());
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
             splitMouseMoveHandler = null;
