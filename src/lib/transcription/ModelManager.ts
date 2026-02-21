@@ -96,7 +96,12 @@ export class ModelManager {
     try {
       const { effectiveBackend, runtimeBackend } = await this._resolveBackend(requestedBackend);
       this._backend = runtimeBackend;
-      const resolvedEncoderQuant = this._resolveEncoderQuantForBackend(runtimeBackend, encoderQuant, modelId);
+      const resolvedEncoderQuant = this._resolveEncoderQuantForBackend(
+        runtimeBackend,
+        requestedBackend,
+        encoderQuant,
+        modelId
+      );
 
       this._setProgress({
         stage: 'backend',
@@ -410,6 +415,7 @@ export class ModelManager {
 
   private _resolveEncoderQuantForBackend(
     backend: BackendType,
+    requestedBackend: ModelBackendMode,
     encoderQuant: QuantizationMode,
     modelId: string
   ): QuantizationMode {
@@ -419,6 +425,15 @@ export class ModelManager {
       );
       return 'fp32';
     }
+
+    // If WebGPU was requested but unavailable at runtime, keep the fallback lightweight.
+    if (backend === 'wasm' && requestedBackend === 'webgpu-hybrid' && encoderQuant === 'fp32') {
+      console.warn(
+        `[ModelManager] Encoder quantization overridden for ${modelId}: requested=${encoderQuant}, effective=int8 (WebGPU unavailable, running on WASM fallback)`
+      );
+      return 'int8';
+    }
+
     return encoderQuant;
   }
 

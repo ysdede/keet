@@ -232,6 +232,8 @@ const App: Component = () => {
   const persistedModel = persistedSettings.model;
   const persistedModelId = persistedModel?.selectedModelId;
   const persistedUi = persistedSettings.ui;
+  const hasPersistedEncoderQuant = persistedModel?.encoderQuant !== undefined;
+  const hasPersistedDecoderQuant = persistedModel?.decoderQuant !== undefined;
 
   if (persistedModelId && MODELS.some((model) => model.id === persistedModelId)) {
     appStore.setSelectedModelId(persistedModelId);
@@ -315,22 +317,41 @@ const App: Component = () => {
   });
 
   // Keep quantization presets aligned with the backend mode (parakeet.js demo behavior).
+  const applyQuantPresetForBackend = (
+    backendMode: 'webgpu-hybrid' | 'wasm',
+    options: { respectPersistedQuant?: boolean } = {}
+  ) => {
+    const respectPersistedQuant = options.respectPersistedQuant === true;
+    if (backendMode.startsWith('webgpu')) {
+      if ((!respectPersistedQuant || !hasPersistedEncoderQuant) && appStore.encoderQuant() !== 'fp32') {
+        appStore.setEncoderQuant('fp32');
+      }
+      if ((!respectPersistedQuant || !hasPersistedDecoderQuant) && appStore.decoderQuant() !== 'int8') {
+        appStore.setDecoderQuant('int8');
+      }
+      return;
+    }
+
+    if ((!respectPersistedQuant || !hasPersistedEncoderQuant) && appStore.encoderQuant() !== 'int8') {
+      appStore.setEncoderQuant('int8');
+    }
+    if ((!respectPersistedQuant || !hasPersistedDecoderQuant) && appStore.decoderQuant() !== 'int8') {
+      appStore.setDecoderQuant('int8');
+    }
+  };
+
   let lastBackendMode: 'webgpu-hybrid' | 'wasm' | null = null;
   createEffect(() => {
     const backendMode = appStore.modelBackendMode();
     if (lastBackendMode === null) {
+      // On startup, apply backend presets only when quantization values were not explicitly restored.
+      applyQuantPresetForBackend(backendMode, { respectPersistedQuant: true });
       lastBackendMode = backendMode;
       return;
     }
     if (backendMode === lastBackendMode) return;
 
-    if (backendMode.startsWith('webgpu')) {
-      if (appStore.encoderQuant() !== 'fp32') appStore.setEncoderQuant('fp32');
-      if (appStore.decoderQuant() !== 'int8') appStore.setDecoderQuant('int8');
-    } else {
-      if (appStore.encoderQuant() !== 'int8') appStore.setEncoderQuant('int8');
-      if (appStore.decoderQuant() !== 'int8') appStore.setDecoderQuant('int8');
-    }
+    applyQuantPresetForBackend(backendMode);
     lastBackendMode = backendMode;
   });
 
