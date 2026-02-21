@@ -6,13 +6,23 @@
 export type ModelState = 'unloaded' | 'loading' | 'ready' | 'error';
 /** Inference backend name. */
 export type BackendType = 'webgpu' | 'wasm';
+/** User-selectable model backend mode. */
+export type ModelBackendMode = 'webgpu-hybrid' | 'wasm';
+/** ONNX quantization option for encoder/decoder assets. */
+export type QuantizationMode = 'int8' | 'fp32';
 
 /** Model selection/configuration payload. */
 export interface ModelConfig {
   /** Selected model identifier or key. */
   modelId: string;
   /** Optional backend override. */
-  backend?: BackendType;
+  backend?: ModelBackendMode;
+  /** Optional ORT WASM thread count for CPU-side kernels/decoder. */
+  cpuThreads?: number;
+  /** Optional encoder quantization override. */
+  encoderQuant?: QuantizationMode;
+  /** Optional decoder quantization override. */
+  decoderQuant?: QuantizationMode;
 }
 
 
@@ -26,6 +36,8 @@ export interface ModelProgress {
   message?: string;
   /** Optional active filename. */
   file?: string;
+  /** Optional resolved runtime backend. */
+  backend?: BackendType;
 }
 
 /** Word-level transcription token with optional confidence. */

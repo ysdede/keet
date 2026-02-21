@@ -83,8 +83,8 @@ export default defineConfig({
     solidPlugin()
   ],
   server: {
-    port: 3100,
-    host: '0.0.0.0',
+    port: 5173,
+    host: 'localhost',
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',

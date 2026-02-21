@@ -68,6 +68,13 @@ export interface V4MergerStats {
 
 /** Creates the root application store with state signals, setters, and UI actions. */
 export function createAppStore() {
+  const hardwareThreads = typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
+    ? Math.max(1, Math.floor(navigator.hardwareConcurrency))
+    : 4;
+  const defaultWasmThreads = hardwareThreads <= 2
+    ? 1
+    : Math.min(4, Math.max(2, hardwareThreads - 2));
+
   // Recording state
   const [recordingState, setRecordingState] = createSignal<RecordingState>('idle');
   const [sessionDuration, setSessionDuration] = createSignal(0);
@@ -79,6 +86,9 @@ export function createAppStore() {
   // Model state
   const [modelState, setModelState] = createSignal<ModelState>('unloaded');
   const [selectedModelId, setSelectedModelId] = createSignal('parakeet-tdt-0.6b-v2');
+  const [modelBackendMode, setModelBackendMode] = createSignal<'webgpu-hybrid' | 'wasm'>('webgpu-hybrid');
+  const [encoderQuant, setEncoderQuant] = createSignal<'int8' | 'fp32'>('int8');
+  const [decoderQuant, setDecoderQuant] = createSignal<'int8' | 'fp32'>('int8');
   const [modelProgress, setModelProgress] = createSignal(0);
   const [modelMessage, setModelMessage] = createSignal('');
   const [modelFile, setModelFile] = createSignal('');
@@ -155,6 +165,7 @@ export function createAppStore() {
   const [energyThreshold, setEnergyThreshold] = createSignal(0.08);
   // Decoder frame stride: 1 = full precision, 2 = halves decoder steps (faster, coarser timestamps)
   const [frameStride, setFrameStride] = createSignal(1);
+  const [wasmThreads, setWasmThreads] = createSignal(defaultWasmThreads);
 
   // v4 Pipeline config
   const [v4InferenceIntervalMs, setV4InferenceIntervalMs] = createSignal(480); // Transcription tick frequency in ms (320-8000)
@@ -306,6 +317,9 @@ export function createAppStore() {
     sessionDuration,
     modelState,
     selectedModelId,
+    modelBackendMode,
+    encoderQuant,
+    decoderQuant,
     modelProgress,
     modelMessage,
     modelFile,
@@ -333,6 +347,7 @@ export function createAppStore() {
     triggerInterval,
     energyThreshold,
     frameStride,
+    wasmThreads,
     // v4 config
     v4InferenceIntervalMs,
     v4SilenceFlushSec,
@@ -354,6 +369,9 @@ export function createAppStore() {
     setSelectedDeviceId,
     setModelState,
     setSelectedModelId,
+    setModelBackendMode,
+    setEncoderQuant,
+    setDecoderQuant,
     setModelProgress,
     setModelMessage,
     setModelFile,
@@ -377,6 +395,7 @@ export function createAppStore() {
     setTriggerInterval,
     setEnergyThreshold,
     setFrameStride,
+    setWasmThreads,
     // UI setters
     setShowDebugPanel,
     // v4 setters
