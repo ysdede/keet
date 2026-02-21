@@ -8,6 +8,7 @@
 import { createSignal, createMemo, createRoot, onCleanup } from 'solid-js';
 import type { RecordingState, ModelState, BackendType } from '../types';
 import type { V4SentenceEntry } from '../lib/transcription/TranscriptionWorkerClient';
+import { getMaxHardwareThreads } from '../utils/hardwareThreads';
 
 export interface DebugToken {
   /** Stable token identifier used by debug token rendering. */
@@ -68,9 +69,7 @@ export interface V4MergerStats {
 
 /** Creates the root application store with state signals, setters, and UI actions. */
 export function createAppStore() {
-  const hardwareThreads = typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
-    ? Math.max(1, Math.floor(navigator.hardwareConcurrency))
-    : 4;
+  const hardwareThreads = getMaxHardwareThreads();
   const defaultWasmThreads = hardwareThreads <= 2
     ? 1
     : Math.min(4, Math.max(2, hardwareThreads - 2));
@@ -87,7 +86,7 @@ export function createAppStore() {
   const [modelState, setModelState] = createSignal<ModelState>('unloaded');
   const [selectedModelId, setSelectedModelId] = createSignal('parakeet-tdt-0.6b-v2');
   const [modelBackendMode, setModelBackendMode] = createSignal<'webgpu-hybrid' | 'wasm'>('webgpu-hybrid');
-  const [encoderQuant, setEncoderQuant] = createSignal<'int8' | 'fp32'>('int8');
+  const [encoderQuant, setEncoderQuant] = createSignal<'int8' | 'fp32'>('fp32');
   const [decoderQuant, setDecoderQuant] = createSignal<'int8' | 'fp32'>('int8');
   const [modelProgress, setModelProgress] = createSignal(0);
   const [modelMessage, setModelMessage] = createSignal('');

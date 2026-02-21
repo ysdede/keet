@@ -96,6 +96,7 @@ export class ModelManager {
     try {
       const { effectiveBackend, runtimeBackend } = await this._resolveBackend(requestedBackend);
       this._backend = runtimeBackend;
+      const resolvedEncoderQuant = this._resolveEncoderQuantForBackend(runtimeBackend, encoderQuant, modelId);
 
       this._setProgress({
         stage: 'backend',
@@ -112,12 +113,12 @@ export class ModelManager {
 
       const createModelFromAssets = async (assets: ResolvedModelAssets): Promise<any> => {
         const preprocessorBackend = assets.preprocessorBackend || 'js';
-        console.log(`[ModelManager] Loading model with backend=${effectiveBackend}, preprocessorBackend=${preprocessorBackend}, encoderQuant=${encoderQuant}, decoderQuant=${decoderQuant}, cpuThreads=${cpuThreads ?? 'default'}`);
+        console.log(`[ModelManager] Loading model with backend=${effectiveBackend}, preprocessorBackend=${preprocessorBackend}, encoderQuant=${resolvedEncoderQuant}, decoderQuant=${decoderQuant}, cpuThreads=${cpuThreads ?? 'default'}`);
         return ParakeetModel.fromUrls({
           ...assets.urls,
           filenames: assets.filenames,
           preprocessorBackend,
-          backend: effectiveBackend,
+          backend: runtimeBackend,
           cpuThreads,
           verbose: false,
         });
@@ -131,8 +132,8 @@ export class ModelManager {
       });
 
       const modelAssets = await getParakeetModel(modelId, {
-        backend: effectiveBackend,
-        encoderQuant,
+        backend: runtimeBackend,
+        encoderQuant: resolvedEncoderQuant,
         decoderQuant,
         preprocessorBackend: 'js', // Use pure JS mel — faster, no ONNX download needed
         progress: (p: any) => {
@@ -172,8 +173,8 @@ export class ModelManager {
 
         const directAssets = this._buildDirectModelAssets(
           modelId,
-          effectiveBackend,
-          encoderQuant,
+          runtimeBackend,
+          resolvedEncoderQuant,
           decoderQuant,
           getModelConfig as ModelConfigResolver
         );
@@ -287,7 +288,7 @@ export class ModelManager {
           decoder: assets.decoder.name
         },
         preprocessorBackend: useOnnxPreprocessor ? 'onnx' : 'js',
-        backend: effectiveBackend,
+        backend: runtimeBackend,
         cpuThreads,
         verbose: false,
       });
@@ -356,7 +357,10 @@ export class ModelManager {
 
   private _normalizeCpuThreads(value?: number): number | undefined {
     if (!Number.isFinite(value)) return undefined;
-    return Math.max(1, Math.floor(value as number));
+    const maxThreads = typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
+      ? Math.max(1, Math.floor(navigator.hardwareConcurrency))
+      : 16;
+    return Math.min(maxThreads, Math.max(1, Math.floor(value as number)));
   }
 
   private _normalizeRequestedBackend(value?: ModelBackendMode): ModelBackendMode {
@@ -404,6 +408,20 @@ export class ModelManager {
     this._progress = 0;
   }
 
+  private _resolveEncoderQuantForBackend(
+    backend: BackendType,
+    encoderQuant: QuantizationMode,
+    modelId: string
+  ): QuantizationMode {
+    if (backend === 'webgpu' && encoderQuant === 'int8') {
+      console.warn(
+        `[ModelManager] Encoder quantization overridden for ${modelId}: requested=${encoderQuant}, effective=fp32 (WebGPU encoder requires fp32)`
+      );
+      return 'fp32';
+    }
+    return encoderQuant;
+  }
+
   private _isRecoverableFetchError(error: unknown): boolean {
     if (!(error instanceof Error)) {
       return false;
@@ -414,15 +432,14 @@ export class ModelManager {
 
   private _buildDirectModelAssets(
     modelId: string,
-    backend: ModelBackendMode,
+    backend: BackendType,
     encoderQuant: QuantizationMode,
     decoderQuant: QuantizationMode,
     getModelConfig: ModelConfigResolver
   ): ResolvedModelAssets {
     const repoId = getModelConfig?.(modelId)?.repoId || modelId;
     const revision = 'main';
-    const resolvedEncoderQuant = backend.startsWith('webgpu') && encoderQuant === 'int8' ? 'fp32' : encoderQuant;
-    const encoderName = resolvedEncoderQuant === 'int8' ? 'encoder-model.int8.onnx' : 'encoder-model.onnx';
+    const encoderName = encoderQuant === 'int8' ? 'encoder-model.int8.onnx' : 'encoder-model.onnx';
     const decoderName = decoderQuant === 'int8' ? 'decoder_joint-model.int8.onnx' : 'decoder_joint-model.onnx';
     const baseUrl = `https://huggingface.co/${repoId}/resolve/${revision}`;
 
