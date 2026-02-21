@@ -84,7 +84,7 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
-    host: 'localhost',
+    host: process.env.DEV_HOST || '0.0.0.0',
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
