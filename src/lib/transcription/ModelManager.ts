@@ -118,7 +118,7 @@ export class ModelManager {
           ...assets.urls,
           filenames: assets.filenames,
           preprocessorBackend,
-          backend: runtimeBackend,
+          backend: effectiveBackend,
           cpuThreads,
           verbose: false,
         });
@@ -132,7 +132,7 @@ export class ModelManager {
       });
 
       const modelAssets = await getParakeetModel(modelId, {
-        backend: runtimeBackend,
+        backend: effectiveBackend,
         encoderQuant: resolvedEncoderQuant,
         decoderQuant,
         preprocessorBackend: 'js', // Use pure JS mel — faster, no ONNX download needed
@@ -288,7 +288,7 @@ export class ModelManager {
           decoder: assets.decoder.name
         },
         preprocessorBackend: useOnnxPreprocessor ? 'onnx' : 'js',
-        backend: runtimeBackend,
+        backend: effectiveBackend,
         cpuThreads,
         verbose: false,
       });
