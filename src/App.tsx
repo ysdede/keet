@@ -13,6 +13,14 @@ import { TenVADWorkerClient } from './lib/vad/TenVADWorkerClient';
 import type { V4ProcessResult } from './lib/transcription/TranscriptionWorkerClient';
 import type { BufferWorkerConfig, TenVADResult } from './lib/buffer/types';
 import { formatDuration } from './utils/time';
+import {
+  clampDebugPanelHeight,
+  clampMergedSplitRatio,
+  DEFAULT_DEBUG_PANEL_HEIGHT,
+  DEFAULT_MERGED_SPLIT_RATIO,
+  loadSettingsFromStorage,
+  saveSettingsToStorage,
+} from './utils/settingsStorage';
 
 // Singleton instances
 let audioEngine: AudioEngine | null = null;
@@ -195,9 +203,26 @@ const Header: Component<{
   );
 };
 
-const WIDGET_STORAGE_KEY = 'boncukjs-control-widget-pos';
 const WIDGET_MAX_W = 672;
 const WIDGET_MIN_H = 80;
+const SETTINGS_SAVE_DEBOUNCE_MS = 150;
+
+const getDefaultWidgetPosition = (): { x: number; y: number } => {
+  const width = typeof window !== 'undefined' ? window.innerWidth : 800;
+  const height = typeof window !== 'undefined' ? window.innerHeight : 600;
+  return {
+    x: Math.max(0, (width - WIDGET_MAX_W) / 2),
+    y: Math.max(0, height - 140),
+  };
+};
+
+const clampWidgetPosition = (position: { x: number; y: number }): { x: number; y: number } => {
+  if (typeof window === 'undefined') return position;
+  return {
+    x: Math.max(0, Math.min(window.innerWidth - WIDGET_MAX_W, position.x)),
+    y: Math.max(0, Math.min(window.innerHeight - WIDGET_MIN_H, position.y)),
+  };
+};
 
 const App: Component = () => {
   const [showModelOverlay, setShowModelOverlay] = createSignal(false);
@@ -209,6 +234,10 @@ const App: Component = () => {
   const [widgetPos, setWidgetPos] = createSignal<{ x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = createSignal(false);
   const [activeTranscriptTab, setActiveTranscriptTab] = createSignal<TranscriptViewTab>('live');
+  const [mergedSplitRatio, setMergedSplitRatio] = createSignal(DEFAULT_MERGED_SPLIT_RATIO);
+  const [debugPanelHeight, setDebugPanelHeight] = createSignal(DEFAULT_DEBUG_PANEL_HEIGHT);
+  const [settingsHydrated, setSettingsHydrated] = createSignal(false);
+  let settingsSaveTimeout: number | undefined;
 
   const isRecording = () => appStore.recordingState() === 'recording';
   const isModelReady = () => appStore.modelState() === 'ready';
@@ -254,12 +283,6 @@ const App: Component = () => {
       setIsDragging(false);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      const p = widgetPos();
-      if (p && typeof localStorage !== 'undefined') {
-        try {
-          localStorage.setItem(WIDGET_STORAGE_KEY, JSON.stringify(p));
-        } catch (_) {}
-      }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -283,29 +306,99 @@ const App: Component = () => {
     }
   });
 
+  createEffect(() => {
+    if (!settingsHydrated()) return;
+
+    const selectedDeviceId = appStore.selectedDeviceId();
+    const selectedDevice = appStore
+      .availableDevices()
+      .find((device) => device.deviceId === selectedDeviceId);
+
+    const snapshot = {
+      general: {
+        energyThreshold: appStore.energyThreshold(),
+        sileroThreshold: appStore.sileroThreshold(),
+        v4InferenceIntervalMs: appStore.v4InferenceIntervalMs(),
+        v4SilenceFlushSec: appStore.v4SilenceFlushSec(),
+        streamingWindow: appStore.streamingWindow(),
+      },
+      model: {
+        selectedModelId: appStore.selectedModelId(),
+      },
+      audio: {
+        selectedDeviceId,
+        selectedDeviceLabel: selectedDevice?.label,
+      },
+      ui: {
+        widgetPosition: widgetPos() ?? undefined,
+        debugPanel: {
+          visible: appStore.showDebugPanel(),
+          height: debugPanelHeight(),
+        },
+        transcript: {
+          activeTab: activeTranscriptTab(),
+          mergedSplitRatio: mergedSplitRatio(),
+        },
+      },
+    };
+
+    if (settingsSaveTimeout) {
+      clearTimeout(settingsSaveTimeout);
+    }
+    settingsSaveTimeout = window.setTimeout(() => {
+      saveSettingsToStorage(snapshot);
+    }, SETTINGS_SAVE_DEBOUNCE_MS);
+  });
+
   onMount(() => {
     const onResize = () => setWindowHeight(window.innerHeight);
     window.addEventListener('resize', onResize);
 
-    const stored =
-      typeof localStorage !== 'undefined' ? localStorage.getItem(WIDGET_STORAGE_KEY) : null;
-    let posRestored = false;
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as { x: number; y: number };
-        if (Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) {
-          setWidgetPos({ x: parsed.x, y: parsed.y });
-          posRestored = true;
-        }
-      } catch (_) {}
+    const persistedSettings = loadSettingsFromStorage();
+    const persistedGeneral = persistedSettings.general;
+    const persistedModelId = persistedSettings.model?.selectedModelId;
+    const persistedDeviceId = persistedSettings.audio?.selectedDeviceId;
+    const persistedUi = persistedSettings.ui;
+
+    if (persistedModelId && MODELS.some((model) => model.id === persistedModelId)) {
+      appStore.setSelectedModelId(persistedModelId);
     }
-    if (!posRestored) {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      setWidgetPos({
-        x: Math.max(0, (w - WIDGET_MAX_W) / 2),
-        y: h - 140,
-      });
+    if (persistedDeviceId) {
+      appStore.setSelectedDeviceId(persistedDeviceId);
+    }
+
+    if (persistedGeneral?.energyThreshold !== undefined) {
+      appStore.setEnergyThreshold(persistedGeneral.energyThreshold);
+    }
+    if (persistedGeneral?.sileroThreshold !== undefined) {
+      appStore.setSileroThreshold(persistedGeneral.sileroThreshold);
+    }
+    if (persistedGeneral?.v4InferenceIntervalMs !== undefined) {
+      appStore.setV4InferenceIntervalMs(persistedGeneral.v4InferenceIntervalMs);
+    }
+    if (persistedGeneral?.v4SilenceFlushSec !== undefined) {
+      appStore.setV4SilenceFlushSec(persistedGeneral.v4SilenceFlushSec);
+    }
+    if (persistedGeneral?.streamingWindow !== undefined) {
+      appStore.setStreamingWindow(persistedGeneral.streamingWindow);
+    }
+
+    if (persistedUi?.debugPanel?.visible !== undefined) {
+      appStore.setShowDebugPanel(persistedUi.debugPanel.visible);
+    }
+    if (persistedUi?.debugPanel?.height !== undefined) {
+      setDebugPanelHeight(clampDebugPanelHeight(persistedUi.debugPanel.height));
+    }
+    if (persistedUi?.transcript?.activeTab) {
+      setActiveTranscriptTab(persistedUi.transcript.activeTab);
+    }
+    if (persistedUi?.transcript?.mergedSplitRatio !== undefined) {
+      setMergedSplitRatio(clampMergedSplitRatio(persistedUi.transcript.mergedSplitRatio));
+    }
+    if (persistedUi?.widgetPosition) {
+      setWidgetPos(clampWidgetPosition(persistedUi.widgetPosition));
+    } else {
+      setWidgetPos(getDefaultWidgetPosition());
     }
 
     workerClient = new TranscriptionWorkerClient();
@@ -332,7 +425,9 @@ const App: Component = () => {
       appStore.setErrorMessage(msg);
     };
 
-    appStore.refreshDevices();
+    void appStore.refreshDevices().finally(() => {
+      setSettingsHydrated(true);
+    });
     setWorkerReady(true);
 
     return () => window.removeEventListener('resize', onResize);
@@ -343,6 +438,7 @@ const App: Component = () => {
 
   onCleanup(() => {
     clearTimeout(panelHoverCloseTimeout);
+    clearTimeout(settingsSaveTimeout);
     visualizationUnsubscribe?.();
     cleanupV4Pipeline();
     melClient?.dispose();
@@ -1003,6 +1099,8 @@ const App: Component = () => {
               showConfidence={appStore.transcriptionMode() === 'v3-streaming'}
               activeTab={activeTranscriptTab()}
               onTabChange={setActiveTranscriptTab}
+              mergedSplitRatio={mergedSplitRatio()}
+              onMergedSplitRatioChange={setMergedSplitRatio}
               class="min-h-[56vh]"
             />
           </div>
@@ -1136,6 +1234,8 @@ const App: Component = () => {
           <DebugPanel
             audioEngine={audioEngineSignal() ?? undefined}
             melClient={melClientSignal() ?? undefined}
+            height={debugPanelHeight()}
+            onHeightChange={setDebugPanelHeight}
           />
         </div>
       </Show>

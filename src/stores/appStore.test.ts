@@ -94,6 +94,56 @@ describe('appStore', () => {
       expect(store.selectedDeviceId()).toBe('mic1');
     });
 
+    it('should keep selected device when it still exists', async () => {
+      const mockDevices = [
+        { kind: 'audioinput', deviceId: 'mic1', label: 'Microphone 1' },
+        { kind: 'audioinput', deviceId: 'mic2', label: 'Microphone 2' },
+      ];
+      const enumerateDevicesMock = vi.fn().mockResolvedValue(mockDevices);
+
+      if (!navigator.mediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', {
+          value: {},
+          writable: true
+        });
+      }
+
+      Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+        value: enumerateDevicesMock,
+        writable: true
+      });
+
+      store.setSelectedDeviceId('mic2');
+      await store.refreshDevices();
+
+      expect(store.selectedDeviceId()).toBe('mic2');
+    });
+
+    it('should fall back to first device when selected device is unavailable', async () => {
+      const mockDevices = [
+        { kind: 'audioinput', deviceId: 'mic1', label: 'Microphone 1' },
+        { kind: 'audioinput', deviceId: 'mic2', label: 'Microphone 2' },
+      ];
+      const enumerateDevicesMock = vi.fn().mockResolvedValue(mockDevices);
+
+      if (!navigator.mediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', {
+          value: {},
+          writable: true
+        });
+      }
+
+      Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+        value: enumerateDevicesMock,
+        writable: true
+      });
+
+      store.setSelectedDeviceId('missing-device');
+      await store.refreshDevices();
+
+      expect(store.selectedDeviceId()).toBe('mic1');
+    });
+
     it('should handle errors when refreshing devices', async () => {
        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
        const enumerateDevicesMock = vi.fn().mockRejectedValue(new Error('Permission denied'));
