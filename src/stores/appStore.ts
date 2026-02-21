@@ -218,10 +218,26 @@ export function createAppStore() {
 
   const refreshDevices = async () => {
     try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
+        setAvailableDevices([]);
+        setSelectedDeviceId('');
+        return;
+      }
+
       const devices = await navigator.mediaDevices.enumerateDevices();
       const mics = devices.filter(d => d.kind === 'audioinput');
       setAvailableDevices(mics);
-      if (mics.length > 0 && !selectedDeviceId()) {
+
+      if (mics.length === 0) {
+        setSelectedDeviceId('');
+        return;
+      }
+
+      const currentSelectedId = selectedDeviceId();
+      const hasCurrentSelection =
+        currentSelectedId.length > 0 && mics.some((device) => device.deviceId === currentSelectedId);
+
+      if (!hasCurrentSelection) {
         setSelectedDeviceId(mics[0].deviceId);
       }
     } catch (e) {

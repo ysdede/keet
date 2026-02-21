@@ -3,20 +3,37 @@ import { appStore } from '../stores/appStore';
 import type { AudioEngine } from '../lib/audio/types';
 import type { MelWorkerClient } from '../lib/audio/MelWorkerClient';
 import { LayeredBufferVisualizer } from './LayeredBufferVisualizer';
+import {
+  clampDebugPanelHeight,
+  DEFAULT_DEBUG_PANEL_HEIGHT,
+} from '../utils/settingsStorage';
 
 interface DebugPanelProps {
   /** Live audio engine used by buffer/debug visualizers. */
   audioEngine?: AudioEngine;
   /** Mel worker client used to render spectrogram layers. */
   melClient?: MelWorkerClient;
+  /** Controlled panel height in px. */
+  height?: number;
+  /** Called when the panel height changes via drag handle. */
+  onHeightChange?: (height: number) => void;
 }
 
 /** Resizable diagnostics panel for runtime metrics, VAD state, and transcript internals. */
 export const DebugPanel: Component<DebugPanelProps> = (props) => {
   const isRecording = () => appStore.recordingState() === 'recording';
 
-  const [height, setHeight] = createSignal(220);
+  const [internalHeight, setInternalHeight] = createSignal(DEFAULT_DEBUG_PANEL_HEIGHT);
   const [isResizing, setIsResizing] = createSignal(false);
+  const panelHeight = () => clampDebugPanelHeight(props.height ?? internalHeight());
+  const setPanelHeight = (height: number) => {
+    const clamped = clampDebugPanelHeight(height);
+    if (props.onHeightChange) {
+      props.onHeightChange(clamped);
+      return;
+    }
+    setInternalHeight(clamped);
+  };
 
   let startY = 0;
   let startHeight = 0;
@@ -24,7 +41,7 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
     e.preventDefault();
     setIsResizing(true);
     startY = e.clientY;
-    startHeight = height();
+    startHeight = panelHeight();
     document.body.style.cursor = 'row-resize';
     document.body.style.userSelect = 'none';
     window.addEventListener('mousemove', handleMouseMove);
@@ -34,8 +51,7 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
   const handleMouseMove = (e: MouseEvent) => {
     if (!isResizing()) return;
     const delta = startY - e.clientY;
-    const newHeight = Math.min(Math.max(startHeight + delta, 120), 520);
-    setHeight(newHeight);
+    setPanelHeight(startHeight + delta);
   };
 
   const handleMouseUp = () => {
@@ -63,7 +79,7 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
   return (
     <div
       class="bg-[var(--color-earthy-bg)] border-t border-[var(--color-earthy-sage)] text-[10px] font-mono text-[var(--color-earthy-dark-brown)] flex overflow-hidden shrink-0 transition-colors duration-300 selection:bg-[var(--color-earthy-coral)]/20 selection:text-[var(--color-earthy-coral)] z-20 relative"
-      style={{ height: `${height()}px` }}
+      style={{ height: `${panelHeight()}px` }}
     >
       {/* Resize Handle */}
       <div
