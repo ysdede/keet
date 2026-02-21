@@ -1,7 +1,8 @@
-import { Component, Show, For, batch, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { Component, Show, For, batch, createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
 import { appStore } from './stores/appStore';
 import { CompactWaveform, ModelLoadingOverlay, DebugPanel, TranscriptionDisplay, SettingsContent } from './components';
 import { getModelDisplayName, MODELS } from './components/ModelLoadingOverlay';
+import type { TranscriptViewTab } from './components/TranscriptionDisplay';
 import { AudioEngine } from './lib/audio';
 import { MelWorkerClient } from './lib/audio/MelWorkerClient';
 import { TranscriptionWorkerClient } from './lib/transcription';
@@ -123,8 +124,13 @@ const scheduleVadStateUpdate = (next: {
 
 const Header: Component<{
   onToggleDebug: () => void;
+  isV4Mode: boolean;
+  activeTranscriptTab: TranscriptViewTab;
+  onTranscriptTabChange: (tab: TranscriptViewTab) => void;
+  timelineCount: number;
 }> = (props) => {
   const appVersion = `v${__KEET_VERSION__}`;
+  const parakeetLabel = `parakeet.js ${__PARAKEET_VERSION__} (${__PARAKEET_SOURCE__})`;
   const sessionLabel = () =>
     appStore.modelState() === 'ready' ? getModelDisplayName(appStore.selectedModelId()) : 'Session';
   return (
@@ -140,25 +146,49 @@ const Header: Component<{
               <span class="text-[9px] uppercase tracking-[0.14em] text-[var(--color-earthy-soft-brown)]/80 font-medium">{appVersion}</span>
             </div>
             <p class="text-[10px] uppercase tracking-[0.2em] text-[var(--color-earthy-soft-brown)] font-medium">{sessionLabel()}</p>
+            <p class="text-[9px] text-[var(--color-earthy-soft-brown)]/80 font-medium">{parakeetLabel}</p>
           </div>
         </div>
       </div>
       <div class="flex items-center gap-4">
+        <Show when={props.isV4Mode}>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-colors ${props.activeTranscriptTab === 'live'
+                ? 'bg-[var(--color-earthy-muted-green)] text-white border-[var(--color-earthy-muted-green)]'
+                : 'bg-[var(--color-earthy-bg)] text-[var(--color-earthy-soft-brown)] border-[var(--color-earthy-sage)]/50 hover:border-[var(--color-earthy-soft-brown)]'
+                }`}
+              onClick={() => props.onTranscriptTabChange('live')}
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              class={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-colors flex items-center gap-2 ${props.activeTranscriptTab === 'merged'
+                ? 'bg-[var(--color-earthy-muted-green)] text-white border-[var(--color-earthy-muted-green)]'
+                : 'bg-[var(--color-earthy-bg)] text-[var(--color-earthy-soft-brown)] border-[var(--color-earthy-sage)]/50 hover:border-[var(--color-earthy-soft-brown)]'
+                }`}
+              onClick={() => props.onTranscriptTabChange('merged')}
+            >
+              <span>Timeline</span>
+              <span class={`px-1.5 py-0.5 rounded text-[10px] leading-none ${props.activeTranscriptTab === 'merged'
+                ? 'bg-white/20'
+                : 'bg-[var(--color-earthy-sage)]/30'
+                }`}>
+                {props.timelineCount}
+              </span>
+            </button>
+          </div>
+        </Show>
         <button
           type="button"
           onClick={props.onToggleDebug}
-          class={`p-2 rounded-full transition-colors ${appStore.showDebugPanel() ? 'bg-[var(--color-earthy-muted-green)] text-white' : 'text-[var(--color-earthy-muted-green)] hover:bg-[var(--color-earthy-sage)]/30'}`}
+          class={`w-9 h-9 inline-flex items-center justify-center rounded-full transition-colors leading-none ${appStore.showDebugPanel() ? 'bg-[var(--color-earthy-muted-green)] text-white' : 'text-[var(--color-earthy-muted-green)] hover:bg-[var(--color-earthy-sage)]/30'}`}
           title={appStore.showDebugPanel() ? 'Hide debug panel' : 'Show debug panel'}
           aria-label="Toggle debug panel"
         >
           <span class="material-symbols-outlined">bug_report</span>
-        </button>
-        <button
-          type="button"
-          class="p-2 text-[var(--color-earthy-muted-green)] hover:scale-110 transition-transform"
-          aria-label="More options"
-        >
-          <span class="material-symbols-outlined">more_vert</span>
         </button>
       </div>
     </header>
@@ -178,9 +208,20 @@ const App: Component = () => {
   const [workerReady, setWorkerReady] = createSignal(false);
   const [widgetPos, setWidgetPos] = createSignal<{ x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = createSignal(false);
+  const [activeTranscriptTab, setActiveTranscriptTab] = createSignal<TranscriptViewTab>('live');
 
   const isRecording = () => appStore.recordingState() === 'recording';
   const isModelReady = () => appStore.modelState() === 'ready';
+  const isV4Mode = () => appStore.transcriptionMode() === 'v4-utterance';
+  const timelineCount = createMemo(() =>
+    appStore.v4SentenceEntries().length + (appStore.immatureText().trim() ? 1 : 0)
+  );
+
+  createEffect(() => {
+    if (!isV4Mode() && activeTranscriptTab() !== 'live') {
+      setActiveTranscriptTab('live');
+    }
+  });
 
   let dragStart = { x: 0, y: 0 };
   let posStart = { x: 0, y: 0 };
@@ -942,6 +983,10 @@ const App: Component = () => {
 
       <Header
         onToggleDebug={() => appStore.setShowDebugPanel(!appStore.showDebugPanel())}
+        isV4Mode={isV4Mode()}
+        activeTranscriptTab={activeTranscriptTab()}
+        onTranscriptTabChange={setActiveTranscriptTab}
+        timelineCount={timelineCount()}
       />
 
       <div class="flex-1 flex overflow-hidden relative">
@@ -956,6 +1001,8 @@ const App: Component = () => {
               lcsLength={appStore.mergeInfo().lcsLength}
               anchorValid={appStore.mergeInfo().anchorValid}
               showConfidence={appStore.transcriptionMode() === 'v3-streaming'}
+              activeTab={activeTranscriptTab()}
+              onTabChange={setActiveTranscriptTab}
               class="min-h-[56vh]"
             />
           </div>
@@ -970,12 +1017,14 @@ const App: Component = () => {
         <div class="relative">
           {/* Settings panel: expands up or down depending on bar position vs half screen height */}
           <div
-            class="absolute left-0 right-0 overflow-hidden transition-[max-height] duration-300 ease-out border border-[var(--color-earthy-sage)]/30 bg-[var(--color-earthy-bg)]/95 backdrop-blur-sm shadow-lg"
+            class="absolute left-0 right-0 overflow-hidden transition-[max-height] duration-300 ease-out"
             classList={{
               'max-h-0': !showContextPanel(),
               'max-h-[70vh]': showContextPanel(),
-              'bottom-full rounded-t-2xl border-b-0': settingsExpandUp(),
-              'top-full rounded-b-2xl border-t-0': !settingsExpandUp(),
+              'pointer-events-none border-transparent bg-transparent shadow-none': !showContextPanel(),
+              'pointer-events-auto border border-[var(--color-earthy-sage)]/30 bg-[var(--color-earthy-bg)]/95 backdrop-blur-sm shadow-lg': showContextPanel(),
+              'bottom-full rounded-t-2xl border-b-0': showContextPanel() && settingsExpandUp(),
+              'top-full rounded-b-2xl border-t-0': showContextPanel() && !settingsExpandUp(),
             }}
             onMouseEnter={cancelPanelClose}
             onMouseLeave={panelMouseLeave}

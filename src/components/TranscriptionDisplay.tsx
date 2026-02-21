@@ -1,6 +1,8 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import type { V4SentenceEntry } from '../lib/transcription/TranscriptionWorkerClient';
 
+export type TranscriptViewTab = 'live' | 'merged';
+
 export interface TranscriptionDisplayProps {
     /** Stable/finalized transcript text. */
     confirmedText: string;
@@ -22,6 +24,10 @@ export interface TranscriptionDisplayProps {
     placeholder?: string;
     /** Optional class forwarded to the root container. */
     class?: string;
+    /** Controlled active tab used by external surfaces (e.g. app header). */
+    activeTab?: TranscriptViewTab;
+    /** Controlled tab change callback. */
+    onTabChange?: (tab: TranscriptViewTab) => void;
 }
 
 const formatClockTime = (timestamp: number): string => {
@@ -69,7 +75,15 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
     let sentenceListDesktopRef: HTMLDivElement | undefined;
     let sentenceListMobileRef: HTMLDivElement | undefined;
     let scrollScheduled = false;
-    const [activeTab, setActiveTab] = createSignal<'live' | 'merged'>('live');
+    const [internalActiveTab, setInternalActiveTab] = createSignal<TranscriptViewTab>('live');
+    const activeTab = () => props.activeTab ?? internalActiveTab();
+    const setActiveTab = (tab: TranscriptViewTab) => {
+        if (props.onTabChange) {
+            props.onTabChange(tab);
+            return;
+        }
+        setInternalActiveTab(tab);
+    };
     const [mergedSplitRatio, setMergedSplitRatio] = createSignal(getInitialMergedSplitRatio());
     const [isSplitResizing, setIsSplitResizing] = createSignal(false);
     let splitMouseMoveHandler: ((event: MouseEvent) => void) | null = null;
@@ -160,7 +174,6 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
     );
 
     const finalizedEntries = createMemo(() => props.sentenceEntries ?? []);
-    const mergedCount = createMemo(() => finalizedEntries().length + (props.pendingText?.trim() ? 1 : 0));
     const finalizedMergedText = createMemo(() => {
         // Avoid rebuilding the full finalized corpus while user is on Live tab.
         if (props.isV4Mode && activeTab() !== 'merged') {
@@ -263,37 +276,6 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
 
     return (
         <div class={`flex flex-col h-full bg-transparent ${props.class ?? ''}`}>
-            <Show when={props.isV4Mode}>
-                <div class="mb-4 flex items-center gap-2">
-                    <button
-                        type="button"
-                        class={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-colors ${activeTab() === 'live'
-                                ? 'bg-[var(--color-earthy-muted-green)] text-white border-[var(--color-earthy-muted-green)]'
-                                : 'bg-[var(--color-earthy-bg)] text-[var(--color-earthy-soft-brown)] border-[var(--color-earthy-sage)]/50 hover:border-[var(--color-earthy-soft-brown)]'
-                            }`}
-                        onClick={() => setActiveTab('live')}
-                    >
-                        Live
-                    </button>
-                    <button
-                        type="button"
-                        class={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-colors flex items-center gap-2 ${activeTab() === 'merged'
-                                ? 'bg-[var(--color-earthy-muted-green)] text-white border-[var(--color-earthy-muted-green)]'
-                                : 'bg-[var(--color-earthy-bg)] text-[var(--color-earthy-soft-brown)] border-[var(--color-earthy-sage)]/50 hover:border-[var(--color-earthy-soft-brown)]'
-                            }`}
-                        onClick={() => setActiveTab('merged')}
-                    >
-                        <span>Timeline</span>
-                        <span class={`px-1.5 py-0.5 rounded text-[10px] leading-none ${activeTab() === 'merged'
-                                ? 'bg-white/20'
-                                : 'bg-[var(--color-earthy-sage)]/30'
-                            }`}>
-                            {mergedCount()}
-                        </span>
-                    </button>
-                </div>
-            </Show>
-
             <Show when={props.isV4Mode && activeTab() === 'merged'} fallback={
                 <div
                     ref={liveContainerRef}
