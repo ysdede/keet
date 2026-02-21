@@ -279,6 +279,10 @@ const App: Component = () => {
   const [debugPanelHeight, setDebugPanelHeight] = createSignal(initialDebugPanelHeight);
   const [settingsReadyForPersist, setSettingsReadyForPersist] = createSignal(false);
   let settingsSaveTimeout: number | undefined;
+  let onResize: (() => void) | undefined;
+  let onBeforeUnload: (() => void) | undefined;
+  let onPageHide: (() => void) | undefined;
+  let onVisibilityChange: (() => void) | undefined;
 
   const isRecording = () => appStore.recordingState() === 'recording';
   const isModelReady = () => appStore.modelState() === 'ready';
@@ -404,10 +408,10 @@ const App: Component = () => {
   });
 
   onMount(() => {
-    const onResize = () => setWindowHeight(window.innerHeight);
-    const onBeforeUnload = () => flushSettingsSave();
-    const onPageHide = () => flushSettingsSave();
-    const onVisibilityChange = () => {
+    onResize = () => setWindowHeight(window.innerHeight);
+    onBeforeUnload = () => flushSettingsSave();
+    onPageHide = () => flushSettingsSave();
+    onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') flushSettingsSave();
     };
     window.addEventListener('resize', onResize);
@@ -446,19 +450,16 @@ const App: Component = () => {
       setSettingsReadyForPersist(true);
     });
     setWorkerReady(true);
-
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      window.removeEventListener('pagehide', onPageHide);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
   });
 
   // No longer auto-show blocking model overlay; model selection is in the settings panel.
   // createEffect(() => { ... setShowModelOverlay(true); });
 
   onCleanup(() => {
+    if (onResize) window.removeEventListener('resize', onResize);
+    if (onBeforeUnload) window.removeEventListener('beforeunload', onBeforeUnload);
+    if (onPageHide) window.removeEventListener('pagehide', onPageHide);
+    if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
     clearTimeout(panelHoverCloseTimeout);
     flushSettingsSave();
     visualizationUnsubscribe?.();

@@ -252,7 +252,7 @@ export function createAppStore() {
           const label = device.label.trim().toLowerCase();
           if (!label) return false;
           if (label === preferredDeviceLabel) return true;
-          return label.includes(preferredDeviceLabel) || preferredDeviceLabel.includes(label);
+          return label.includes(preferredDeviceLabel);
         });
         if (preferredByLabel) {
           setSelectedDeviceId(preferredByLabel.deviceId);
