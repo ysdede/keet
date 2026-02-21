@@ -70,8 +70,10 @@ self.onmessage = async (e: MessageEvent) => {
                 if (!modelManager) {
                     modelManager = new ModelManager(modelCallbacks);
                 }
-                // FileList can't be easily sent, but File can be part of Transferable or just sent as is
-                await modelManager.loadLocalModel(payload);
+                await modelManager.loadLocalModel(payload.files, {
+                    cpuThreads: payload.cpuThreads,
+                    backend: payload.backend,
+                });
                 postMessage({ type: 'INIT_MODEL_DONE', id });
                 break;
 
@@ -224,6 +226,7 @@ self.onmessage = async (e: MessageEvent) => {
                         T: payload.T,
                         melBins: payload.melBins,
                     },
+                    frameStride: payload.frameStride ?? 1,
                     returnTimestamps: true,
                     enableProfiling: false,
                     timeOffset: payload.timeOffset || 0,
