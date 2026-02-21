@@ -209,4 +209,31 @@ describe('AudioSegmentProcessor', () => {
         expect(current.speech.avgDuration).toBe(0);
         expect(current.silence.avgEnergy).toBe(0);
     });
+
+    it('should keep cached speech summary isolated from caller mutation across updates', () => {
+        const processor = createProcessor({
+            energyThreshold: 0.01,
+            silenceThreshold: CHUNK_DURATION_SEC,
+            maxSilenceWithinSpeech: 0,
+        });
+        const speechChunk = new Float32Array(CHUNK_SIZE).fill(SPEECH_ENERGY);
+        const silenceChunk = new Float32Array(CHUNK_SIZE).fill(0);
+
+        processor.processAudioData(speechChunk, 0.0, SPEECH_ENERGY);
+        processor.processAudioData(silenceChunk, CHUNK_DURATION_SEC, SILENCE_ENERGY);
+
+        const baseline = processor.getStats().speech;
+
+        const mutated = processor.getStats();
+        mutated.speech.avgDuration = 999;
+        mutated.speech.avgEnergy = 999;
+        mutated.speech.avgEnergyIntegral = 999;
+
+        processor.processAudioData(silenceChunk, 2 * CHUNK_DURATION_SEC, SILENCE_ENERGY);
+
+        const current = processor.getStats().speech;
+        expect(current.avgDuration).toBe(baseline.avgDuration);
+        expect(current.avgEnergy).toBe(baseline.avgEnergy);
+        expect(current.avgEnergyIntegral).toBe(baseline.avgEnergyIntegral);
+    });
 });
