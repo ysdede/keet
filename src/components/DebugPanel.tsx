@@ -4,8 +4,9 @@ import type { AudioEngine } from '../lib/audio/types';
 import type { MelWorkerClient } from '../lib/audio/MelWorkerClient';
 import { LayeredBufferVisualizer } from './LayeredBufferVisualizer';
 import {
-  clampDebugPanelHeight,
   DEFAULT_DEBUG_PANEL_HEIGHT,
+  MAX_DEBUG_PANEL_HEIGHT,
+  MIN_DEBUG_PANEL_HEIGHT,
 } from '../utils/settingsStorage';
 
 interface DebugPanelProps {
@@ -15,6 +16,8 @@ interface DebugPanelProps {
   melClient?: MelWorkerClient;
   /** Controlled panel height in px. */
   height?: number;
+  /** Max panel height in px derived from parent layout. */
+  maxHeight?: number;
   /** Called when the panel height changes via drag handle. */
   onHeightChange?: (height: number) => void;
 }
@@ -22,12 +25,28 @@ interface DebugPanelProps {
 /** Resizable diagnostics panel for runtime metrics, VAD state, and transcript internals. */
 export const DebugPanel: Component<DebugPanelProps> = (props) => {
   const isRecording = () => appStore.recordingState() === 'recording';
+  const widgetBadgeBaseClass =
+    'px-1.5 py-0.5 rounded-md border border-[var(--color-earthy-sage)]/45 bg-[var(--color-earthy-bg)] text-[8px] font-bold uppercase tracking-wider';
+  const widgetCardClass =
+    'rounded-md border border-[var(--color-earthy-sage)]/45 bg-[var(--color-earthy-bg)]/95';
+  const widgetSectionDividerClass = 'pt-1 border-t border-[var(--color-earthy-sage)]/35';
+  const widgetPanelClass =
+    'rounded-md border border-[var(--color-earthy-sage)]/45 bg-[var(--color-earthy-bg)]/70 overflow-hidden';
 
   const [internalHeight, setInternalHeight] = createSignal(DEFAULT_DEBUG_PANEL_HEIGHT);
   const [isResizing, setIsResizing] = createSignal(false);
-  const panelHeight = () => clampDebugPanelHeight(props.height ?? internalHeight());
+  const getMaxHeight = () => {
+    const viewportLimit = typeof window !== 'undefined' ? window.innerHeight - 200 : MAX_DEBUG_PANEL_HEIGHT;
+    return Math.max(
+      MIN_DEBUG_PANEL_HEIGHT,
+      Math.min(props.maxHeight ?? MAX_DEBUG_PANEL_HEIGHT, viewportLimit, MAX_DEBUG_PANEL_HEIGHT)
+    );
+  };
+  const clampPanelHeight = (height: number) =>
+    Math.min(getMaxHeight(), Math.max(MIN_DEBUG_PANEL_HEIGHT, height));
+  const panelHeight = () => clampPanelHeight(props.height ?? internalHeight());
   const setPanelHeight = (height: number) => {
-    const clamped = clampDebugPanelHeight(height);
+    const clamped = clampPanelHeight(height);
     if (props.onHeightChange) {
       props.onHeightChange(clamped);
       return;
@@ -37,36 +56,45 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
 
   let startY = 0;
   let startHeight = 0;
-  const handleMouseDown = (e: MouseEvent) => {
+  let activePointerId: number | null = null;
+  const handlePointerDown = (e: PointerEvent) => {
     e.preventDefault();
     setIsResizing(true);
+    activePointerId = e.pointerId;
     startY = e.clientY;
     startHeight = panelHeight();
     document.body.style.cursor = 'row-resize';
     document.body.style.userSelect = 'none';
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
+  const handlePointerMove = (e: PointerEvent) => {
     if (!isResizing()) return;
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
     const delta = startY - e.clientY;
     setPanelHeight(startHeight + delta);
   };
 
-  const handleMouseUp = () => {
+  const handlePointerUp = (e: PointerEvent) => {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
     setIsResizing(false);
+    activePointerId = null;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-    window.removeEventListener('mousemove', handleMouseMove);
-    window.removeEventListener('mouseup', handleMouseUp);
+    window.removeEventListener('pointermove', handlePointerMove);
+    window.removeEventListener('pointerup', handlePointerUp);
+    window.removeEventListener('pointercancel', handlePointerUp);
   };
 
   onCleanup(() => {
+    activePointerId = null;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-    window.removeEventListener('mousemove', handleMouseMove);
-    window.removeEventListener('mouseup', handleMouseUp);
+    window.removeEventListener('pointermove', handlePointerMove);
+    window.removeEventListener('pointerup', handlePointerUp);
+    window.removeEventListener('pointercancel', handlePointerUp);
   });
 
   const rtfColor = createMemo(() => {
@@ -78,45 +106,34 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
   });
   return (
     <div
-      class="bg-[var(--color-earthy-bg)] border-t border-[var(--color-earthy-sage)] text-[10px] font-mono text-[var(--color-earthy-dark-brown)] flex overflow-hidden shrink-0 transition-colors duration-300 selection:bg-[var(--color-earthy-coral)]/20 selection:text-[var(--color-earthy-coral)] z-20 relative"
+      class="bg-[var(--color-earthy-bg)] text-[10px] font-mono text-[var(--color-earthy-dark-brown)] flex flex-col overflow-hidden shrink-0 transition-colors duration-300 selection:bg-[var(--color-earthy-coral)]/20 selection:text-[var(--color-earthy-coral)]"
       style={{ height: `${panelHeight()}px` }}
     >
-      {/* Resize Handle */}
+      {/* Single splitter: one line at top of handle + centered pill (no border-t on panel to avoid double line) */}
       <div
-        class="absolute top-0 left-0 right-0 h-3 cursor-row-resize z-50 group touch-none select-none"
-        onMouseDown={handleMouseDown}
+        class="h-3 shrink-0 cursor-row-resize group touch-none select-none flex items-center justify-center relative"
+        onPointerDown={handlePointerDown}
         role="separator"
         aria-orientation="horizontal"
         aria-label="Resize debug panel"
       >
-        <div class={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-2.5 w-10 rounded-full border shadow-sm transition-colors ${isResizing() ? 'bg-[var(--color-earthy-sage)] border-[var(--color-earthy-muted-green)]/80' : 'bg-[var(--color-earthy-bg)] border-[var(--color-earthy-sage)]/60 group-hover:border-[var(--color-earthy-soft-brown)]/80'}`} />
+        <div class={`relative z-10 h-2.5 w-10 rounded-full border shadow-sm transition-colors ${isResizing() ? 'bg-[var(--color-earthy-sage)] border-[var(--color-earthy-muted-green)]/80' : 'bg-[var(--color-earthy-bg)] border-[var(--color-earthy-sage)]/60 group-hover:border-[var(--color-earthy-soft-brown)]/80'}`} />
       </div>
 
+      {/* Content area: below resize handle */}
+      <div class="flex flex-1 min-h-0 pt-1 px-2 pb-2 gap-2 overflow-hidden">
       {/* ---- Column 1: Controls + signal telemetry ---- */}
-      <div class="w-60 flex flex-col p-2 gap-1.5 border-r border-[var(--color-earthy-sage)] bg-[var(--color-earthy-sage)]/10 overflow-y-auto">
+      <div class={`${widgetPanelClass} w-60 flex flex-col p-2 gap-1.5 overflow-y-auto`}>
         <div class="flex flex-wrap gap-1">
-          <span class="px-1.5 py-0.5 rounded border border-[var(--color-earthy-sage)] bg-[var(--color-earthy-bg)] text-[8px] font-bold uppercase tracking-wider text-[var(--color-earthy-dark-brown)]">
+          <span class={`${widgetBadgeBaseClass} text-[var(--color-earthy-dark-brown)]`}>
             Mode v4
           </span>
-          <span class="px-1.5 py-0.5 rounded border border-[var(--color-earthy-sage)] bg-[var(--color-earthy-bg)] text-[8px] font-bold uppercase tracking-wider text-[var(--color-earthy-soft-brown)]">
+          <span class={`${widgetBadgeBaseClass} text-[var(--color-earthy-soft-brown)]`}>
             Backend {appStore.backend()}
           </span>
-          <span class={`px-1.5 py-0.5 rounded border text-[8px] font-bold uppercase tracking-wider ${isRecording() ? 'border-[var(--color-earthy-coral)] text-[var(--color-earthy-coral)] bg-[var(--color-earthy-coral)]/10' : 'border-[var(--color-earthy-sage)] text-[var(--color-earthy-soft-brown)] bg-[var(--color-earthy-bg)]'}`}>
+          <span class={`${widgetBadgeBaseClass} ${isRecording() ? 'border-[var(--color-earthy-coral)] text-[var(--color-earthy-coral)] bg-[var(--color-earthy-coral)]/10' : 'text-[var(--color-earthy-soft-brown)]'}`}>
             {isRecording() ? 'Recording' : 'Idle'}
           </span>
-        </div>
-
-        <div class="grid grid-cols-2 gap-1">
-          <div class="bg-[var(--color-earthy-bg)] border border-[var(--color-earthy-sage)] rounded p-1.5 flex flex-col items-center justify-center">
-            <span class="font-bold text-[var(--color-earthy-soft-brown)] uppercase tracking-tight text-[8px] mb-0.5">RTFx</span>
-            <span class={`text-xs ${rtfColor()}`}>
-              {appStore.rtfxAverage() > 0 ? Math.round(appStore.rtfxAverage()) : '–'}
-            </span>
-          </div>
-          <div class="bg-[var(--color-earthy-bg)] border border-[var(--color-earthy-sage)] rounded p-1.5 flex flex-col items-center justify-center">
-            <span class="font-bold text-[var(--color-earthy-soft-brown)] uppercase tracking-tight text-[8px] mb-0.5">Latency</span>
-            <span class="text-xs font-bold text-[var(--color-earthy-dark-brown)]">{Math.round(appStore.inferenceLatencyAverage())}ms</span>
-          </div>
         </div>
 
         <div class="space-y-1">
@@ -132,22 +149,22 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-1 pt-1 border-t border-[var(--color-earthy-sage)]">
-          <div class="bg-[var(--color-earthy-bg)] border border-[var(--color-earthy-sage)] rounded px-1 py-0.5 text-center">
+        <div class={`grid grid-cols-3 gap-1 ${widgetSectionDividerClass}`}>
+          <div class={`${widgetCardClass} h-full px-1 py-0.5 text-center`}>
             <div class="text-[7px] font-bold text-[var(--color-earthy-soft-brown)] uppercase">Sent</div>
             <div class="text-[10px] font-bold text-[var(--color-earthy-dark-brown)]">{appStore.v4MergerStats().sentencesFinalized}</div>
           </div>
-          <div class="bg-[var(--color-earthy-bg)] border border-[var(--color-earthy-sage)] rounded px-1 py-0.5 text-center">
+          <div class={`${widgetCardClass} h-full px-1 py-0.5 text-center`}>
             <div class="text-[7px] font-bold text-[var(--color-earthy-soft-brown)] uppercase">Cursor</div>
             <div class="text-[10px] font-bold text-[var(--color-earthy-dark-brown)]">{appStore.matureCursorTime().toFixed(1)}s</div>
           </div>
-          <div class="bg-[var(--color-earthy-bg)] border border-[var(--color-earthy-sage)] rounded px-1 py-0.5 text-center">
+          <div class={`${widgetCardClass} h-full px-1 py-0.5 text-center`}>
             <div class="text-[7px] font-bold text-[var(--color-earthy-soft-brown)] uppercase">Win</div>
             <div class="text-[10px] font-bold text-[var(--color-earthy-dark-brown)]">{appStore.v4MergerStats().utterancesProcessed}</div>
           </div>
         </div>
 
-        <div class="space-y-1 pt-1 border-t border-[var(--color-earthy-sage)]">
+        <div class={`space-y-1 ${widgetSectionDividerClass}`}>
           <div class="flex justify-between font-bold text-[var(--color-earthy-soft-brown)] uppercase text-[9px]">
             <span>RMS Energy</span>
             <span class={appStore.audioLevel() > appStore.energyThreshold() ? 'text-[var(--color-earthy-muted-green)]' : 'text-[var(--color-earthy-soft-brown)]'}>
@@ -178,38 +195,46 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
             />
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-1 pt-1 border-t border-[var(--color-earthy-sage)]">
-          <div class="bg-[var(--color-earthy-bg)] border border-[var(--color-earthy-sage)] rounded p-1 text-center">
-            <div class="text-[7px] font-bold text-[var(--color-earthy-soft-brown)] uppercase mb-px">State</div>
-            <div class={`text-[10px] font-bold whitespace-nowrap w-24 overflow-hidden text-ellipsis mx-auto ${appStore.vadState().isSpeech ? 'text-[var(--color-earthy-coral)]' : 'text-[var(--color-earthy-soft-brown)]'}`}>
-              {appStore.vadState().hybridState}
-            </div>
-          </div>
-          <div class={`bg-[var(--color-earthy-bg)] border border-[var(--color-earthy-sage)] rounded p-1 text-center transition-opacity duration-300 ${appStore.vadState().snr !== 0 ? 'opacity-100' : 'opacity-40'}`}>
-            <div class="text-[7px] font-bold text-[var(--color-earthy-soft-brown)] uppercase mb-px">SNR</div>
-            <div class={`text-[10px] font-bold ${appStore.vadState().snr > 3 ? 'text-[var(--color-earthy-muted-green)]' : 'text-[var(--color-earthy-soft-brown)]'}`}>
-              {appStore.vadState().snr.toFixed(1)} dB
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* ---- Column 2: compact diagnostics ---- */}
-      <div class="flex-1 flex flex-col min-w-0 bg-[var(--color-earthy-bg)]">
-        <div class="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
+      <div class={`${widgetPanelClass} flex-1 flex flex-col min-w-0`}>
+        <div class="flex-1 overflow-y-auto p-2 space-y-2">
           <section class="space-y-1">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <div class="bg-[var(--color-earthy-sage)]/10 border border-[var(--color-earthy-sage)] rounded p-1.5">
-                <div class="text-[8px] font-bold uppercase text-[var(--color-earthy-soft-brown)]">Inference Tick</div>
-                <div class="text-[11px] font-bold text-[var(--color-earthy-dark-brown)]">{appStore.v4InferenceIntervalMs()}ms</div>
+            <div class="grid grid-cols-7 gap-1">
+              <div class={`${widgetCardClass} min-w-0 h-full p-1`}>
+                <div class="text-[7px] font-bold uppercase text-[var(--color-earthy-soft-brown)] truncate">Inference Tick</div>
+                <div class="text-[10px] font-bold text-[var(--color-earthy-dark-brown)] truncate">{appStore.v4InferenceIntervalMs()}ms</div>
               </div>
-              <div class="bg-[var(--color-earthy-sage)]/10 border border-[var(--color-earthy-sage)] rounded p-1.5">
-                <div class="text-[8px] font-bold uppercase text-[var(--color-earthy-soft-brown)]">Silence Flush</div>
-                <div class="text-[11px] font-bold text-[var(--color-earthy-dark-brown)]">{appStore.v4SilenceFlushSec().toFixed(1)}s</div>
+              <div class={`${widgetCardClass} min-w-0 h-full p-1`}>
+                <div class="text-[7px] font-bold uppercase text-[var(--color-earthy-soft-brown)] truncate">Silence Flush</div>
+                <div class="text-[10px] font-bold text-[var(--color-earthy-dark-brown)] truncate">{appStore.v4SilenceFlushSec().toFixed(1)}s</div>
               </div>
-              <div class="bg-[var(--color-earthy-sage)]/10 border border-[var(--color-earthy-sage)] rounded p-1.5">
-                <div class="text-[8px] font-bold uppercase text-[var(--color-earthy-soft-brown)]">VAD Threshold</div>
-                <div class="text-[11px] font-bold text-[var(--color-earthy-dark-brown)]">{(appStore.sileroThreshold() * 100).toFixed(0)}%</div>
+              <div class={`${widgetCardClass} min-w-0 h-full p-1`}>
+                <div class="text-[7px] font-bold uppercase text-[var(--color-earthy-soft-brown)] truncate">VAD Threshold</div>
+                <div class="text-[10px] font-bold text-[var(--color-earthy-dark-brown)] truncate">{(appStore.sileroThreshold() * 100).toFixed(0)}%</div>
+              </div>
+              <div class={`${widgetCardClass} min-w-0 h-full p-1`}>
+                <div class="text-[7px] font-bold uppercase text-[var(--color-earthy-soft-brown)] truncate">RTFx</div>
+                <div class={`text-[10px] font-bold truncate ${rtfColor()}`}>
+                  {appStore.rtfxAverage() > 0 ? Math.round(appStore.rtfxAverage()) : '–'}
+                </div>
+              </div>
+              <div class={`${widgetCardClass} min-w-0 h-full p-1`}>
+                <div class="text-[7px] font-bold uppercase text-[var(--color-earthy-soft-brown)] truncate">Latency</div>
+                <div class="text-[10px] font-bold text-[var(--color-earthy-dark-brown)] truncate">{Math.round(appStore.inferenceLatencyAverage())}ms</div>
+              </div>
+              <div class={`${widgetCardClass} min-w-0 h-full p-1`}>
+                <div class="text-[7px] font-bold uppercase text-[var(--color-earthy-soft-brown)] truncate">State</div>
+                <div class={`text-[10px] font-bold whitespace-nowrap overflow-hidden text-ellipsis ${appStore.vadState().isSpeech ? 'text-[var(--color-earthy-coral)]' : 'text-[var(--color-earthy-soft-brown)]'}`}>
+                  {appStore.vadState().hybridState}
+                </div>
+              </div>
+              <div class={`${widgetCardClass} min-w-0 h-full p-1 transition-opacity duration-300 ${appStore.vadState().snr !== 0 ? 'opacity-100' : 'opacity-40'}`}>
+                <div class="text-[7px] font-bold uppercase text-[var(--color-earthy-soft-brown)] truncate">SNR</div>
+                <div class={`text-[10px] font-bold truncate ${appStore.vadState().snr > 3 ? 'text-[var(--color-earthy-muted-green)]' : 'text-[var(--color-earthy-soft-brown)]'}`}>
+                  {appStore.vadState().snr.toFixed(1)} dB
+                </div>
               </div>
             </div>
           </section>
@@ -226,6 +251,7 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
             </div>
           </section>
         </div>
+      </div>
       </div>
     </div>
   );
