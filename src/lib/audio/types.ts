@@ -155,6 +155,12 @@ export interface AudioEngine {
     /**
      * Subscribe to visualization updates.
      * Callback is invoked after each audio chunk is processed.
+     *
+     * Important (zero-copy contract):
+     * - `data` is a shared internal buffer reused across update cycles.
+     * - Consumers must copy immediately if they need persistence:
+     *   `const snapshot = new Float32Array(data)`.
+     * - Do not mutate `data` in place.
      */
     onVisualizationUpdate(callback: (data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void): () => void;
 

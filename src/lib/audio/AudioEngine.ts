@@ -897,6 +897,13 @@ export class AudioEngine implements IAudioEngine {
     /**
      * Subscribe to visualization updates.
      * Callback is invoked after each audio chunk is processed.
+     *
+     * Important (zero-copy contract):
+     * - `data` is a shared internal buffer reference reused across update cycles.
+     * - The same reference is passed to all callbacks in a given notify cycle.
+     * - Consumers must copy immediately if they need to retain or mutate data:
+     *   `const snapshot = new Float32Array(data)`.
+     * - Callbacks must not mutate `data` in place.
      */
     onVisualizationUpdate(callback: (data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void): () => void {
         this.visualizationCallbacks.push(callback);
@@ -925,8 +932,8 @@ export class AudioEngine implements IAudioEngine {
         if (!this.visualizationNotifyBuffer || this.visualizationNotifyBuffer.length !== targetSize) {
             this.visualizationNotifyBuffer = new Float32Array(targetSize);
         }
-        const data = this.getVisualizationData(targetWidth, this.visualizationNotifyBuffer);
-        const payload = data.slice();
+        // Zero-allocation: pass the internal reusable buffer directly.
+        const payload = this.getVisualizationData(targetWidth, this.visualizationNotifyBuffer);
 
         const bufferEndTime = this.ringBuffer.getCurrentTime();
         this.visualizationCallbacks.forEach((cb) => cb(payload, this.getMetrics(), bufferEndTime));
