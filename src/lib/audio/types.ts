@@ -133,9 +133,10 @@ export interface AudioEngine {
      * Get visualization data subsampled to fit the target width.
      * Returns min/max pairs for each pixel to preserve peaks.
      * @param targetWidth - Desired number of data points (canvas width)
+     * @param outBuffer - Optional pre-allocated buffer to write into.
      * @returns Float32Array with alternating min/max values
      */
-    getVisualizationData(targetWidth: number): Float32Array;
+    getVisualizationData(targetWidth: number, outBuffer?: Float32Array): Float32Array;
 
     /**
      * Get current audio metrics for UI visualization.
