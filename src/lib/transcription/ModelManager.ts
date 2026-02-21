@@ -9,9 +9,10 @@
 import type {
   ModelState,
   BackendType,
-  ModelConfig,
   ModelProgress,
-  ModelManagerCallbacks
+  ModelManagerCallbacks,
+  ModelBackendMode,
+  QuantizationMode,
 } from './types';
 
 // Default model configuration (Parakeet TDT 0.6B)
@@ -71,8 +72,18 @@ export class ModelManager {
   /**
    * Load the model with WebGPU/WASM fallback
    */
-  async loadModel(config: { modelId?: string } = {}): Promise<void> {
+  async loadModel(config: {
+    modelId?: string;
+    cpuThreads?: number;
+    backend?: ModelBackendMode;
+    encoderQuant?: QuantizationMode;
+    decoderQuant?: QuantizationMode;
+  } = {}): Promise<void> {
     const modelId = config.modelId || DEFAULT_MODEL_ID;
+    const cpuThreads = this._normalizeCpuThreads(config.cpuThreads);
+    const requestedBackend = this._normalizeRequestedBackend(config.backend);
+    const encoderQuant = this._normalizeQuantization(config.encoderQuant, 'int8');
+    const decoderQuant = this._normalizeQuantization(config.decoderQuant, 'int8');
 
     this._setState('loading');
 
@@ -83,14 +94,14 @@ export class ModelManager {
     });
 
     try {
-      // 1. Detect WebGPU support
-      const hasWebGPU = await this._detectWebGPU();
-      this._backend = hasWebGPU ? 'webgpu' : 'wasm';
+      const { effectiveBackend, runtimeBackend } = await this._resolveBackend(requestedBackend);
+      this._backend = runtimeBackend;
 
       this._setProgress({
         stage: 'backend',
         progress: 10,
-        message: `Using ${this._backend.toUpperCase()} backend`
+        message: `Using ${effectiveBackend.toUpperCase()} backend`,
+        backend: this._backend,
       });
 
       // 2. Import parakeet.js dynamically
@@ -101,12 +112,13 @@ export class ModelManager {
 
       const createModelFromAssets = async (assets: ResolvedModelAssets): Promise<any> => {
         const preprocessorBackend = assets.preprocessorBackend || 'js';
-        console.log(`[ModelManager] Loading model with backend=${this._backend}, preprocessorBackend=${preprocessorBackend}`);
+        console.log(`[ModelManager] Loading model with backend=${effectiveBackend}, preprocessorBackend=${preprocessorBackend}, encoderQuant=${encoderQuant}, decoderQuant=${decoderQuant}, cpuThreads=${cpuThreads ?? 'default'}`);
         return ParakeetModel.fromUrls({
           ...assets.urls,
           filenames: assets.filenames,
           preprocessorBackend,
-          backend: this._backend === 'webgpu' ? 'webgpu-hybrid' : 'wasm',
+          backend: effectiveBackend,
+          cpuThreads,
           verbose: false,
         });
       };
@@ -119,7 +131,9 @@ export class ModelManager {
       });
 
       const modelAssets = await getParakeetModel(modelId, {
-        backend: this._backend,
+        backend: effectiveBackend,
+        encoderQuant,
+        decoderQuant,
         preprocessorBackend: 'js', // Use pure JS mel — faster, no ONNX download needed
         progress: (p: any) => {
           // Map parakeet.js progress to our UI
@@ -158,7 +172,9 @@ export class ModelManager {
 
         const directAssets = this._buildDirectModelAssets(
           modelId,
-          this._backend,
+          effectiveBackend,
+          encoderQuant,
+          decoderQuant,
           getModelConfig as ModelConfigResolver
         );
 
@@ -198,7 +214,12 @@ export class ModelManager {
   /**
    * Side-load model from local files
    */
-  async loadLocalModel(files: FileList): Promise<void> {
+  async loadLocalModel(
+    files: FileList | File[],
+    options: { cpuThreads?: number; backend?: ModelBackendMode } = {}
+  ): Promise<void> {
+    const cpuThreads = this._normalizeCpuThreads(options.cpuThreads);
+    const requestedBackend = this._normalizeRequestedBackend(options.backend);
     this._setState('loading');
     this._setProgress({
       stage: 'init',
@@ -229,8 +250,15 @@ export class ModelManager {
         throw new Error(`Missing required files: ${missing.join(', ')}`);
       }
 
-      const hasWebGPU = await this._detectWebGPU();
-      this._backend = hasWebGPU ? 'webgpu' : 'wasm';
+      const { effectiveBackend, runtimeBackend } = await this._resolveBackend(requestedBackend);
+      this._backend = runtimeBackend;
+
+      this._setProgress({
+        stage: 'backend',
+        progress: 10,
+        message: `Using ${effectiveBackend.toUpperCase()} backend`,
+        backend: this._backend,
+      });
 
       this._setProgress({ stage: 'import', progress: 20, message: 'Initialising parakeet.js...' });
       const { ParakeetModel } = await import(
@@ -259,7 +287,8 @@ export class ModelManager {
           decoder: assets.decoder.name
         },
         preprocessorBackend: useOnnxPreprocessor ? 'onnx' : 'js',
-        backend: this._backend === 'webgpu' ? 'webgpu-hybrid' : 'wasm',
+        backend: effectiveBackend,
+        cpuThreads,
         verbose: false,
       });
 
@@ -325,6 +354,33 @@ export class ModelManager {
     this._callbacks.onProgress?.(progress);
   }
 
+  private _normalizeCpuThreads(value?: number): number | undefined {
+    if (!Number.isFinite(value)) return undefined;
+    return Math.max(1, Math.floor(value as number));
+  }
+
+  private _normalizeRequestedBackend(value?: ModelBackendMode): ModelBackendMode {
+    return value === 'wasm' ? 'wasm' : 'webgpu-hybrid';
+  }
+
+  private _normalizeQuantization(value: QuantizationMode | undefined, fallback: QuantizationMode): QuantizationMode {
+    return value === 'fp32' || value === 'int8' ? value : fallback;
+  }
+
+  private async _resolveBackend(requestedBackend: ModelBackendMode): Promise<{ effectiveBackend: ModelBackendMode; runtimeBackend: BackendType }> {
+    if (requestedBackend === 'wasm') {
+      return { effectiveBackend: 'wasm', runtimeBackend: 'wasm' };
+    }
+
+    const hasWebGPU = await this._detectWebGPU();
+    if (!hasWebGPU) {
+      console.warn('[ModelManager] Requested WebGPU backend is not available; falling back to WASM');
+      return { effectiveBackend: 'wasm', runtimeBackend: 'wasm' };
+    }
+
+    return { effectiveBackend: 'webgpu-hybrid', runtimeBackend: 'webgpu' };
+  }
+
   /**
    * Clear cached model data
    */
@@ -358,13 +414,16 @@ export class ModelManager {
 
   private _buildDirectModelAssets(
     modelId: string,
-    backend: BackendType,
+    backend: ModelBackendMode,
+    encoderQuant: QuantizationMode,
+    decoderQuant: QuantizationMode,
     getModelConfig: ModelConfigResolver
   ): ResolvedModelAssets {
     const repoId = getModelConfig?.(modelId)?.repoId || modelId;
     const revision = 'main';
-    const encoderName = backend === 'webgpu' ? 'encoder-model.onnx' : 'encoder-model.int8.onnx';
-    const decoderName = 'decoder_joint-model.int8.onnx';
+    const resolvedEncoderQuant = backend.startsWith('webgpu') && encoderQuant === 'int8' ? 'fp32' : encoderQuant;
+    const encoderName = resolvedEncoderQuant === 'int8' ? 'encoder-model.int8.onnx' : 'encoder-model.onnx';
+    const decoderName = decoderQuant === 'int8' ? 'decoder_joint-model.int8.onnx' : 'decoder_joint-model.onnx';
     const baseUrl = `https://huggingface.co/${repoId}/resolve/${revision}`;
 
     return {

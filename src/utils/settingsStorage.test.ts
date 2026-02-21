@@ -23,8 +23,15 @@ describe('settingsStorage', () => {
         v4InferenceIntervalMs: 9000,
         v4SilenceFlushSec: -4,
         streamingWindow: 1.2,
+        frameStride: 99,
+        wasmThreads: 999,
       },
-      model: { selectedModelId: 'parakeet-tdt-0.6b-v2' },
+      model: {
+        selectedModelId: 'parakeet-tdt-0.6b-v2',
+        backend: 'invalid',
+        encoderQuant: 'fp32',
+        decoderQuant: 'int8',
+      },
       audio: { selectedDeviceId: 'device-1', selectedDeviceLabel: 'Mic 1' },
       ui: {
         widgetPosition: { x: 12, y: 18 },
@@ -40,7 +47,12 @@ describe('settingsStorage', () => {
     expect(loaded.general?.v4InferenceIntervalMs).toBe(8000);
     expect(loaded.general?.v4SilenceFlushSec).toBe(0.3);
     expect(loaded.general?.streamingWindow).toBe(2);
+    expect(loaded.general?.frameStride).toBe(4);
+    expect(loaded.general?.wasmThreads).toBe(64);
     expect(loaded.model?.selectedModelId).toBe('parakeet-tdt-0.6b-v2');
+    expect(loaded.model?.backend).toBeUndefined();
+    expect(loaded.model?.encoderQuant).toBe('fp32');
+    expect(loaded.model?.decoderQuant).toBe('int8');
     expect(loaded.audio?.selectedDeviceId).toBe('device-1');
     expect(loaded.ui?.widgetPosition).toEqual({ x: 12, y: 18 });
     expect(loaded.ui?.debugPanel?.visible).toBe(true);

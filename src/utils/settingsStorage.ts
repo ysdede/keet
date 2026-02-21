@@ -19,9 +19,14 @@ export interface PersistedSettings {
     v4InferenceIntervalMs?: number;
     v4SilenceFlushSec?: number;
     streamingWindow?: number;
+    frameStride?: number;
+    wasmThreads?: number;
   };
   model?: {
     selectedModelId?: string;
+    backend?: 'webgpu-hybrid' | 'wasm';
+    encoderQuant?: 'int8' | 'fp32';
+    decoderQuant?: 'int8' | 'fp32';
   };
   audio?: {
     selectedDeviceId?: string;
@@ -96,6 +101,16 @@ const readTranscriptTab = (value: unknown): StoredTranscriptTab | undefined => {
   return undefined;
 };
 
+const readModelBackend = (value: unknown): 'webgpu-hybrid' | 'wasm' | undefined => {
+  if (value === 'webgpu-hybrid' || value === 'wasm') return value;
+  return undefined;
+};
+
+const readQuantization = (value: unknown): 'int8' | 'fp32' | undefined => {
+  if (value === 'int8' || value === 'fp32') return value;
+  return undefined;
+};
+
 const sanitizeSettings = (value: unknown): PersistedSettings => {
   if (!isRecord(value)) return {};
 
@@ -109,6 +124,8 @@ const sanitizeSettings = (value: unknown): PersistedSettings => {
     nextGeneral.v4InferenceIntervalMs = readIntegerInRange(general.v4InferenceIntervalMs, 160, 8000);
     nextGeneral.v4SilenceFlushSec = readNumberInRange(general.v4SilenceFlushSec, 0.3, 5.0);
     nextGeneral.streamingWindow = readNumberInRange(general.streamingWindow, 2.0, 15.0);
+    nextGeneral.frameStride = readIntegerInRange(general.frameStride, 1, 4);
+    nextGeneral.wasmThreads = readIntegerInRange(general.wasmThreads, 1, 64);
     if (Object.values(nextGeneral).some((v) => v !== undefined)) {
       settings.general = nextGeneral;
     }
@@ -117,8 +134,15 @@ const sanitizeSettings = (value: unknown): PersistedSettings => {
   const model = isRecord(value.model) ? value.model : null;
   if (model) {
     const selectedModelId = readString(model.selectedModelId);
-    if (selectedModelId) {
-      settings.model = { selectedModelId };
+    const backend = readModelBackend(model.backend);
+    const encoderQuant = readQuantization(model.encoderQuant);
+    const decoderQuant = readQuantization(model.decoderQuant);
+    if (selectedModelId || backend || encoderQuant || decoderQuant) {
+      settings.model = {};
+      if (selectedModelId) settings.model.selectedModelId = selectedModelId;
+      if (backend) settings.model.backend = backend;
+      if (encoderQuant) settings.model.encoderQuant = encoderQuant;
+      if (decoderQuant) settings.model.decoderQuant = decoderQuant;
     }
   }
 
