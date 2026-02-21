@@ -8,6 +8,13 @@ const formatInterval = (ms: number) => {
   return `${ms}ms`;
 };
 
+const getMaxHardwareThreads = () => {
+  if (typeof navigator === 'undefined' || !Number.isFinite(navigator.hardwareConcurrency)) {
+    return 4;
+  }
+  return Math.max(1, Math.floor(navigator.hardwareConcurrency));
+};
+
 /** Visible section preset for the embeddable settings content. */
 export type SettingsPanelSection = 'full' | 'audio' | 'model';
 
@@ -34,6 +41,7 @@ export interface SettingsContentProps {
 export const SettingsContent: Component<SettingsContentProps> = (props) => {
   const isV4 = () => appStore.transcriptionMode() === 'v4-utterance';
   const isV3 = () => appStore.transcriptionMode() === 'v3-streaming';
+  const maxWasmThreads = () => getMaxHardwareThreads();
 
   const expandUp = () => props.expandUp?.() ?? false;
   const section = () => props.section ?? 'full';
@@ -65,11 +73,11 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
             <button
               type="button"
               onClick={props.onLoadModel}
-              disabled={appStore.modelState() === 'ready' || appStore.modelState() === 'loading'}
+              disabled={appStore.modelState() === 'loading'}
               class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--color-earthy-muted-green)] hover:bg-[var(--color-earthy-sage)]/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             >
               <span class="material-symbols-outlined text-lg">power_settings_new</span>
-              {appStore.modelState() === 'ready' ? 'Loaded' : appStore.modelState() === 'loading' ? '...' : 'Load'}
+              {appStore.modelState() === 'ready' ? 'Reload' : appStore.modelState() === 'loading' ? '...' : 'Load'}
             </button>
             <Show when={props.onLocalLoad}>
               <label class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--color-earthy-soft-brown)] hover:bg-[var(--color-earthy-sage)]/20 transition-colors cursor-pointer shrink-0">
@@ -92,6 +100,59 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
           <p class="text-xs text-[var(--color-earthy-soft-brown)]">
             {appStore.modelState() === 'ready' ? getModelDisplayName(appStore.selectedModelId()) : appStore.modelState()}
           </p>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-3 pt-1">
+            <div class="space-y-1">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Backend</span>
+              <select
+                class="w-full text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
+                value={appStore.modelBackendMode()}
+                onInput={(e) => appStore.setModelBackendMode((e.target as HTMLSelectElement).value as 'webgpu-hybrid' | 'wasm')}
+                disabled={appStore.modelState() === 'loading'}
+              >
+                <option value="webgpu-hybrid">WebGPU</option>
+                <option value="wasm">WASM</option>
+              </select>
+            </div>
+            <div class="space-y-1">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Stride</span>
+              <input
+                type="number"
+                min="1"
+                max="4"
+                step="1"
+                value={appStore.frameStride()}
+                onInput={(e) => {
+                  const next = Number((e.target as HTMLInputElement).value);
+                  if (Number.isFinite(next)) appStore.setFrameStride(Math.max(1, Math.min(4, Math.round(next))));
+                }}
+                class="w-full text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
+              />
+            </div>
+            <div class="space-y-1">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Encoder</span>
+              <select
+                class="w-full text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
+                value={appStore.encoderQuant()}
+                onInput={(e) => appStore.setEncoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32')}
+                disabled={appStore.modelState() === 'loading'}
+              >
+                <option value="fp32">fp32</option>
+                <option value="int8">int8</option>
+              </select>
+            </div>
+            <div class="space-y-1">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Decoder</span>
+              <select
+                class="w-full text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
+                value={appStore.decoderQuant()}
+                onInput={(e) => appStore.setDecoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32')}
+                disabled={appStore.modelState() === 'loading'}
+              >
+                <option value="int8">int8</option>
+                <option value="fp32">fp32</option>
+              </select>
+            </div>
+          </div>
           <Show when={appStore.modelState() === 'loading'}>
             <div class="space-y-1">
               <div class="flex justify-between text-xs">
@@ -134,6 +195,26 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
 
         <Show when={showSliders()}>
           <section class="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div class="space-y-1.5 min-w-0">
+            <div class="flex justify-between items-center gap-2">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">WASM threads</span>
+              <span class="text-sm text-[var(--color-earthy-dark-brown)] tabular-nums shrink-0">{appStore.wasmThreads()} / {maxWasmThreads()}</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max={maxWasmThreads()}
+              step="1"
+              value={Math.min(appStore.wasmThreads(), maxWasmThreads())}
+              onInput={(e) => {
+                const next = parseInt(e.currentTarget.value, 10);
+                appStore.setWasmThreads(Math.max(1, Math.min(maxWasmThreads(), next)));
+              }}
+              class="debug-slider w-full h-2 rounded-full appearance-none cursor-pointer bg-[var(--color-earthy-sage)]/30"
+            />
+            <div class="text-[9px] text-[var(--color-earthy-soft-brown)]">Applied on next model load/reload.</div>
+          </div>
+
           <div class="space-y-1.5 min-w-0">
             <div class="flex justify-between items-center gap-2">
               <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Energy threshold</span>

@@ -7,7 +7,14 @@
  * Supports both v3 (token-stream) and v4 (utterance-based) pipelines.
  */
 
-import { ModelState, ModelProgress, TranscriptionResult, TranscriptionServiceConfig } from './types';
+import type {
+    ModelState,
+    ModelProgress,
+    TranscriptionResult,
+    TranscriptionServiceConfig,
+    ModelBackendMode,
+    QuantizationMode,
+} from './types';
 import { TokenStreamResult, TokenStreamConfig } from './TokenStreamTranscriber';
 import type { MergerResult, UtteranceBasedMergerConfig } from './UtteranceBasedMerger';
 
@@ -40,10 +47,23 @@ export interface V4IncrementalCache {
     prefixSeconds: number;
 }
 
+export interface InitModelOptions {
+    modelId?: string;
+    cpuThreads?: number;
+    backend?: ModelBackendMode;
+    encoderQuant?: QuantizationMode;
+    decoderQuant?: QuantizationMode;
+}
+
+export interface InitLocalModelOptions {
+    cpuThreads?: number;
+    backend?: ModelBackendMode;
+}
+
 /** Valid message types for the worker bridge */
 export interface WorkerMessageMap {
-    INIT_MODEL: { payload: { modelId?: string }; response: void };
-    LOAD_LOCAL_MODEL: { payload: File[]; response: void };
+    INIT_MODEL: { payload: InitModelOptions; response: void };
+    LOAD_LOCAL_MODEL: { payload: { files: File[]; cpuThreads?: number; backend?: ModelBackendMode }; response: void };
     INIT_SERVICE: { payload: { config: TranscriptionServiceConfig }; response: void };
     INIT_V3_SERVICE: { payload: { config: TokenStreamConfig }; response: void };
     PROCESS_CHUNK: { payload: Float32Array; response: TranscriptionResult };
@@ -67,6 +87,7 @@ export interface WorkerMessageMap {
             features: Float32Array;
             T: number;
             melBins: number;
+            frameStride?: number;
             timeOffset?: number;
             endTime?: number;
             segmentId?: string;
@@ -154,13 +175,25 @@ export class TranscriptionWorkerClient {
         return transferOwnership === false ? [] : [buffer as ArrayBuffer];
     }
 
-    // API Methods
-    async initModel(modelId?: string): Promise<void> {
-        return this.sendRequest('INIT_MODEL', { modelId });
+    private normalizeCpuThreads(cpuThreads?: number): number | undefined {
+        if (!Number.isFinite(cpuThreads)) return undefined;
+        return Math.max(1, Math.floor(cpuThreads as number));
     }
 
-    async initLocalModel(files: FileList | File[]): Promise<void> {
-        return this.sendRequest('LOAD_LOCAL_MODEL', Array.from(files));
+    // API Methods
+    async initModel(options: InitModelOptions = {}): Promise<void> {
+        return this.sendRequest('INIT_MODEL', {
+            ...options,
+            cpuThreads: this.normalizeCpuThreads(options.cpuThreads),
+        });
+    }
+
+    async initLocalModel(files: FileList | File[], options: InitLocalModelOptions = {}): Promise<void> {
+        return this.sendRequest('LOAD_LOCAL_MODEL', {
+            files: Array.from(files),
+            cpuThreads: this.normalizeCpuThreads(options.cpuThreads),
+            backend: options.backend,
+        });
     }
 
     async initService(config: TranscriptionServiceConfig): Promise<void> {
@@ -241,6 +274,7 @@ export class TranscriptionWorkerClient {
         features: Float32Array;
         T: number;
         melBins: number;
+        frameStride?: number;
         timeOffset?: number;
         endTime?: number;
         segmentId?: string;
