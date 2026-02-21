@@ -216,11 +216,10 @@ export function createAppStore() {
     }
   };
 
-  const refreshDevices = async () => {
+  const refreshDevices = async (options?: { preferredDeviceId?: string; preferredDeviceLabel?: string }) => {
     try {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
         setAvailableDevices([]);
-        setSelectedDeviceId('');
         return;
       }
 
@@ -229,17 +228,39 @@ export function createAppStore() {
       setAvailableDevices(mics);
 
       if (mics.length === 0) {
-        setSelectedDeviceId('');
         return;
       }
 
       const currentSelectedId = selectedDeviceId();
-      const hasCurrentSelection =
+      const hasCurrentSelectionById =
         currentSelectedId.length > 0 && mics.some((device) => device.deviceId === currentSelectedId);
 
-      if (!hasCurrentSelection) {
-        setSelectedDeviceId(mics[0].deviceId);
+      if (hasCurrentSelectionById) return;
+
+      const preferredDeviceId = options?.preferredDeviceId?.trim();
+      if (preferredDeviceId) {
+        const preferredById = mics.find((device) => device.deviceId === preferredDeviceId);
+        if (preferredById) {
+          setSelectedDeviceId(preferredById.deviceId);
+          return;
+        }
       }
+
+      const preferredDeviceLabel = options?.preferredDeviceLabel?.trim().toLowerCase();
+      if (preferredDeviceLabel) {
+        const preferredByLabel = mics.find((device) => {
+          const label = device.label.trim().toLowerCase();
+          if (!label) return false;
+          if (label === preferredDeviceLabel) return true;
+          return label.includes(preferredDeviceLabel) || preferredDeviceLabel.includes(label);
+        });
+        if (preferredByLabel) {
+          setSelectedDeviceId(preferredByLabel.deviceId);
+          return;
+        }
+      }
+
+      setSelectedDeviceId(mics[0].deviceId);
     } catch (e) {
       console.error('Failed to enum devices:', e);
     }

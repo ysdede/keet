@@ -225,18 +225,59 @@ const clampWidgetPosition = (position: { x: number; y: number }): { x: number; y
 };
 
 const App: Component = () => {
+  const persistedSettings = loadSettingsFromStorage();
+  const persistedGeneral = persistedSettings.general;
+  const persistedAudio = persistedSettings.audio;
+  const persistedModelId = persistedSettings.model?.selectedModelId;
+  const persistedUi = persistedSettings.ui;
+
+  if (persistedModelId && MODELS.some((model) => model.id === persistedModelId)) {
+    appStore.setSelectedModelId(persistedModelId);
+  }
+  if (persistedGeneral?.energyThreshold !== undefined) {
+    appStore.setEnergyThreshold(persistedGeneral.energyThreshold);
+  }
+  if (persistedGeneral?.sileroThreshold !== undefined) {
+    appStore.setSileroThreshold(persistedGeneral.sileroThreshold);
+  }
+  if (persistedGeneral?.v4InferenceIntervalMs !== undefined) {
+    appStore.setV4InferenceIntervalMs(persistedGeneral.v4InferenceIntervalMs);
+  }
+  if (persistedGeneral?.v4SilenceFlushSec !== undefined) {
+    appStore.setV4SilenceFlushSec(persistedGeneral.v4SilenceFlushSec);
+  }
+  if (persistedGeneral?.streamingWindow !== undefined) {
+    appStore.setStreamingWindow(persistedGeneral.streamingWindow);
+  }
+  if (persistedUi?.debugPanel?.visible !== undefined) {
+    appStore.setShowDebugPanel(persistedUi.debugPanel.visible);
+  }
+
+  const initialWidgetPos = persistedUi?.widgetPosition
+    ? clampWidgetPosition(persistedUi.widgetPosition)
+    : getDefaultWidgetPosition();
+  const initialActiveTranscriptTab: TranscriptViewTab = persistedUi?.transcript?.activeTab ?? 'live';
+  const initialMergedSplitRatio =
+    persistedUi?.transcript?.mergedSplitRatio !== undefined
+      ? clampMergedSplitRatio(persistedUi.transcript.mergedSplitRatio)
+      : DEFAULT_MERGED_SPLIT_RATIO;
+  const initialDebugPanelHeight =
+    persistedUi?.debugPanel?.height !== undefined
+      ? clampDebugPanelHeight(persistedUi.debugPanel.height)
+      : DEFAULT_DEBUG_PANEL_HEIGHT;
+
   const [showModelOverlay, setShowModelOverlay] = createSignal(false);
   const [showContextPanel, setShowContextPanel] = createSignal(false);
   type SettingsPanelSection = 'full' | 'audio' | 'model';
   const [settingsPanelSection, setSettingsPanelSection] = createSignal<SettingsPanelSection>('full');
   let panelHoverCloseTimeout: number | undefined;
   const [workerReady, setWorkerReady] = createSignal(false);
-  const [widgetPos, setWidgetPos] = createSignal<{ x: number; y: number } | null>(null);
+  const [widgetPos, setWidgetPos] = createSignal<{ x: number; y: number } | null>(initialWidgetPos);
   const [isDragging, setIsDragging] = createSignal(false);
-  const [activeTranscriptTab, setActiveTranscriptTab] = createSignal<TranscriptViewTab>('live');
-  const [mergedSplitRatio, setMergedSplitRatio] = createSignal(DEFAULT_MERGED_SPLIT_RATIO);
-  const [debugPanelHeight, setDebugPanelHeight] = createSignal(DEFAULT_DEBUG_PANEL_HEIGHT);
-  const [settingsHydrated, setSettingsHydrated] = createSignal(false);
+  const [activeTranscriptTab, setActiveTranscriptTab] = createSignal<TranscriptViewTab>(initialActiveTranscriptTab);
+  const [mergedSplitRatio, setMergedSplitRatio] = createSignal(initialMergedSplitRatio);
+  const [debugPanelHeight, setDebugPanelHeight] = createSignal(initialDebugPanelHeight);
+  const [settingsReadyForPersist, setSettingsReadyForPersist] = createSignal(false);
   let settingsSaveTimeout: number | undefined;
 
   const isRecording = () => appStore.recordingState() === 'recording';
@@ -306,15 +347,13 @@ const App: Component = () => {
     }
   });
 
-  createEffect(() => {
-    if (!settingsHydrated()) return;
-
+  const getSettingsSnapshot = () => {
     const selectedDeviceId = appStore.selectedDeviceId();
     const selectedDevice = appStore
       .availableDevices()
       .find((device) => device.deviceId === selectedDeviceId);
 
-    const snapshot = {
+    return {
       general: {
         energyThreshold: appStore.energyThreshold(),
         sileroThreshold: appStore.sileroThreshold(),
@@ -341,65 +380,40 @@ const App: Component = () => {
         },
       },
     };
+  };
 
+  const flushSettingsSave = () => {
+    if (!settingsReadyForPersist()) return;
+    if (settingsSaveTimeout) {
+      clearTimeout(settingsSaveTimeout);
+      settingsSaveTimeout = undefined;
+    }
+    saveSettingsToStorage(getSettingsSnapshot());
+  };
+
+  createEffect(() => {
+    if (!settingsReadyForPersist()) return;
+    const snapshot = getSettingsSnapshot();
     if (settingsSaveTimeout) {
       clearTimeout(settingsSaveTimeout);
     }
     settingsSaveTimeout = window.setTimeout(() => {
       saveSettingsToStorage(snapshot);
+      settingsSaveTimeout = undefined;
     }, SETTINGS_SAVE_DEBOUNCE_MS);
   });
 
   onMount(() => {
     const onResize = () => setWindowHeight(window.innerHeight);
+    const onBeforeUnload = () => flushSettingsSave();
+    const onPageHide = () => flushSettingsSave();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushSettingsSave();
+    };
     window.addEventListener('resize', onResize);
-
-    const persistedSettings = loadSettingsFromStorage();
-    const persistedGeneral = persistedSettings.general;
-    const persistedModelId = persistedSettings.model?.selectedModelId;
-    const persistedDeviceId = persistedSettings.audio?.selectedDeviceId;
-    const persistedUi = persistedSettings.ui;
-
-    if (persistedModelId && MODELS.some((model) => model.id === persistedModelId)) {
-      appStore.setSelectedModelId(persistedModelId);
-    }
-    if (persistedDeviceId) {
-      appStore.setSelectedDeviceId(persistedDeviceId);
-    }
-
-    if (persistedGeneral?.energyThreshold !== undefined) {
-      appStore.setEnergyThreshold(persistedGeneral.energyThreshold);
-    }
-    if (persistedGeneral?.sileroThreshold !== undefined) {
-      appStore.setSileroThreshold(persistedGeneral.sileroThreshold);
-    }
-    if (persistedGeneral?.v4InferenceIntervalMs !== undefined) {
-      appStore.setV4InferenceIntervalMs(persistedGeneral.v4InferenceIntervalMs);
-    }
-    if (persistedGeneral?.v4SilenceFlushSec !== undefined) {
-      appStore.setV4SilenceFlushSec(persistedGeneral.v4SilenceFlushSec);
-    }
-    if (persistedGeneral?.streamingWindow !== undefined) {
-      appStore.setStreamingWindow(persistedGeneral.streamingWindow);
-    }
-
-    if (persistedUi?.debugPanel?.visible !== undefined) {
-      appStore.setShowDebugPanel(persistedUi.debugPanel.visible);
-    }
-    if (persistedUi?.debugPanel?.height !== undefined) {
-      setDebugPanelHeight(clampDebugPanelHeight(persistedUi.debugPanel.height));
-    }
-    if (persistedUi?.transcript?.activeTab) {
-      setActiveTranscriptTab(persistedUi.transcript.activeTab);
-    }
-    if (persistedUi?.transcript?.mergedSplitRatio !== undefined) {
-      setMergedSplitRatio(clampMergedSplitRatio(persistedUi.transcript.mergedSplitRatio));
-    }
-    if (persistedUi?.widgetPosition) {
-      setWidgetPos(clampWidgetPosition(persistedUi.widgetPosition));
-    } else {
-      setWidgetPos(getDefaultWidgetPosition());
-    }
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     workerClient = new TranscriptionWorkerClient();
 
@@ -425,12 +439,20 @@ const App: Component = () => {
       appStore.setErrorMessage(msg);
     };
 
-    void appStore.refreshDevices().finally(() => {
-      setSettingsHydrated(true);
+    void appStore.refreshDevices({
+      preferredDeviceId: persistedAudio?.selectedDeviceId,
+      preferredDeviceLabel: persistedAudio?.selectedDeviceLabel,
+    }).finally(() => {
+      setSettingsReadyForPersist(true);
     });
     setWorkerReady(true);
 
-    return () => window.removeEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   });
 
   // No longer auto-show blocking model overlay; model selection is in the settings panel.
@@ -438,7 +460,7 @@ const App: Component = () => {
 
   onCleanup(() => {
     clearTimeout(panelHoverCloseTimeout);
-    clearTimeout(settingsSaveTimeout);
+    flushSettingsSave();
     visualizationUnsubscribe?.();
     cleanupV4Pipeline();
     melClient?.dispose();
