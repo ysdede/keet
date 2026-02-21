@@ -18,6 +18,8 @@ import {
   clampMergedSplitRatio,
   DEFAULT_DEBUG_PANEL_HEIGHT,
   DEFAULT_MERGED_SPLIT_RATIO,
+  MAX_DEBUG_PANEL_HEIGHT,
+  MIN_DEBUG_PANEL_HEIGHT,
   loadSettingsFromStorage,
   saveSettingsToStorage,
 } from './utils/settingsStorage';
@@ -359,11 +361,21 @@ const App: Component = () => {
   let posStart = { x: 0, y: 0 };
 
   const [windowHeight, setWindowHeight] = createSignal(typeof window !== 'undefined' ? window.innerHeight : 600);
+  const maxDebugPanelHeight = () =>
+    Math.max(MIN_DEBUG_PANEL_HEIGHT, Math.min(MAX_DEBUG_PANEL_HEIGHT, windowHeight() - 200));
   const settingsExpandUp = () => {
     const pos = widgetPos();
     if (!pos) return true;
     return pos.y >= windowHeight() / 2;
   };
+
+  createEffect(() => {
+    const currentHeight = debugPanelHeight();
+    const maxHeight = maxDebugPanelHeight();
+    if (currentHeight > maxHeight) {
+      setDebugPanelHeight(maxHeight);
+    }
+  });
 
   const handleWidgetDragStart = (e: MouseEvent) => {
     if ((e.target as HTMLElement).closest('button, select, input')) return;
@@ -1190,26 +1202,39 @@ const App: Component = () => {
         timelineCount={timelineCount()}
       />
 
-      <div class="flex-1 flex overflow-hidden relative">
-        <main class="flex-1 overflow-y-auto custom-scrollbar px-4 sm:px-6 lg:px-10 xl:px-14 2xl:px-20 flex flex-col items-center">
-          <div class="w-full max-w-[1680px] py-8 md:py-10 lg:py-12">
-            <TranscriptionDisplay
-              confirmedText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.matureText() : appStore.transcript()}
-              pendingText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.immatureText() : appStore.pendingText()}
-              sentenceEntries={appStore.v4SentenceEntries()}
-              isV4Mode={appStore.transcriptionMode() === 'v4-utterance'}
-              isRecording={isRecording()}
-              lcsLength={appStore.mergeInfo().lcsLength}
-              anchorValid={appStore.mergeInfo().anchorValid}
-              showConfidence={appStore.transcriptionMode() === 'v3-streaming'}
-              activeTab={activeTranscriptTab()}
-              onTabChange={setActiveTranscriptTab}
-              mergedSplitRatio={mergedSplitRatio()}
-              onMergedSplitRatioChange={setMergedSplitRatio}
-              class="min-h-[56vh]"
-            />
-          </div>
-        </main>
+      {/* Single vertical layout: top content and debug panel share height, no overlap */}
+      <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <main class="flex-1 min-h-0 overflow-hidden px-1 sm:px-2 lg:px-3 xl:px-4 2xl:px-5 flex flex-col items-center">
+            <div class="w-full max-w-[92%] 2xl:max-w-[1680px] py-1 md:py-2 lg:py-3 flex-1 min-h-0 flex flex-col">
+              <TranscriptionDisplay
+                confirmedText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.matureText() : appStore.transcript()}
+                pendingText={appStore.transcriptionMode() === 'v4-utterance' ? appStore.immatureText() : appStore.pendingText()}
+                sentenceEntries={appStore.v4SentenceEntries()}
+                isV4Mode={appStore.transcriptionMode() === 'v4-utterance'}
+                isRecording={isRecording()}
+                lcsLength={appStore.mergeInfo().lcsLength}
+                anchorValid={appStore.mergeInfo().anchorValid}
+                showConfidence={appStore.transcriptionMode() === 'v3-streaming'}
+                activeTab={activeTranscriptTab()}
+                onTabChange={setActiveTranscriptTab}
+                mergedSplitRatio={mergedSplitRatio()}
+                onMergedSplitRatioChange={setMergedSplitRatio}
+                class="min-h-0 h-full"
+              />
+            </div>
+          </main>
+        </div>
+
+        <Show when={appStore.showDebugPanel()}>
+          <DebugPanel
+            audioEngine={audioEngineSignal() ?? undefined}
+            melClient={melClientSignal() ?? undefined}
+            height={debugPanelHeight()}
+            maxHeight={maxDebugPanelHeight()}
+            onHeightChange={setDebugPanelHeight}
+          />
+        </Show>
       </div>
 
       {/* Draggable floating control widget */}
@@ -1333,17 +1358,6 @@ const App: Component = () => {
         </div>
       </div>
 
-      {/* Foldable debug panel (bottom drawer) */}
-      <Show when={appStore.showDebugPanel()}>
-        <div class="absolute bottom-0 left-0 right-0 z-20 flex flex-col bg-[var(--color-earthy-bg)] border-t border-[var(--color-earthy-sage)]/30 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] max-h-[70vh] overflow-hidden transition-all">
-          <DebugPanel
-            audioEngine={audioEngineSignal() ?? undefined}
-            melClient={melClientSignal() ?? undefined}
-            height={debugPanelHeight()}
-            onHeightChange={setDebugPanelHeight}
-          />
-        </div>
-      </Show>
     </div>
   );
 };
