@@ -233,10 +233,10 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                 </p>
             </div>
         }>
-            <div class="space-y-2">
+            <div class="space-y-0.5">
                 <For each={finalizedEntries()}>
                     {(entry) => (
-                        <div class="grid grid-cols-1 sm:grid-cols-[86px_138px_1fr] xl:grid-cols-[94px_150px_1fr] gap-1.5 sm:gap-3 items-baseline px-2 py-2 rounded-lg hover:bg-[var(--color-earthy-sage)]/10 transition-colors">
+                        <div class="grid grid-cols-1 sm:grid-cols-[86px_138px_1fr] xl:grid-cols-[94px_150px_1fr] gap-1.5 sm:gap-3 items-baseline px-1 py-1 rounded-lg hover:bg-[var(--color-earthy-sage)]/10 transition-colors">
                             <span class="font-mono text-xs text-[var(--color-earthy-soft-brown)]">
                                 {formatClockTime(entry.emittedAt)}
                             </span>
@@ -251,7 +251,7 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                 </For>
 
                 <Show when={props.pendingText.trim()}>
-                    <div class="grid grid-cols-1 sm:grid-cols-[86px_138px_1fr] xl:grid-cols-[94px_150px_1fr] gap-1.5 sm:gap-3 items-baseline px-2 py-2 rounded-lg bg-[var(--color-earthy-muted-green)]/10 border border-[var(--color-earthy-sage)]/40">
+                    <div class="grid grid-cols-1 sm:grid-cols-[86px_138px_1fr] xl:grid-cols-[94px_150px_1fr] gap-1.5 sm:gap-3 items-baseline px-1 py-1 rounded-lg bg-[var(--color-earthy-muted-green)]/10 border border-[var(--color-earthy-sage)]/40">
                         <span class="font-mono text-xs text-[var(--color-earthy-soft-brown)]">
                             {formatClockTime(Date.now())}
                         </span>
@@ -321,25 +321,25 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
             }>
                 <div
                     ref={mergedContainerRef}
-                    class="flex-1 overflow-y-auto scroll-smooth"
+                    class="flex-1 overflow-y-auto scroll-smooth flex flex-col min-h-0"
                 >
-                    <div class="story-font py-2 space-y-4">
+                    <div class="story-font py-0 space-y-1 flex-1 flex flex-col min-h-0">
                         {/* Mobile / tablet stacked layout */}
-                        <div class="flex flex-col gap-4 lg:hidden">
-                            <div class="px-3 py-3 rounded-lg border border-[var(--color-earthy-sage)]/40 bg-[var(--color-earthy-sage)]/10 flex flex-col">
-                                <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-earthy-soft-brown)] mb-2 shrink-0">
+                        <div class="flex flex-col gap-1 lg:hidden min-h-0 flex-1">
+                            <div class="flex-1 min-h-0 px-1 py-1 rounded-lg border border-[var(--color-earthy-sage)]/40 bg-[var(--color-earthy-sage)]/10 flex flex-col">
+                                <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-earthy-soft-brown)] mb-0.5 shrink-0">
                                     Full Text Body
                                 </div>
-                                <div class="max-h-[38vh] overflow-y-auto custom-scrollbar pr-1">
+                                <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-0.5">
                                     {renderFullTextContent()}
                                 </div>
                             </div>
 
-                            <div class="px-3 py-3 rounded-lg border border-[var(--color-earthy-sage)]/40 bg-[var(--color-earthy-bg)]/60 flex flex-col">
-                                <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-earthy-soft-brown)] mb-2 shrink-0">
+                            <div class="flex-1 min-h-0 px-1 py-1 rounded-lg border border-[var(--color-earthy-sage)]/40 bg-[var(--color-earthy-bg)]/60 flex flex-col">
+                                <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-earthy-soft-brown)] mb-0.5 shrink-0">
                                     Sentence List
                                 </div>
-                                <div ref={sentenceListMobileRef} class="max-h-[46vh] overflow-y-auto custom-scrollbar pr-1">
+                                <div ref={sentenceListMobileRef} class="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-0.5">
                                     {renderSentenceListContent()}
                                 </div>
                             </div>
@@ -348,16 +348,16 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                         {/* Desktop adjustable split layout (defaults to 50/50) */}
                         <div
                             ref={mergedSplitContainerRef}
-                            class="hidden lg:flex items-stretch h-[min(70vh,760px)]"
+                            class="hidden lg:flex items-stretch flex-1 min-h-0"
                         >
                             <div
-                                class="min-w-0 px-3 py-3 rounded-l-lg border border-[var(--color-earthy-sage)]/40 bg-[var(--color-earthy-sage)]/10 flex flex-col"
+                                class="min-w-0 px-1 py-1 rounded-l-lg border border-[var(--color-earthy-sage)]/40 bg-[var(--color-earthy-sage)]/10 flex flex-col"
                                 style={{ width: `calc(${(mergedSplitRatio() * 100).toFixed(3)}% - 6px)` }}
                             >
-                                <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-earthy-soft-brown)] mb-2 shrink-0">
+                                <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-earthy-soft-brown)] mb-0.5 shrink-0">
                                     Full Text Body
                                 </div>
-                                <div class="flex-1 overflow-y-auto custom-scrollbar pr-1">
+                                <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-0.5">
                                     {renderFullTextContent()}
                                 </div>
                             </div>
@@ -380,13 +380,13 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
                             </div>
 
                             <div
-                                class="min-w-0 px-3 py-3 rounded-r-lg border border-[var(--color-earthy-sage)]/40 bg-[var(--color-earthy-bg)]/60 flex flex-col"
+                                class="min-w-0 px-1 py-1 rounded-r-lg border border-[var(--color-earthy-sage)]/40 bg-[var(--color-earthy-bg)]/60 flex flex-col"
                                 style={{ width: `calc(${((1 - mergedSplitRatio()) * 100).toFixed(3)}% - 6px)` }}
                             >
-                                <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-earthy-soft-brown)] mb-2 shrink-0">
+                                <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-earthy-soft-brown)] mb-0.5 shrink-0">
                                     Sentence List
                                 </div>
-                                <div ref={sentenceListDesktopRef} class="flex-1 overflow-y-auto custom-scrollbar pr-1">
+                                <div ref={sentenceListDesktopRef} class="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-0.5">
                                     {renderSentenceListContent()}
                                 </div>
                             </div>
