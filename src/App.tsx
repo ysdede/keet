@@ -713,6 +713,11 @@ const App: Component = () => {
         incrementalCache,
       });
 
+      // Pipeline may be stopped while inference is in flight.
+      if (!v4TickRunning) {
+        return;
+      }
+
       const inferenceMs = performance.now() - inferenceStart;
       const audioDurationMs = window.durationSeconds * 1000;
       const shouldAdvanceCursor = result.matureCursorTime > windowBuilder.getMatureCursorTime();
