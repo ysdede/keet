@@ -211,7 +211,7 @@ describe('AudioEngine Visualization', () => {
         expect((callbackData as Float32Array).length).toBe(800); // 400 min/max pairs
     });
 
-    it('should publish stable snapshots across update cycles', () => {
+    it('should publish reusable buffer across update cycles (zero-copy)', () => {
         const chunk = new Float32Array(1600);
         const snapshots: Float32Array[] = [];
         const unsubscribe = engine.onVisualizationUpdate((data) => {
@@ -221,7 +221,9 @@ describe('AudioEngine Visualization', () => {
         (engine as any).lastVisualizationNotifyTime = -1e9;
         chunk.fill(0.2);
         injectAudio(chunk);
+        // Copy immediately to retain first frame content.
         const firstCopy = new Float32Array(snapshots[0]);
+        expect(Math.max(...firstCopy)).toBeCloseTo(0.2);
 
         (engine as any).lastVisualizationNotifyTime = -1e9;
         chunk.fill(0.8);
@@ -229,7 +231,7 @@ describe('AudioEngine Visualization', () => {
         unsubscribe();
 
         expect(snapshots.length).toBeGreaterThanOrEqual(2);
-        expect(snapshots[0]).not.toBe(snapshots[1]);
-        expect(Array.from(snapshots[0])).toEqual(Array.from(firstCopy));
+        expect(snapshots[0]).toBe(snapshots[1]);
+        expect(Math.max(...snapshots[0])).toBeCloseTo(0.8);
     });
 });
