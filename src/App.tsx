@@ -13,6 +13,14 @@ import { TenVADWorkerClient } from './lib/vad/TenVADWorkerClient';
 import type { V4ProcessResult } from './lib/transcription/TranscriptionWorkerClient';
 import type { BufferWorkerConfig, TenVADResult } from './lib/buffer/types';
 import { formatDuration } from './utils/time';
+import {
+  clampDebugPanelHeight,
+  clampMergedSplitRatio,
+  DEFAULT_DEBUG_PANEL_HEIGHT,
+  DEFAULT_MERGED_SPLIT_RATIO,
+  loadSettingsFromStorage,
+  saveSettingsToStorage,
+} from './utils/settingsStorage';
 
 // Singleton instances
 let audioEngine: AudioEngine | null = null;
@@ -195,20 +203,86 @@ const Header: Component<{
   );
 };
 
-const WIDGET_STORAGE_KEY = 'boncukjs-control-widget-pos';
 const WIDGET_MAX_W = 672;
 const WIDGET_MIN_H = 80;
+const SETTINGS_SAVE_DEBOUNCE_MS = 150;
+
+const getDefaultWidgetPosition = (): { x: number; y: number } => {
+  const width = typeof window !== 'undefined' ? window.innerWidth : 800;
+  const height = typeof window !== 'undefined' ? window.innerHeight : 600;
+  return {
+    x: Math.max(0, (width - WIDGET_MAX_W) / 2),
+    y: Math.max(0, height - 140),
+  };
+};
+
+const clampWidgetPosition = (position: { x: number; y: number }): { x: number; y: number } => {
+  if (typeof window === 'undefined') return position;
+  return {
+    x: Math.max(0, Math.min(window.innerWidth - WIDGET_MAX_W, position.x)),
+    y: Math.max(0, Math.min(window.innerHeight - WIDGET_MIN_H, position.y)),
+  };
+};
 
 const App: Component = () => {
+  const persistedSettings = loadSettingsFromStorage();
+  const persistedGeneral = persistedSettings.general;
+  const persistedAudio = persistedSettings.audio;
+  const persistedModelId = persistedSettings.model?.selectedModelId;
+  const persistedUi = persistedSettings.ui;
+
+  if (persistedModelId && MODELS.some((model) => model.id === persistedModelId)) {
+    appStore.setSelectedModelId(persistedModelId);
+  }
+  if (persistedGeneral?.energyThreshold !== undefined) {
+    appStore.setEnergyThreshold(persistedGeneral.energyThreshold);
+  }
+  if (persistedGeneral?.sileroThreshold !== undefined) {
+    appStore.setSileroThreshold(persistedGeneral.sileroThreshold);
+  }
+  if (persistedGeneral?.v4InferenceIntervalMs !== undefined) {
+    appStore.setV4InferenceIntervalMs(persistedGeneral.v4InferenceIntervalMs);
+  }
+  if (persistedGeneral?.v4SilenceFlushSec !== undefined) {
+    appStore.setV4SilenceFlushSec(persistedGeneral.v4SilenceFlushSec);
+  }
+  if (persistedGeneral?.streamingWindow !== undefined) {
+    appStore.setStreamingWindow(persistedGeneral.streamingWindow);
+  }
+  if (persistedUi?.debugPanel?.visible !== undefined) {
+    appStore.setShowDebugPanel(persistedUi.debugPanel.visible);
+  }
+
+  const initialWidgetPos = persistedUi?.widgetPosition
+    ? clampWidgetPosition(persistedUi.widgetPosition)
+    : getDefaultWidgetPosition();
+  const initialActiveTranscriptTab: TranscriptViewTab = persistedUi?.transcript?.activeTab ?? 'live';
+  const initialMergedSplitRatio =
+    persistedUi?.transcript?.mergedSplitRatio !== undefined
+      ? clampMergedSplitRatio(persistedUi.transcript.mergedSplitRatio)
+      : DEFAULT_MERGED_SPLIT_RATIO;
+  const initialDebugPanelHeight =
+    persistedUi?.debugPanel?.height !== undefined
+      ? clampDebugPanelHeight(persistedUi.debugPanel.height)
+      : DEFAULT_DEBUG_PANEL_HEIGHT;
+
   const [showModelOverlay, setShowModelOverlay] = createSignal(false);
   const [showContextPanel, setShowContextPanel] = createSignal(false);
   type SettingsPanelSection = 'full' | 'audio' | 'model';
   const [settingsPanelSection, setSettingsPanelSection] = createSignal<SettingsPanelSection>('full');
   let panelHoverCloseTimeout: number | undefined;
   const [workerReady, setWorkerReady] = createSignal(false);
-  const [widgetPos, setWidgetPos] = createSignal<{ x: number; y: number } | null>(null);
+  const [widgetPos, setWidgetPos] = createSignal<{ x: number; y: number } | null>(initialWidgetPos);
   const [isDragging, setIsDragging] = createSignal(false);
-  const [activeTranscriptTab, setActiveTranscriptTab] = createSignal<TranscriptViewTab>('live');
+  const [activeTranscriptTab, setActiveTranscriptTab] = createSignal<TranscriptViewTab>(initialActiveTranscriptTab);
+  const [mergedSplitRatio, setMergedSplitRatio] = createSignal(initialMergedSplitRatio);
+  const [debugPanelHeight, setDebugPanelHeight] = createSignal(initialDebugPanelHeight);
+  const [settingsReadyForPersist, setSettingsReadyForPersist] = createSignal(false);
+  let settingsSaveTimeout: number | undefined;
+  let onResize: (() => void) | undefined;
+  let onBeforeUnload: (() => void) | undefined;
+  let onPageHide: (() => void) | undefined;
+  let onVisibilityChange: (() => void) | undefined;
 
   const isRecording = () => appStore.recordingState() === 'recording';
   const isModelReady = () => appStore.modelState() === 'ready';
@@ -254,12 +328,6 @@ const App: Component = () => {
       setIsDragging(false);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      const p = widgetPos();
-      if (p && typeof localStorage !== 'undefined') {
-        try {
-          localStorage.setItem(WIDGET_STORAGE_KEY, JSON.stringify(p));
-        } catch (_) {}
-      }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -283,30 +351,73 @@ const App: Component = () => {
     }
   });
 
-  onMount(() => {
-    const onResize = () => setWindowHeight(window.innerHeight);
-    window.addEventListener('resize', onResize);
+  const getSettingsSnapshot = () => {
+    const selectedDeviceId = appStore.selectedDeviceId();
+    const selectedDevice = appStore
+      .availableDevices()
+      .find((device) => device.deviceId === selectedDeviceId);
 
-    const stored =
-      typeof localStorage !== 'undefined' ? localStorage.getItem(WIDGET_STORAGE_KEY) : null;
-    let posRestored = false;
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as { x: number; y: number };
-        if (Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) {
-          setWidgetPos({ x: parsed.x, y: parsed.y });
-          posRestored = true;
-        }
-      } catch (_) {}
+    return {
+      general: {
+        energyThreshold: appStore.energyThreshold(),
+        sileroThreshold: appStore.sileroThreshold(),
+        v4InferenceIntervalMs: appStore.v4InferenceIntervalMs(),
+        v4SilenceFlushSec: appStore.v4SilenceFlushSec(),
+        streamingWindow: appStore.streamingWindow(),
+      },
+      model: {
+        selectedModelId: appStore.selectedModelId(),
+      },
+      audio: {
+        selectedDeviceId,
+        selectedDeviceLabel: selectedDevice?.label,
+      },
+      ui: {
+        widgetPosition: widgetPos() ?? undefined,
+        debugPanel: {
+          visible: appStore.showDebugPanel(),
+          height: debugPanelHeight(),
+        },
+        transcript: {
+          activeTab: activeTranscriptTab(),
+          mergedSplitRatio: mergedSplitRatio(),
+        },
+      },
+    };
+  };
+
+  const flushSettingsSave = () => {
+    if (!settingsReadyForPersist()) return;
+    if (settingsSaveTimeout) {
+      clearTimeout(settingsSaveTimeout);
+      settingsSaveTimeout = undefined;
     }
-    if (!posRestored) {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      setWidgetPos({
-        x: Math.max(0, (w - WIDGET_MAX_W) / 2),
-        y: h - 140,
-      });
+    saveSettingsToStorage(getSettingsSnapshot());
+  };
+
+  createEffect(() => {
+    if (!settingsReadyForPersist()) return;
+    const snapshot = getSettingsSnapshot();
+    if (settingsSaveTimeout) {
+      clearTimeout(settingsSaveTimeout);
     }
+    settingsSaveTimeout = window.setTimeout(() => {
+      saveSettingsToStorage(snapshot);
+      settingsSaveTimeout = undefined;
+    }, SETTINGS_SAVE_DEBOUNCE_MS);
+  });
+
+  onMount(() => {
+    onResize = () => setWindowHeight(window.innerHeight);
+    onBeforeUnload = () => flushSettingsSave();
+    onPageHide = () => flushSettingsSave();
+    onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushSettingsSave();
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     workerClient = new TranscriptionWorkerClient();
 
@@ -332,17 +443,25 @@ const App: Component = () => {
       appStore.setErrorMessage(msg);
     };
 
-    appStore.refreshDevices();
+    void appStore.refreshDevices({
+      preferredDeviceId: persistedAudio?.selectedDeviceId,
+      preferredDeviceLabel: persistedAudio?.selectedDeviceLabel,
+    }).finally(() => {
+      setSettingsReadyForPersist(true);
+    });
     setWorkerReady(true);
-
-    return () => window.removeEventListener('resize', onResize);
   });
 
   // No longer auto-show blocking model overlay; model selection is in the settings panel.
   // createEffect(() => { ... setShowModelOverlay(true); });
 
   onCleanup(() => {
+    if (onResize) window.removeEventListener('resize', onResize);
+    if (onBeforeUnload) window.removeEventListener('beforeunload', onBeforeUnload);
+    if (onPageHide) window.removeEventListener('pagehide', onPageHide);
+    if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
     clearTimeout(panelHoverCloseTimeout);
+    flushSettingsSave();
     visualizationUnsubscribe?.();
     cleanupV4Pipeline();
     melClient?.dispose();
@@ -1003,6 +1122,8 @@ const App: Component = () => {
               showConfidence={appStore.transcriptionMode() === 'v3-streaming'}
               activeTab={activeTranscriptTab()}
               onTabChange={setActiveTranscriptTab}
+              mergedSplitRatio={mergedSplitRatio()}
+              onMergedSplitRatioChange={setMergedSplitRatio}
               class="min-h-[56vh]"
             />
           </div>
@@ -1136,6 +1257,8 @@ const App: Component = () => {
           <DebugPanel
             audioEngine={audioEngineSignal() ?? undefined}
             melClient={melClientSignal() ?? undefined}
+            height={debugPanelHeight()}
+            onHeightChange={setDebugPanelHeight}
           />
         </div>
       </Show>
