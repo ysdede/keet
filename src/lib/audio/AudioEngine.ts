@@ -925,8 +925,9 @@ export class AudioEngine implements IAudioEngine {
         if (!this.visualizationNotifyBuffer || this.visualizationNotifyBuffer.length !== targetSize) {
             this.visualizationNotifyBuffer = new Float32Array(targetSize);
         }
-        const data = this.getVisualizationData(targetWidth, this.visualizationNotifyBuffer);
-        const payload = data.slice();
+        // Zero-allocation: Pass internal buffer directly.
+        // Consumers must copy if they need persistence (BufferVisualizer does this).
+        const payload = this.getVisualizationData(targetWidth, this.visualizationNotifyBuffer);
 
         const bufferEndTime = this.ringBuffer.getCurrentTime();
         this.visualizationCallbacks.forEach((cb) => cb(payload, this.getMetrics(), bufferEndTime));
