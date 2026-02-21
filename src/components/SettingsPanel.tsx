@@ -2,17 +2,11 @@ import { Component, For, Show } from 'solid-js';
 import { appStore } from '../stores/appStore';
 import { getModelDisplayName, MODELS } from './ModelLoadingOverlay';
 import type { AudioEngine } from '../lib/audio/types';
+import { getMaxHardwareThreads } from '../utils/hardwareThreads';
 
 const formatInterval = (ms: number) => {
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
   return `${ms}ms`;
-};
-
-const getMaxHardwareThreads = () => {
-  if (typeof navigator === 'undefined' || !Number.isFinite(navigator.hardwareConcurrency)) {
-    return 4;
-  }
-  return Math.max(1, Math.floor(navigator.hardwareConcurrency));
 };
 
 /** Visible section preset for the embeddable settings content. */

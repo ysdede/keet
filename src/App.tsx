@@ -21,6 +21,7 @@ import {
   loadSettingsFromStorage,
   saveSettingsToStorage,
 } from './utils/settingsStorage';
+import { clampWasmThreadsForDevice } from './utils/hardwareThreads';
 
 // Singleton instances
 let audioEngine: AudioEngine | null = null;
@@ -224,16 +225,6 @@ const clampWidgetPosition = (position: { x: number; y: number }): { x: number; y
   };
 };
 
-const getMaxHardwareThreads = (): number => {
-  if (typeof navigator === 'undefined' || !Number.isFinite(navigator.hardwareConcurrency)) {
-    return 4;
-  }
-  return Math.max(1, Math.floor(navigator.hardwareConcurrency));
-};
-
-const clampWasmThreadsForDevice = (value: number): number =>
-  Math.max(1, Math.min(getMaxHardwareThreads(), Math.floor(value)));
-
 const App: Component = () => {
   const persistedSettings = loadSettingsFromStorage();
   const persistedGeneral = persistedSettings.general;
@@ -324,8 +315,15 @@ const App: Component = () => {
   });
 
   // Keep quantization presets aligned with the backend mode (parakeet.js demo behavior).
+  let lastBackendMode: 'webgpu-hybrid' | 'wasm' | null = null;
   createEffect(() => {
     const backendMode = appStore.modelBackendMode();
+    if (lastBackendMode === null) {
+      lastBackendMode = backendMode;
+      return;
+    }
+    if (backendMode === lastBackendMode) return;
+
     if (backendMode.startsWith('webgpu')) {
       if (appStore.encoderQuant() !== 'fp32') appStore.setEncoderQuant('fp32');
       if (appStore.decoderQuant() !== 'int8') appStore.setDecoderQuant('int8');
@@ -333,6 +331,7 @@ const App: Component = () => {
       if (appStore.encoderQuant() !== 'int8') appStore.setEncoderQuant('int8');
       if (appStore.decoderQuant() !== 'int8') appStore.setDecoderQuant('int8');
     }
+    lastBackendMode = backendMode;
   });
 
   let dragStart = { x: 0, y: 0 };
@@ -1086,6 +1085,10 @@ const App: Component = () => {
   const loadSelectedModel = async () => {
     if (!workerClient) return;
     if (appStore.modelState() === 'loading') return;
+    if (appStore.recordingState() === 'recording') {
+      console.warn('[App] Model reload blocked while recording is active');
+      return;
+    }
     setShowContextPanel(true);
     try {
       await workerClient.initModel({
