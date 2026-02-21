@@ -62,3 +62,4 @@ performance-trace.json.gz
 conductor/
 *.gz
 traces/
+trace-*.json
