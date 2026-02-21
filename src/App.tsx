@@ -21,6 +21,7 @@ import {
   loadSettingsFromStorage,
   saveSettingsToStorage,
 } from './utils/settingsStorage';
+import { clampWasmThreadsForDevice } from './utils/hardwareThreads';
 
 // Singleton instances
 let audioEngine: AudioEngine | null = null;
@@ -228,11 +229,21 @@ const App: Component = () => {
   const persistedSettings = loadSettingsFromStorage();
   const persistedGeneral = persistedSettings.general;
   const persistedAudio = persistedSettings.audio;
-  const persistedModelId = persistedSettings.model?.selectedModelId;
+  const persistedModel = persistedSettings.model;
+  const persistedModelId = persistedModel?.selectedModelId;
   const persistedUi = persistedSettings.ui;
 
   if (persistedModelId && MODELS.some((model) => model.id === persistedModelId)) {
     appStore.setSelectedModelId(persistedModelId);
+  }
+  if (persistedModel?.backend !== undefined) {
+    appStore.setModelBackendMode(persistedModel.backend);
+  }
+  if (persistedModel?.encoderQuant !== undefined) {
+    appStore.setEncoderQuant(persistedModel.encoderQuant);
+  }
+  if (persistedModel?.decoderQuant !== undefined) {
+    appStore.setDecoderQuant(persistedModel.decoderQuant);
   }
   if (persistedGeneral?.energyThreshold !== undefined) {
     appStore.setEnergyThreshold(persistedGeneral.energyThreshold);
@@ -248,6 +259,12 @@ const App: Component = () => {
   }
   if (persistedGeneral?.streamingWindow !== undefined) {
     appStore.setStreamingWindow(persistedGeneral.streamingWindow);
+  }
+  if (persistedGeneral?.frameStride !== undefined) {
+    appStore.setFrameStride(persistedGeneral.frameStride);
+  }
+  if (persistedGeneral?.wasmThreads !== undefined) {
+    appStore.setWasmThreads(clampWasmThreadsForDevice(persistedGeneral.wasmThreads));
   }
   if (persistedUi?.debugPanel?.visible !== undefined) {
     appStore.setShowDebugPanel(persistedUi.debugPanel.visible);
@@ -295,6 +312,26 @@ const App: Component = () => {
     if (!isV4Mode() && activeTranscriptTab() !== 'live') {
       setActiveTranscriptTab('live');
     }
+  });
+
+  // Keep quantization presets aligned with the backend mode (parakeet.js demo behavior).
+  let lastBackendMode: 'webgpu-hybrid' | 'wasm' | null = null;
+  createEffect(() => {
+    const backendMode = appStore.modelBackendMode();
+    if (lastBackendMode === null) {
+      lastBackendMode = backendMode;
+      return;
+    }
+    if (backendMode === lastBackendMode) return;
+
+    if (backendMode.startsWith('webgpu')) {
+      if (appStore.encoderQuant() !== 'fp32') appStore.setEncoderQuant('fp32');
+      if (appStore.decoderQuant() !== 'int8') appStore.setDecoderQuant('int8');
+    } else {
+      if (appStore.encoderQuant() !== 'int8') appStore.setEncoderQuant('int8');
+      if (appStore.decoderQuant() !== 'int8') appStore.setDecoderQuant('int8');
+    }
+    lastBackendMode = backendMode;
   });
 
   let dragStart = { x: 0, y: 0 };
@@ -364,9 +401,14 @@ const App: Component = () => {
         v4InferenceIntervalMs: appStore.v4InferenceIntervalMs(),
         v4SilenceFlushSec: appStore.v4SilenceFlushSec(),
         streamingWindow: appStore.streamingWindow(),
+        frameStride: appStore.frameStride(),
+        wasmThreads: appStore.wasmThreads(),
       },
       model: {
         selectedModelId: appStore.selectedModelId(),
+        backend: appStore.modelBackendMode(),
+        encoderQuant: appStore.encoderQuant(),
+        decoderQuant: appStore.decoderQuant(),
       },
       audio: {
         selectedDeviceId,
@@ -425,6 +467,7 @@ const App: Component = () => {
       appStore.setModelProgress(p.progress);
       appStore.setModelMessage(p.message || '');
       if (p.file) appStore.setModelFile(p.file);
+      if (p.backend) appStore.setBackend(p.backend);
     };
 
     workerClient.onModelStateChange = (s) => {
@@ -642,6 +685,7 @@ const App: Component = () => {
         features: features.features,
         T: features.T,
         melBins: features.melBins,
+        frameStride: appStore.frameStride(),
         timeOffset,
         endTime: window.endFrame / 16000,
         segmentId: `v4_${Date.now()}`,
@@ -1040,11 +1084,20 @@ const App: Component = () => {
 
   const loadSelectedModel = async () => {
     if (!workerClient) return;
-    if (appStore.modelState() === 'ready') return;
     if (appStore.modelState() === 'loading') return;
+    if (appStore.recordingState() === 'recording') {
+      console.warn('[App] Model reload blocked while recording is active');
+      return;
+    }
     setShowContextPanel(true);
     try {
-      await workerClient.initModel(appStore.selectedModelId());
+      await workerClient.initModel({
+        modelId: appStore.selectedModelId(),
+        cpuThreads: appStore.wasmThreads(),
+        backend: appStore.modelBackendMode(),
+        encoderQuant: appStore.encoderQuant(),
+        decoderQuant: appStore.decoderQuant(),
+      });
     } catch (e) {
       console.error('Failed to load model:', e);
       appStore.setModelState('error');
@@ -1078,7 +1131,10 @@ const App: Component = () => {
     if (!workerClient) return;
     setShowContextPanel(true);
     try {
-      await workerClient.initLocalModel(files);
+      await workerClient.initLocalModel(files, {
+        cpuThreads: appStore.wasmThreads(),
+        backend: appStore.modelBackendMode(),
+      });
     } catch (e) {
       console.error('Failed to load local model:', e);
     }
