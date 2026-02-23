@@ -577,14 +577,13 @@ export class AudioEngine implements IAudioEngine {
         this.updateVisualizationBuffer(chunk);
 
         // 2.6 Update metrics
-        const stats = this.audioProcessor.getStats();
         const stateInfo = this.audioProcessor.getStateInfo();
 
         this.metrics.currentEnergy = energy;
         this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + energy * 0.05;
         this.metrics.peakEnergy = Math.max(this.metrics.peakEnergy * 0.99, energy);
-        this.metrics.noiseFloor = stats.noiseFloor ?? 0.01;
-        this.metrics.currentSNR = stats.snr ?? 0;
+        this.metrics.noiseFloor = stateInfo.noiseFloor ?? 0.01;
+        this.metrics.currentSNR = stateInfo.snr ?? 0;
         this.metrics.isSpeaking = stateInfo.inSpeech;
 
         // Periodic debug log
