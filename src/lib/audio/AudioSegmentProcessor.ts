@@ -57,10 +57,9 @@ interface ProcessorState {
     speechEnergies: number[];
     silenceEnergies: number[];
     speechStats: SegmentStats[];
-    silenceStats: SegmentStats[];
     cachedSpeechSummary: StatsSummary | null;
-    currentStats: CurrentStats;
     noiseFloor: number;
+    snr: number;
     recentEnergies: number[];
     silenceDuration: number;
 }
@@ -177,6 +176,7 @@ export class AudioSegmentProcessor {
         // Update noise floor and calculate SNR
         this.updateNoiseFloor(energy, isSpeech);
         const snr = this.calculateSNR(energy);
+        this.state.snr = snr;
 
         // Track recent chunks for lookback
         this.state.recentChunks.push({
@@ -285,8 +285,6 @@ export class AudioSegmentProcessor {
                 this.state.silenceEnergies.push(energy);
             }
         }
-
-        this.updateStats();
 
         return segments;
     }
@@ -440,37 +438,6 @@ export class AudioSegmentProcessor {
         };
     }
 
-    /**
-     * Update internal statistics.
-     */
-    private updateStats(): void {
-        const stats: CurrentStats = {
-            silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
-            speech: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
-            noiseFloor: this.state.noiseFloor,
-            snr: this.state.recentChunks.length > 0
-                ? this.state.recentChunks[this.state.recentChunks.length - 1].snr
-                : 0,
-            snrThreshold: this.options.snrThreshold,
-            minSnrThreshold: this.options.minSnrThreshold,
-            energyRiseThreshold: this.options.energyRiseThreshold
-        };
-
-        if (this.state.silenceStats.length > 0) {
-            stats.silence = this.summarizeSegmentStats(this.state.silenceStats);
-        }
-
-        if (this.state.cachedSpeechSummary !== null) {
-            stats.speech = { ...this.state.cachedSpeechSummary };
-        } else if (this.state.speechStats.length > 0) {
-            const speechSummary = this.summarizeSegmentStats(this.state.speechStats);
-            this.state.cachedSpeechSummary = speechSummary;
-            stats.speech = { ...speechSummary };
-        }
-
-        this.state.currentStats = stats;
-    }
-
     private recordSpeechStat(stat: SegmentStats): void {
         this.state.speechStats.push(stat);
         if (this.state.speechStats.length > this.options.maxHistoryLength) {
@@ -506,11 +473,25 @@ export class AudioSegmentProcessor {
      * Get current statistics.
      */
     getStats(): CurrentStats {
-        const stats = this.state.currentStats;
+        let speechSummary = this.state.cachedSpeechSummary;
+
+        if (!speechSummary) {
+            if (this.state.speechStats.length > 0) {
+                speechSummary = this.summarizeSegmentStats(this.state.speechStats);
+                this.state.cachedSpeechSummary = speechSummary;
+            } else {
+                speechSummary = { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 };
+            }
+        }
+
         return {
-            ...stats,
-            silence: { ...stats.silence },
-            speech: { ...stats.speech }
+            silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
+            speech: { ...speechSummary },
+            noiseFloor: this.state.noiseFloor,
+            snr: this.state.snr,
+            snrThreshold: this.options.snrThreshold,
+            minSnrThreshold: this.options.minSnrThreshold,
+            energyRiseThreshold: this.options.energyRiseThreshold
         };
     }
 
@@ -521,7 +502,7 @@ export class AudioSegmentProcessor {
         return {
             inSpeech: this.state.inSpeech,
             noiseFloor: this.state.noiseFloor,
-            snr: this.state.currentStats.snr,
+            snr: this.state.snr,
             speechStartTime: this.state.speechStartTime
         };
     }
@@ -539,18 +520,9 @@ export class AudioSegmentProcessor {
             speechEnergies: [],
             silenceEnergies: [],
             speechStats: [],
-            silenceStats: [],
             cachedSpeechSummary: null,
-            currentStats: {
-                silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
-                speech: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
-                noiseFloor: 0.005,
-                snr: 0,
-                snrThreshold: this.options.snrThreshold,
-                minSnrThreshold: this.options.minSnrThreshold,
-                energyRiseThreshold: this.options.energyRiseThreshold
-            },
             noiseFloor: 0.005,
+            snr: 0,
             recentEnergies: [],
             silenceDuration: 0
         };
