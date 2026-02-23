@@ -29,7 +29,7 @@ describe('settingsStorage', () => {
       model: {
         selectedModelId: 'parakeet-tdt-0.6b-v2',
         backend: 'invalid',
-        encoderQuant: 'fp32',
+        encoderQuant: 'fp16',
         decoderQuant: 'int8',
       },
       audio: { selectedDeviceId: 'device-1', selectedDeviceLabel: 'Mic 1' },
@@ -51,7 +51,7 @@ describe('settingsStorage', () => {
     expect(loaded.general?.wasmThreads).toBe(64);
     expect(loaded.model?.selectedModelId).toBe('parakeet-tdt-0.6b-v2');
     expect(loaded.model?.backend).toBeUndefined();
-    expect(loaded.model?.encoderQuant).toBe('fp32');
+    expect(loaded.model?.encoderQuant).toBe('fp16');
     expect(loaded.model?.decoderQuant).toBe('int8');
     expect(loaded.audio?.selectedDeviceId).toBe('device-1');
     expect(loaded.ui?.widgetPosition).toEqual({ x: 12, y: 18 });
@@ -72,14 +72,14 @@ describe('settingsStorage', () => {
 
   it('saves settings payload under stable key', () => {
     saveSettingsToStorage({
-      model: { selectedModelId: 'parakeet-tdt-0.6b-v2' },
+      model: { selectedModelId: 'parakeet-tdt-0.6b-v2', encoderQuant: 'fp16', decoderQuant: 'fp16' },
       ui: { transcript: { activeTab: 'live', mergedSplitRatio: 0.5 } },
     });
 
     const raw = localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
     expect(raw).toBeTruthy();
     expect(JSON.parse(raw as string)).toMatchObject({
-      model: { selectedModelId: 'parakeet-tdt-0.6b-v2' },
+      model: { selectedModelId: 'parakeet-tdt-0.6b-v2', encoderQuant: 'fp16', decoderQuant: 'fp16' },
       ui: { transcript: { activeTab: 'live', mergedSplitRatio: 0.5 } },
     });
   });

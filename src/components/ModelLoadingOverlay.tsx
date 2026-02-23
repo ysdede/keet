@@ -29,6 +29,7 @@ interface ModelLoadingOverlayProps {
 export const MODELS = [
     { id: 'parakeet-tdt-0.6b-v2', name: 'Parakeet v2', desc: 'English optimized' },
     { id: 'parakeet-tdt-0.6b-v3', name: 'Parakeet v3', desc: 'Multilingual Streaming' },
+    { id: 'parakeet-tdt-0.6b-v3-fp16', name: 'Parakeet v3 FP16', desc: 'Multilingual lower-memory' },
 ];
 
 /**

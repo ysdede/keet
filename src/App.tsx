@@ -318,18 +318,19 @@ const App: Component = () => {
     }
   });
 
-  // Keep quantization presets aligned with the backend mode (parakeet.js demo behavior).
+  // Keep quantization presets aligned with the backend mode.
+  // WebGPU is FP16-first (falls back to FP32 in parakeet.js when FP16 assets are missing).
   const applyQuantPresetForBackend = (
     backendMode: 'webgpu-hybrid' | 'wasm',
     options: { respectPersistedQuant?: boolean } = {}
   ) => {
     const respectPersistedQuant = options.respectPersistedQuant === true;
     if (backendMode.startsWith('webgpu')) {
-      if ((!respectPersistedQuant || !hasPersistedEncoderQuant) && appStore.encoderQuant() !== 'fp32') {
-        appStore.setEncoderQuant('fp32');
+      if ((!respectPersistedQuant || !hasPersistedEncoderQuant) && appStore.encoderQuant() !== 'fp16') {
+        appStore.setEncoderQuant('fp16');
       }
-      if ((!respectPersistedQuant || !hasPersistedDecoderQuant) && appStore.decoderQuant() !== 'int8') {
-        appStore.setDecoderQuant('int8');
+      if ((!respectPersistedQuant || !hasPersistedDecoderQuant) && appStore.decoderQuant() !== 'fp16') {
+        appStore.setDecoderQuant('fp16');
       }
       return;
     }
