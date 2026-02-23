@@ -74,12 +74,14 @@ export class ModelManager {
    */
   async loadModel(config: {
     modelId?: string;
+    revision?: string;
     cpuThreads?: number;
     backend?: ModelBackendMode;
     encoderQuant?: QuantizationMode;
     decoderQuant?: QuantizationMode;
   } = {}): Promise<void> {
     const modelId = config.modelId || DEFAULT_MODEL_ID;
+    const revision = this._normalizeRevision(config.revision);
     const cpuThreads = this._normalizeCpuThreads(config.cpuThreads);
     const requestedBackend = this._normalizeRequestedBackend(config.backend);
     const encoderQuant = this._normalizeQuantization(config.encoderQuant, 'int8');
@@ -137,6 +139,7 @@ export class ModelManager {
       });
 
       const modelAssets = await getParakeetModel(modelId, {
+        revision,
         backend: effectiveBackend,
         encoderQuant: resolvedEncoderQuant,
         decoderQuant,
@@ -178,6 +181,7 @@ export class ModelManager {
 
         const directAssets = this._buildDirectModelAssets(
           modelId,
+          revision,
           runtimeBackend,
           resolvedEncoderQuant,
           decoderQuant,
@@ -376,6 +380,11 @@ export class ModelManager {
     return value === 'fp32' || value === 'int8' || value === 'fp16' ? value : fallback;
   }
 
+  private _normalizeRevision(value?: string): string {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    return trimmed.length > 0 ? trimmed : 'main';
+  }
+
   private async _resolveBackend(requestedBackend: ModelBackendMode): Promise<{ effectiveBackend: ModelBackendMode; runtimeBackend: BackendType }> {
     if (requestedBackend === 'wasm') {
       return { effectiveBackend: 'wasm', runtimeBackend: 'wasm' };
@@ -447,13 +456,13 @@ export class ModelManager {
 
   private _buildDirectModelAssets(
     modelId: string,
+    revision: string,
     backend: BackendType,
     encoderQuant: QuantizationMode,
     decoderQuant: QuantizationMode,
     getModelConfig: ModelConfigResolver
   ): ResolvedModelAssets {
     const repoId = getModelConfig?.(modelId)?.repoId || modelId;
-    const revision = 'main';
     const encoderName = encoderQuant === 'int8'
       ? 'encoder-model.int8.onnx'
       : encoderQuant === 'fp16'

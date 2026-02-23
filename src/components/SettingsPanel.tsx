@@ -9,6 +9,8 @@ const formatInterval = (ms: number) => {
   return `${ms}ms`;
 };
 
+const MODEL_REVISIONS = ['main', 'feat/fp16-canonical-v2', 'feat/fp16-canonical-v3'];
+
 /** Visible section preset for the embeddable settings content. */
 export type SettingsPanelSection = 'full' | 'audio' | 'model';
 
@@ -95,6 +97,29 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
             {appStore.modelState() === 'ready' ? getModelDisplayName(appStore.selectedModelId()) : appStore.modelState()}
           </p>
           <div class="grid grid-cols-2 gap-x-4 gap-y-3 pt-1">
+            <div class="space-y-1 col-span-2">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Model branch</span>
+              <div class="flex items-center gap-2">
+                <select
+                  class="w-48 text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
+                  value={appStore.modelRevision()}
+                  onInput={(e) => appStore.setModelRevision((e.target as HTMLSelectElement).value)}
+                  disabled={appStore.modelState() === 'loading'}
+                >
+                  <For each={MODEL_REVISIONS}>
+                    {(revision) => <option value={revision}>{revision}</option>}
+                  </For>
+                </select>
+                <input
+                  type="text"
+                  class="flex-1 text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
+                  value={appStore.modelRevision()}
+                  onInput={(e) => appStore.setModelRevision((e.target as HTMLInputElement).value)}
+                  disabled={appStore.modelState() === 'loading'}
+                  placeholder="custom branch or tag"
+                />
+              </div>
+            </div>
             <div class="space-y-1">
               <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Backend</span>
               <select

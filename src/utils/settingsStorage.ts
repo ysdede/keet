@@ -24,6 +24,7 @@ export interface PersistedSettings {
   };
   model?: {
     selectedModelId?: string;
+    revision?: string;
     backend?: 'webgpu-hybrid' | 'wasm';
     encoderQuant?: 'int8' | 'fp32' | 'fp16';
     decoderQuant?: 'int8' | 'fp32' | 'fp16';
@@ -134,12 +135,14 @@ const sanitizeSettings = (value: unknown): PersistedSettings => {
   const model = isRecord(value.model) ? value.model : null;
   if (model) {
     const selectedModelId = readString(model.selectedModelId);
+    const revision = readString(model.revision);
     const backend = readModelBackend(model.backend);
     const encoderQuant = readQuantization(model.encoderQuant);
     const decoderQuant = readQuantization(model.decoderQuant);
-    if (selectedModelId || backend || encoderQuant || decoderQuant) {
+    if (selectedModelId || revision || backend || encoderQuant || decoderQuant) {
       settings.model = {};
       if (selectedModelId) settings.model.selectedModelId = selectedModelId;
+      if (revision) settings.model.revision = revision;
       if (backend) settings.model.backend = backend;
       if (encoderQuant) settings.model.encoderQuant = encoderQuant;
       if (decoderQuant) settings.model.decoderQuant = decoderQuant;
