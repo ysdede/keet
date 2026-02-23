@@ -127,9 +127,10 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
               <select
                 class="w-full text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
                 value={appStore.encoderQuant()}
-                onInput={(e) => appStore.setEncoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32')}
+                onInput={(e) => appStore.setEncoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32' | 'fp16')}
                 disabled={appStore.modelState() === 'loading'}
               >
+                <option value="fp16">fp16</option>
                 <option value="fp32">fp32</option>
                 <option value="int8">int8</option>
               </select>
@@ -139,9 +140,10 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
               <select
                 class="w-full text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
                 value={appStore.decoderQuant()}
-                onInput={(e) => appStore.setDecoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32')}
+                onInput={(e) => appStore.setDecoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32' | 'fp16')}
                 disabled={appStore.modelState() === 'loading'}
               >
+                <option value="fp16">fp16</option>
                 <option value="int8">int8</option>
                 <option value="fp32">fp32</option>
               </select>

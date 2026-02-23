@@ -373,7 +373,7 @@ export class ModelManager {
   }
 
   private _normalizeQuantization(value: QuantizationMode | undefined, fallback: QuantizationMode): QuantizationMode {
-    return value === 'fp32' || value === 'int8' ? value : fallback;
+    return value === 'fp32' || value === 'int8' || value === 'fp16' ? value : fallback;
   }
 
   private async _resolveBackend(requestedBackend: ModelBackendMode): Promise<{ effectiveBackend: ModelBackendMode; runtimeBackend: BackendType }> {
@@ -427,7 +427,7 @@ export class ModelManager {
     }
 
     // If WebGPU was requested but unavailable at runtime, keep the fallback lightweight.
-    if (backend === 'wasm' && requestedBackend === 'webgpu-hybrid' && encoderQuant === 'fp32') {
+    if (backend === 'wasm' && requestedBackend === 'webgpu-hybrid' && (encoderQuant === 'fp32' || encoderQuant === 'fp16')) {
       console.warn(
         `[ModelManager] Encoder quantization overridden for ${modelId}: requested=${encoderQuant}, effective=int8 (WebGPU unavailable, running on WASM fallback)`
       );
@@ -454,8 +454,16 @@ export class ModelManager {
   ): ResolvedModelAssets {
     const repoId = getModelConfig?.(modelId)?.repoId || modelId;
     const revision = 'main';
-    const encoderName = encoderQuant === 'int8' ? 'encoder-model.int8.onnx' : 'encoder-model.onnx';
-    const decoderName = decoderQuant === 'int8' ? 'decoder_joint-model.int8.onnx' : 'decoder_joint-model.onnx';
+    const encoderName = encoderQuant === 'int8'
+      ? 'encoder-model.int8.onnx'
+      : encoderQuant === 'fp16'
+        ? 'encoder-model.fp16.onnx'
+        : 'encoder-model.onnx';
+    const decoderName = decoderQuant === 'int8'
+      ? 'decoder_joint-model.int8.onnx'
+      : decoderQuant === 'fp16'
+        ? 'decoder_joint-model.fp16.onnx'
+        : 'decoder_joint-model.onnx';
     const baseUrl = `https://huggingface.co/${repoId}/resolve/${revision}`;
 
     return {
