@@ -1,6 +1,6 @@
-import { Component, For, Show } from 'solid-js';
+import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { appStore } from '../stores/appStore';
-import { getModelDisplayName, MODELS } from './ModelLoadingOverlay';
+import { getModelDisplayName, getModelRepoId, MODELS } from './ModelLoadingOverlay';
 import type { AudioEngine } from '../lib/audio/types';
 import { getMaxHardwareThreads } from '../utils/hardwareThreads';
 
@@ -9,7 +9,36 @@ const formatInterval = (ms: number) => {
   return `${ms}ms`;
 };
 
-const MODEL_REVISIONS = ['main', 'feat/fp16-canonical-v2', 'feat/fp16-canonical-v3'];
+const DEFAULT_MODEL_REVISIONS = ['main'];
+const MODEL_REVISIONS_CACHE = new Map<string, string[]>();
+
+const formatRepoPath = (repoId: string): string =>
+  repoId
+    .split('/')
+    .map((part) => encodeURIComponent(part))
+    .join('/');
+
+const fetchModelRevisions = async (repoId: string | null): Promise<string[]> => {
+  if (!repoId) return DEFAULT_MODEL_REVISIONS;
+  const cached = MODEL_REVISIONS_CACHE.get(repoId);
+  if (cached) return cached;
+
+  try {
+    const repoPath = formatRepoPath(repoId);
+    const response = await fetch(`https://huggingface.co/api/models/${repoPath}/refs`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const branches = Array.isArray(payload?.branches)
+      ? payload.branches.map((branch: { name?: string }) => branch?.name).filter(Boolean)
+      : [];
+    const revisions = branches.length > 0 ? branches : DEFAULT_MODEL_REVISIONS;
+    MODEL_REVISIONS_CACHE.set(repoId, revisions);
+    return revisions;
+  } catch (error) {
+    console.warn(`[SettingsPanel] Failed to fetch revisions for ${repoId}; using defaults`, error);
+    return DEFAULT_MODEL_REVISIONS;
+  }
+};
 
 /** Visible section preset for the embeddable settings content. */
 export type SettingsPanelSection = 'full' | 'audio' | 'model';
@@ -38,6 +67,7 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
   const isV4 = () => appStore.transcriptionMode() === 'v4-utterance';
   const isV3 = () => appStore.transcriptionMode() === 'v3-streaming';
   const maxWasmThreads = () => getMaxHardwareThreads();
+  const [modelRevisions, setModelRevisions] = createSignal<string[]>(DEFAULT_MODEL_REVISIONS);
 
   const expandUp = () => props.expandUp?.() ?? false;
   const section = () => props.section ?? 'full';
@@ -45,6 +75,26 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
   const showAudio = () => section() === 'full' || section() === 'audio';
   const showSliders = () => section() === 'full';
   const showDebug = () => section() === 'full';
+
+  createEffect(() => {
+    const selectedModelId = appStore.selectedModelId();
+    const repoId = getModelRepoId(selectedModelId);
+    let cancelled = false;
+
+    void (async () => {
+      const revisions = await fetchModelRevisions(repoId);
+      if (cancelled) return;
+      setModelRevisions(revisions);
+      const currentRevision = appStore.modelRevision();
+      if (!revisions.includes(currentRevision)) {
+        appStore.setModelRevision(revisions[0] || 'main');
+      }
+    })();
+
+    onCleanup(() => {
+      cancelled = true;
+    });
+  });
 
   return (
     <div class="flex flex-col min-h-0">
@@ -106,7 +156,7 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
                   onInput={(e) => appStore.setModelRevision((e.target as HTMLSelectElement).value)}
                   disabled={appStore.modelState() === 'loading'}
                 >
-                  <For each={MODEL_REVISIONS}>
+                  <For each={modelRevisions()}>
                     {(revision) => <option value={revision}>{revision}</option>}
                   </For>
                 </select>
