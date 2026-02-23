@@ -11,6 +11,8 @@ const formatInterval = (ms: number) => {
 
 const DEFAULT_MODEL_REVISIONS = ['main'];
 const MODEL_REVISIONS_CACHE = new Map<string, string[]>();
+const MODEL_FILES_CACHE = new Map<string, string[]>();
+const QUANTIZATION_ORDER: Array<'fp16' | 'int8' | 'fp32'> = ['fp16', 'int8', 'fp32'];
 
 const formatRepoPath = (repoId: string): string =>
   repoId
@@ -38,6 +40,55 @@ const fetchModelRevisions = async (repoId: string | null): Promise<string[]> => 
     console.warn(`[SettingsPanel] Failed to fetch revisions for ${repoId}; using defaults`, error);
     return DEFAULT_MODEL_REVISIONS;
   }
+};
+
+const fetchModelFiles = async (repoId: string | null, revision: string): Promise<string[]> => {
+  if (!repoId) return [];
+  const cacheKey = `${repoId}@${revision}`;
+  const cached = MODEL_FILES_CACHE.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const repoPath = formatRepoPath(repoId);
+    const response = await fetch(`https://huggingface.co/api/models/${repoPath}/tree/${encodeURIComponent(revision)}?recursive=1`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const files = Array.isArray(payload)
+      ? payload
+        .filter((entry: { type?: string; path?: string }) => entry?.type === 'file' && typeof entry?.path === 'string')
+        .map((entry: { path: string }) => entry.path)
+      : [];
+    MODEL_FILES_CACHE.set(cacheKey, files);
+    return files;
+  } catch (error) {
+    console.warn(`[SettingsPanel] Failed to fetch files for ${repoId}@${revision}`, error);
+    return [];
+  }
+};
+
+const getAvailableQuantModes = (
+  files: string[],
+  baseName: 'encoder-model' | 'decoder_joint-model',
+): Array<'int8' | 'fp32' | 'fp16'> => {
+  const existing = new Set(files);
+  const options = QUANTIZATION_ORDER.filter((quant) => {
+    if (quant === 'fp32') return existing.has(`${baseName}.onnx`);
+    if (quant === 'fp16') return existing.has(`${baseName}.fp16.onnx`);
+    return existing.has(`${baseName}.int8.onnx`);
+  });
+  return options.length > 0 ? options : ['fp32'];
+};
+
+const pickPreferredQuant = (
+  options: Array<'int8' | 'fp32' | 'fp16'>,
+  backendMode: 'webgpu-hybrid' | 'wasm',
+): 'int8' | 'fp32' | 'fp16' => {
+  const preferred = backendMode.startsWith('webgpu')
+    ? ['fp16', 'fp32', 'int8']
+    : ['int8', 'fp32', 'fp16'];
+  return preferred.find((quant) => options.includes(quant as 'int8' | 'fp32' | 'fp16')) as 'int8' | 'fp32' | 'fp16'
+    || options[0]
+    || 'fp32';
 };
 
 /** Visible section preset for the embeddable settings content. */
@@ -68,6 +119,8 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
   const isV3 = () => appStore.transcriptionMode() === 'v3-streaming';
   const maxWasmThreads = () => getMaxHardwareThreads();
   const [modelRevisions, setModelRevisions] = createSignal<string[]>(DEFAULT_MODEL_REVISIONS);
+  const [encoderQuantOptions, setEncoderQuantOptions] = createSignal<Array<'int8' | 'fp32' | 'fp16'>>(['fp16', 'int8', 'fp32']);
+  const [decoderQuantOptions, setDecoderQuantOptions] = createSignal<Array<'int8' | 'fp32' | 'fp16'>>(['fp16', 'int8', 'fp32']);
 
   const expandUp = () => props.expandUp?.() ?? false;
   const section = () => props.section ?? 'full';
@@ -78,16 +131,32 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
 
   createEffect(() => {
     const selectedModelId = appStore.selectedModelId();
+    const revision = appStore.modelRevision() || 'main';
     const repoId = getModelRepoId(selectedModelId);
     let cancelled = false;
 
     void (async () => {
-      const revisions = await fetchModelRevisions(repoId);
+      const [revisions, files] = await Promise.all([
+        fetchModelRevisions(repoId),
+        fetchModelFiles(repoId, revision),
+      ]);
       if (cancelled) return;
       setModelRevisions(revisions);
       const currentRevision = appStore.modelRevision();
       if (!revisions.includes(currentRevision)) {
         appStore.setModelRevision(revisions[0] || 'main');
+      }
+
+      const encOptions = getAvailableQuantModes(files, 'encoder-model');
+      const decOptions = getAvailableQuantModes(files, 'decoder_joint-model');
+      const backendMode = appStore.modelBackendMode();
+      setEncoderQuantOptions(encOptions);
+      setDecoderQuantOptions(decOptions);
+      if (!encOptions.includes(appStore.encoderQuant())) {
+        appStore.setEncoderQuant(pickPreferredQuant(encOptions, backendMode));
+      }
+      if (!decOptions.includes(appStore.decoderQuant())) {
+        appStore.setDecoderQuant(pickPreferredQuant(decOptions, backendMode));
       }
     })();
 
@@ -205,9 +274,9 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
                 onInput={(e) => appStore.setEncoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32' | 'fp16')}
                 disabled={appStore.modelState() === 'loading'}
               >
-                <option value="fp16">fp16</option>
-                <option value="fp32">fp32</option>
-                <option value="int8">int8</option>
+                <For each={encoderQuantOptions()}>
+                  {(quant) => <option value={quant}>{quant}</option>}
+                </For>
               </select>
             </div>
             <div class="space-y-1">
@@ -218,9 +287,9 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
                 onInput={(e) => appStore.setDecoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32' | 'fp16')}
                 disabled={appStore.modelState() === 'loading'}
               >
-                <option value="fp16">fp16</option>
-                <option value="int8">int8</option>
-                <option value="fp32">fp32</option>
+                <For each={decoderQuantOptions()}>
+                  {(quant) => <option value={quant}>{quant}</option>}
+                </For>
               </select>
             </div>
           </div>
