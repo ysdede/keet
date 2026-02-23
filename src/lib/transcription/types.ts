@@ -9,7 +9,7 @@ export type BackendType = 'webgpu' | 'wasm';
 /** User-selectable model backend mode. */
 export type ModelBackendMode = 'webgpu-hybrid' | 'wasm';
 /** ONNX quantization option for encoder/decoder assets. */
-export type QuantizationMode = 'int8' | 'fp32';
+export type QuantizationMode = 'int8' | 'fp32' | 'fp16';
 
 /** Model selection/configuration payload. */
 export interface ModelConfig {

@@ -86,9 +86,9 @@ export function createAppStore() {
   const [modelState, setModelState] = createSignal<ModelState>('unloaded');
   const [selectedModelId, setSelectedModelId] = createSignal('parakeet-tdt-0.6b-v2');
   const [modelBackendMode, setModelBackendMode] = createSignal<'webgpu-hybrid' | 'wasm'>('webgpu-hybrid');
-  // First-run defaults (when nothing is restored): WebGPU-hybrid + encoder fp32 + decoder int8.
-  const [encoderQuant, setEncoderQuant] = createSignal<'int8' | 'fp32'>('fp32');
-  const [decoderQuant, setDecoderQuant] = createSignal<'int8' | 'fp32'>('int8');
+  // First-run defaults (when nothing is restored): WebGPU-hybrid + encoder/decoder fp16.
+  const [encoderQuant, setEncoderQuant] = createSignal<'int8' | 'fp32' | 'fp16'>('fp16');
+  const [decoderQuant, setDecoderQuant] = createSignal<'int8' | 'fp32' | 'fp16'>('fp16');
   const [modelProgress, setModelProgress] = createSignal(0);
   const [modelMessage, setModelMessage] = createSignal('');
   const [modelFile, setModelFile] = createSignal('');

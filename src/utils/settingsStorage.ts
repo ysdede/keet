@@ -25,8 +25,8 @@ export interface PersistedSettings {
   model?: {
     selectedModelId?: string;
     backend?: 'webgpu-hybrid' | 'wasm';
-    encoderQuant?: 'int8' | 'fp32';
-    decoderQuant?: 'int8' | 'fp32';
+    encoderQuant?: 'int8' | 'fp32' | 'fp16';
+    decoderQuant?: 'int8' | 'fp32' | 'fp16';
   };
   audio?: {
     selectedDeviceId?: string;
@@ -106,8 +106,8 @@ const readModelBackend = (value: unknown): 'webgpu-hybrid' | 'wasm' | undefined 
   return undefined;
 };
 
-const readQuantization = (value: unknown): 'int8' | 'fp32' | undefined => {
-  if (value === 'int8' || value === 'fp32') return value;
+const readQuantization = (value: unknown): 'int8' | 'fp32' | 'fp16' | undefined => {
+  if (value === 'int8' || value === 'fp32' || value === 'fp16') return value;
   return undefined;
 };
 
