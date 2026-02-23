@@ -243,6 +243,9 @@ const App: Component = () => {
   if (persistedModel?.backend !== undefined) {
     appStore.setModelBackendMode(persistedModel.backend);
   }
+  if (persistedModel?.revision !== undefined) {
+    appStore.setModelRevision(persistedModel.revision);
+  }
   if (persistedModel?.encoderQuant !== undefined) {
     appStore.setEncoderQuant(persistedModel.encoderQuant);
   }
@@ -440,6 +443,7 @@ const App: Component = () => {
       },
       model: {
         selectedModelId: appStore.selectedModelId(),
+        revision: appStore.modelRevision(),
         backend: appStore.modelBackendMode(),
         encoderQuant: appStore.encoderQuant(),
         decoderQuant: appStore.decoderQuant(),
@@ -1132,6 +1136,7 @@ const App: Component = () => {
     try {
       await workerClient.initModel({
         modelId: appStore.selectedModelId(),
+        revision: appStore.modelRevision(),
         cpuThreads: appStore.wasmThreads(),
         backend: appStore.modelBackendMode(),
         encoderQuant: appStore.encoderQuant(),
