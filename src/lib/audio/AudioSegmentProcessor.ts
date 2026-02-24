@@ -444,31 +444,37 @@ export class AudioSegmentProcessor {
      * Update internal statistics.
      */
     private updateStats(): void {
-        const stats: CurrentStats = {
-            silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
-            speech: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
-            noiseFloor: this.state.noiseFloor,
-            snr: this.state.recentChunks.length > 0
-                ? this.state.recentChunks[this.state.recentChunks.length - 1].snr
-                : 0,
-            snrThreshold: this.options.snrThreshold,
-            minSnrThreshold: this.options.minSnrThreshold,
-            energyRiseThreshold: this.options.energyRiseThreshold
-        };
+        // PERF: Mutate existing state object to avoid allocation on every chunk
+        const stats = this.state.currentStats;
+
+        stats.noiseFloor = this.state.noiseFloor;
+        stats.snr = this.state.recentChunks.length > 0
+            ? this.state.recentChunks[this.state.recentChunks.length - 1].snr
+            : 0;
+        stats.snrThreshold = this.options.snrThreshold;
+        stats.minSnrThreshold = this.options.minSnrThreshold;
+        stats.energyRiseThreshold = this.options.energyRiseThreshold;
 
         if (this.state.silenceStats.length > 0) {
-            stats.silence = this.summarizeSegmentStats(this.state.silenceStats);
+            const summary = this.summarizeSegmentStats(this.state.silenceStats);
+            Object.assign(stats.silence, summary);
+        } else {
+            stats.silence.avgDuration = 0;
+            stats.silence.avgEnergy = 0;
+            stats.silence.avgEnergyIntegral = 0;
         }
 
         if (this.state.cachedSpeechSummary !== null) {
-            stats.speech = { ...this.state.cachedSpeechSummary };
+            Object.assign(stats.speech, this.state.cachedSpeechSummary);
         } else if (this.state.speechStats.length > 0) {
             const speechSummary = this.summarizeSegmentStats(this.state.speechStats);
             this.state.cachedSpeechSummary = speechSummary;
-            stats.speech = { ...speechSummary };
+            Object.assign(stats.speech, speechSummary);
+        } else {
+            stats.speech.avgDuration = 0;
+            stats.speech.avgEnergy = 0;
+            stats.speech.avgEnergyIntegral = 0;
         }
-
-        this.state.currentStats = stats;
     }
 
     private recordSpeechStat(stat: SegmentStats): void {
