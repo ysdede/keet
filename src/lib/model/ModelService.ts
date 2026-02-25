@@ -61,7 +61,7 @@ export class ModelService {
 
             // Create model instance with progress callback
             this.model = await ParakeetModel.fromPretrained(
-                this.config.modelId || 'nvidia/parakeet-tdt-0.6b-v2',
+                this.config.modelId || 'ysdede/parakeet-tdt-0.6b-v2-onnx',
                 {
                     device: this.backend,
                     progress_callback: (info: any) => {

@@ -233,15 +233,21 @@ const App: Component = () => {
   const persistedAudio = persistedSettings.audio;
   const persistedModel = persistedSettings.model;
   const persistedModelId = persistedModel?.selectedModelId;
+  const migratedModelId = persistedModelId === 'parakeet-tdt-0.6b-v3-fp16'
+    ? 'parakeet-tdt-0.6b-v3'
+    : persistedModelId;
   const persistedUi = persistedSettings.ui;
   const hasPersistedEncoderQuant = persistedModel?.encoderQuant !== undefined;
   const hasPersistedDecoderQuant = persistedModel?.decoderQuant !== undefined;
 
-  if (persistedModelId && MODELS.some((model) => model.id === persistedModelId)) {
-    appStore.setSelectedModelId(persistedModelId);
+  if (migratedModelId && MODELS.some((model) => model.id === migratedModelId)) {
+    appStore.setSelectedModelId(migratedModelId);
   }
   if (persistedModel?.backend !== undefined) {
     appStore.setModelBackendMode(persistedModel.backend);
+  }
+  if (persistedModel?.revision !== undefined) {
+    appStore.setModelRevision(persistedModel.revision);
   }
   if (persistedModel?.encoderQuant !== undefined) {
     appStore.setEncoderQuant(persistedModel.encoderQuant);
@@ -318,18 +324,19 @@ const App: Component = () => {
     }
   });
 
-  // Keep quantization presets aligned with the backend mode (parakeet.js demo behavior).
+  // Keep quantization presets aligned with the backend mode.
+  // WebGPU is FP16-first (falls back to FP32 in parakeet.js when FP16 assets are missing).
   const applyQuantPresetForBackend = (
     backendMode: 'webgpu-hybrid' | 'wasm',
     options: { respectPersistedQuant?: boolean } = {}
   ) => {
     const respectPersistedQuant = options.respectPersistedQuant === true;
     if (backendMode.startsWith('webgpu')) {
-      if ((!respectPersistedQuant || !hasPersistedEncoderQuant) && appStore.encoderQuant() !== 'fp32') {
-        appStore.setEncoderQuant('fp32');
+      if ((!respectPersistedQuant || !hasPersistedEncoderQuant) && appStore.encoderQuant() !== 'fp16') {
+        appStore.setEncoderQuant('fp16');
       }
-      if ((!respectPersistedQuant || !hasPersistedDecoderQuant) && appStore.decoderQuant() !== 'int8') {
-        appStore.setDecoderQuant('int8');
+      if ((!respectPersistedQuant || !hasPersistedDecoderQuant) && appStore.decoderQuant() !== 'fp16') {
+        appStore.setDecoderQuant('fp16');
       }
       return;
     }
@@ -439,6 +446,7 @@ const App: Component = () => {
       },
       model: {
         selectedModelId: appStore.selectedModelId(),
+        revision: appStore.modelRevision(),
         backend: appStore.modelBackendMode(),
         encoderQuant: appStore.encoderQuant(),
         decoderQuant: appStore.decoderQuant(),
@@ -1131,6 +1139,7 @@ const App: Component = () => {
     try {
       await workerClient.initModel({
         modelId: appStore.selectedModelId(),
+        revision: appStore.modelRevision(),
         cpuThreads: appStore.wasmThreads(),
         backend: appStore.modelBackendMode(),
         encoderQuant: appStore.encoderQuant(),

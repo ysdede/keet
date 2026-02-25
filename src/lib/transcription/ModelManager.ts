@@ -17,6 +17,7 @@ import type {
 
 // Default model configuration (Parakeet TDT 0.6B)
 const DEFAULT_MODEL_ID = 'parakeet-tdt-0.6b-v2';
+const DEFAULT_MODEL_REVISION = 'feat/fp16-canonical-v3';
 
 const CACHE_NAME = 'keet-model-cache-v1';
 const PARAKEET_DB_NAME = 'parakeet-cache-db';
@@ -74,12 +75,14 @@ export class ModelManager {
    */
   async loadModel(config: {
     modelId?: string;
+    revision?: string;
     cpuThreads?: number;
     backend?: ModelBackendMode;
     encoderQuant?: QuantizationMode;
     decoderQuant?: QuantizationMode;
   } = {}): Promise<void> {
     const modelId = config.modelId || DEFAULT_MODEL_ID;
+    const revision = this._normalizeRevision(config.revision);
     const cpuThreads = this._normalizeCpuThreads(config.cpuThreads);
     const requestedBackend = this._normalizeRequestedBackend(config.backend);
     const encoderQuant = this._normalizeQuantization(config.encoderQuant, 'int8');
@@ -137,6 +140,7 @@ export class ModelManager {
       });
 
       const modelAssets = await getParakeetModel(modelId, {
+        revision,
         backend: effectiveBackend,
         encoderQuant: resolvedEncoderQuant,
         decoderQuant,
@@ -178,6 +182,7 @@ export class ModelManager {
 
         const directAssets = this._buildDirectModelAssets(
           modelId,
+          revision,
           runtimeBackend,
           resolvedEncoderQuant,
           decoderQuant,
@@ -373,7 +378,12 @@ export class ModelManager {
   }
 
   private _normalizeQuantization(value: QuantizationMode | undefined, fallback: QuantizationMode): QuantizationMode {
-    return value === 'fp32' || value === 'int8' ? value : fallback;
+    return value === 'fp32' || value === 'int8' || value === 'fp16' ? value : fallback;
+  }
+
+  private _normalizeRevision(value?: string): string {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    return trimmed.length > 0 ? trimmed : DEFAULT_MODEL_REVISION;
   }
 
   private async _resolveBackend(requestedBackend: ModelBackendMode): Promise<{ effectiveBackend: ModelBackendMode; runtimeBackend: BackendType }> {
@@ -427,7 +437,7 @@ export class ModelManager {
     }
 
     // If WebGPU was requested but unavailable at runtime, keep the fallback lightweight.
-    if (backend === 'wasm' && requestedBackend === 'webgpu-hybrid' && encoderQuant === 'fp32') {
+    if (backend === 'wasm' && requestedBackend === 'webgpu-hybrid' && (encoderQuant === 'fp32' || encoderQuant === 'fp16')) {
       console.warn(
         `[ModelManager] Encoder quantization overridden for ${modelId}: requested=${encoderQuant}, effective=int8 (WebGPU unavailable, running on WASM fallback)`
       );
@@ -447,15 +457,23 @@ export class ModelManager {
 
   private _buildDirectModelAssets(
     modelId: string,
+    revision: string,
     backend: BackendType,
     encoderQuant: QuantizationMode,
     decoderQuant: QuantizationMode,
     getModelConfig: ModelConfigResolver
   ): ResolvedModelAssets {
     const repoId = getModelConfig?.(modelId)?.repoId || modelId;
-    const revision = 'main';
-    const encoderName = encoderQuant === 'int8' ? 'encoder-model.int8.onnx' : 'encoder-model.onnx';
-    const decoderName = decoderQuant === 'int8' ? 'decoder_joint-model.int8.onnx' : 'decoder_joint-model.onnx';
+    const encoderName = encoderQuant === 'int8'
+      ? 'encoder-model.int8.onnx'
+      : encoderQuant === 'fp16'
+        ? 'encoder-model.fp16.onnx'
+        : 'encoder-model.onnx';
+    const decoderName = decoderQuant === 'int8'
+      ? 'decoder_joint-model.int8.onnx'
+      : decoderQuant === 'fp16'
+        ? 'decoder_joint-model.fp16.onnx'
+        : 'decoder_joint-model.onnx';
     const baseUrl = `https://huggingface.co/${repoId}/resolve/${revision}`;
 
     return {
