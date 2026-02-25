@@ -69,6 +69,7 @@ export interface V4MergerStats {
 
 /** Creates the root application store with state signals, setters, and UI actions. */
 export function createAppStore() {
+  const defaultModelRevision = 'feat/fp16-canonical-v3';
   const hardwareThreads = getMaxHardwareThreads();
   const defaultWasmThreads = hardwareThreads <= 2
     ? 1
@@ -85,7 +86,7 @@ export function createAppStore() {
   // Model state
   const [modelState, setModelState] = createSignal<ModelState>('unloaded');
   const [selectedModelId, setSelectedModelId] = createSignal('parakeet-tdt-0.6b-v2');
-  const [modelRevision, setModelRevision] = createSignal('main');
+  const [modelRevision, setModelRevision] = createSignal(defaultModelRevision);
   const [modelBackendMode, setModelBackendMode] = createSignal<'webgpu-hybrid' | 'wasm'>('webgpu-hybrid');
   // First-run defaults (when nothing is restored): WebGPU-hybrid + encoder/decoder fp16.
   const [encoderQuant, setEncoderQuant] = createSignal<'int8' | 'fp32' | 'fp16'>('fp16');

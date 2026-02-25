@@ -26,10 +26,21 @@ interface ModelLoadingOverlayProps {
 }
 
 /** Built-in ASR model options available in the loader UI. */
+export const PREFERRED_FP16_REVISION = 'feat/fp16-canonical-v3';
+
 export const MODELS = [
-    { id: 'parakeet-tdt-0.6b-v2', name: 'Parakeet v2', desc: 'English optimized', repoId: 'ysdede/parakeet-tdt-0.6b-v2-onnx' },
-    { id: 'parakeet-tdt-0.6b-v3', name: 'Parakeet v3', desc: 'Multilingual Streaming', repoId: 'ysdede/parakeet-tdt-0.6b-v3-onnx' },
-    { id: 'parakeet-tdt-0.6b-v3-fp16', name: 'Parakeet v3 FP16', desc: 'Multilingual lower-memory', repoId: 'ysdede/parakeet-tdt-0.6b-v3-onnx' },
+    {
+        id: 'parakeet-tdt-0.6b-v2',
+        name: 'Parakeet TDT 0.6 v2',
+        desc: 'Parakeet TDT 0.6 v2 (English)',
+        repoId: 'ysdede/parakeet-tdt-0.6b-v2-onnx',
+    },
+    {
+        id: 'parakeet-tdt-0.6b-v3',
+        name: 'Parakeet TDT 0.6 v3',
+        desc: 'Parakeet TDT 0.6 v3 (Multilingual)',
+        repoId: 'ysdede/parakeet-tdt-0.6b-v3-onnx',
+    },
 ];
 
 /**
@@ -38,7 +49,8 @@ export const MODELS = [
  * @returns Display name if known, otherwise the raw ID.
  */
 export function getModelDisplayName(id: string): string {
-    return MODELS.find((m) => m.id === id)?.name ?? id;
+    const normalizedId = id === 'parakeet-tdt-0.6b-v3-fp16' ? 'parakeet-tdt-0.6b-v3' : id;
+    return MODELS.find((m) => m.id === normalizedId)?.name ?? id;
 }
 
 /**
@@ -47,7 +59,8 @@ export function getModelDisplayName(id: string): string {
  * @returns Repo ID when known, otherwise null.
  */
 export function getModelRepoId(id: string): string | null {
-    return MODELS.find((m) => m.id === id)?.repoId ?? null;
+    const normalizedId = id === 'parakeet-tdt-0.6b-v3-fp16' ? 'parakeet-tdt-0.6b-v3' : id;
+    return MODELS.find((m) => m.id === normalizedId)?.repoId ?? null;
 }
 
 /** Modal flow for selecting, downloading, and initializing ASR models. */
