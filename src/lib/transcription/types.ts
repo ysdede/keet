@@ -9,12 +9,14 @@ export type BackendType = 'webgpu' | 'wasm';
 /** User-selectable model backend mode. */
 export type ModelBackendMode = 'webgpu-hybrid' | 'wasm';
 /** ONNX quantization option for encoder/decoder assets. */
-export type QuantizationMode = 'int8' | 'fp32';
+export type QuantizationMode = 'int8' | 'fp32' | 'fp16';
 
 /** Model selection/configuration payload. */
 export interface ModelConfig {
   /** Selected model identifier or key. */
   modelId: string;
+  /** Optional HF git revision/branch/tag (defaults to `feat/fp16-canonical-v3`). */
+  revision?: string;
   /** Optional backend override. */
   backend?: ModelBackendMode;
   /** Optional ORT WASM thread count for CPU-side kernels/decoder. */

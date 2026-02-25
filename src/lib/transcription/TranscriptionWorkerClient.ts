@@ -49,6 +49,7 @@ export interface V4IncrementalCache {
 
 export interface InitModelOptions {
     modelId?: string;
+    revision?: string;
     cpuThreads?: number;
     backend?: ModelBackendMode;
     encoderQuant?: QuantizationMode;

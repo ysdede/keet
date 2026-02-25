@@ -69,6 +69,7 @@ export interface V4MergerStats {
 
 /** Creates the root application store with state signals, setters, and UI actions. */
 export function createAppStore() {
+  const defaultModelRevision = 'feat/fp16-canonical-v3';
   const hardwareThreads = getMaxHardwareThreads();
   const defaultWasmThreads = hardwareThreads <= 2
     ? 1
@@ -85,10 +86,11 @@ export function createAppStore() {
   // Model state
   const [modelState, setModelState] = createSignal<ModelState>('unloaded');
   const [selectedModelId, setSelectedModelId] = createSignal('parakeet-tdt-0.6b-v2');
+  const [modelRevision, setModelRevision] = createSignal(defaultModelRevision);
   const [modelBackendMode, setModelBackendMode] = createSignal<'webgpu-hybrid' | 'wasm'>('webgpu-hybrid');
-  // First-run defaults (when nothing is restored): WebGPU-hybrid + encoder fp32 + decoder int8.
-  const [encoderQuant, setEncoderQuant] = createSignal<'int8' | 'fp32'>('fp32');
-  const [decoderQuant, setDecoderQuant] = createSignal<'int8' | 'fp32'>('int8');
+  // First-run defaults (when nothing is restored): WebGPU-hybrid + encoder/decoder fp16.
+  const [encoderQuant, setEncoderQuant] = createSignal<'int8' | 'fp32' | 'fp16'>('fp16');
+  const [decoderQuant, setDecoderQuant] = createSignal<'int8' | 'fp32' | 'fp16'>('fp16');
   const [modelProgress, setModelProgress] = createSignal(0);
   const [modelMessage, setModelMessage] = createSignal('');
   const [modelFile, setModelFile] = createSignal('');
@@ -317,6 +319,7 @@ export function createAppStore() {
     sessionDuration,
     modelState,
     selectedModelId,
+    modelRevision,
     modelBackendMode,
     encoderQuant,
     decoderQuant,
@@ -369,6 +372,7 @@ export function createAppStore() {
     setSelectedDeviceId,
     setModelState,
     setSelectedModelId,
+    setModelRevision,
     setModelBackendMode,
     setEncoderQuant,
     setDecoderQuant,

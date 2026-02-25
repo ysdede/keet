@@ -1,12 +1,128 @@
-import { Component, For, Show } from 'solid-js';
+import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { appStore } from '../stores/appStore';
-import { getModelDisplayName, MODELS } from './ModelLoadingOverlay';
+import { getModelDisplayName, getModelRepoId, MODELS, PREFERRED_FP16_REVISION } from './ModelLoadingOverlay';
 import type { AudioEngine } from '../lib/audio/types';
 import { getMaxHardwareThreads } from '../utils/hardwareThreads';
 
 const formatInterval = (ms: number) => {
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
   return `${ms}ms`;
+};
+
+const DEFAULT_MODEL_REVISION = 'main';
+const DEFAULT_MODEL_REVISIONS = [DEFAULT_MODEL_REVISION];
+const MODEL_REVISIONS_CACHE = new Map<string, string[]>();
+const MODEL_FILES_CACHE = new Map<string, string[]>();
+const QUANTIZATION_ORDER: Array<'fp16' | 'int8' | 'fp32'> = ['fp16', 'int8', 'fp32'];
+
+const formatRepoPath = (repoId: string): string =>
+  repoId
+    .split('/')
+    .map((part) => encodeURIComponent(part))
+    .join('/');
+
+const normalizePath = (path: string): string =>
+  String(path || '').replace(/^\.\/+/, '').replace(/\\/g, '/');
+
+const hasFile = (files: string[], filename: string): boolean => {
+  const target = normalizePath(filename);
+  return files.some((path) => path === target || path.endsWith(`/${target}`));
+};
+
+const fetchModelRevisions = async (repoId: string | null): Promise<string[]> => {
+  if (!repoId) return DEFAULT_MODEL_REVISIONS;
+  const cached = MODEL_REVISIONS_CACHE.get(repoId);
+  if (cached) return cached;
+
+  try {
+    const repoPath = formatRepoPath(repoId);
+    const response = await fetch(`https://huggingface.co/api/models/${repoPath}/refs`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const branches = Array.isArray(payload?.branches)
+      ? payload.branches.map((branch: { name?: string }) => branch?.name).filter(Boolean)
+      : [];
+    const revisions = branches.length > 0 ? branches : DEFAULT_MODEL_REVISIONS;
+    MODEL_REVISIONS_CACHE.set(repoId, revisions);
+    return revisions;
+  } catch (error) {
+    console.warn(`[SettingsPanel] Failed to fetch revisions for ${repoId}; using defaults`, error);
+    return DEFAULT_MODEL_REVISIONS;
+  }
+};
+
+const fetchModelFiles = async (repoId: string | null, revision: string): Promise<string[]> => {
+  if (!repoId) return [];
+  const cacheKey = `${repoId}@${revision}`;
+  const cached = MODEL_FILES_CACHE.get(cacheKey);
+  if (cached) return cached;
+
+  const repoPath = formatRepoPath(repoId);
+  const encodedRevision = encodeURIComponent(revision);
+  const treeUrl = `https://huggingface.co/api/models/${repoPath}/tree/${encodedRevision}?recursive=1`;
+  const metadataUrl = `https://huggingface.co/api/models/${repoPath}?revision=${encodedRevision}`;
+
+  try {
+    const response = await fetch(treeUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const files = Array.isArray(payload)
+      ? payload
+        .filter((entry: { type?: string; path?: string }) => entry?.type === 'file' && typeof entry?.path === 'string')
+        .map((entry: { path: string }) => normalizePath(entry.path))
+      : [];
+    MODEL_FILES_CACHE.set(cacheKey, files);
+    return files;
+  } catch (treeError) {
+    console.warn(`[SettingsPanel] Tree listing failed for ${repoId}@${revision}; trying metadata`, treeError);
+  }
+
+  try {
+    const response = await fetch(metadataUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const files = Array.isArray(payload?.siblings)
+      ? payload.siblings
+        .map((entry: { rfilename?: string }) => normalizePath(entry?.rfilename || ''))
+        .filter(Boolean)
+      : [];
+    MODEL_FILES_CACHE.set(cacheKey, files);
+    return files;
+  } catch (metadataError) {
+    console.warn(`[SettingsPanel] Failed to fetch files for ${repoId}@${revision}`, metadataError);
+    return [];
+  }
+};
+
+const getAvailableQuantModes = (
+  files: string[],
+  baseName: 'encoder-model' | 'decoder_joint-model',
+): Array<'int8' | 'fp32' | 'fp16'> => {
+  const options = QUANTIZATION_ORDER.filter((quant) => {
+    if (quant === 'fp32') return hasFile(files, `${baseName}.onnx`);
+    if (quant === 'fp16') return hasFile(files, `${baseName}.fp16.onnx`);
+    return hasFile(files, `${baseName}.int8.onnx`);
+  });
+  return options.length > 0 ? options : ['fp32'];
+};
+
+const pickPreferredRevision = (revisions: string[], currentRevision: string): string => {
+  if (revisions.includes(PREFERRED_FP16_REVISION)) return PREFERRED_FP16_REVISION;
+  if (revisions.includes(currentRevision)) return currentRevision;
+  if (revisions.includes(DEFAULT_MODEL_REVISION)) return DEFAULT_MODEL_REVISION;
+  return revisions[0] || DEFAULT_MODEL_REVISION;
+};
+
+const pickPreferredQuant = (
+  options: Array<'int8' | 'fp32' | 'fp16'>,
+  backendMode: 'webgpu-hybrid' | 'wasm',
+): 'int8' | 'fp32' | 'fp16' => {
+  const preferred = backendMode.startsWith('webgpu')
+    ? ['fp16', 'fp32', 'int8']
+    : ['int8', 'fp32', 'fp16'];
+  return preferred.find((quant) => options.includes(quant as 'int8' | 'fp32' | 'fp16')) as 'int8' | 'fp32' | 'fp16'
+    || options[0]
+    || 'fp32';
 };
 
 /** Visible section preset for the embeddable settings content. */
@@ -36,6 +152,8 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
   const isV4 = () => appStore.transcriptionMode() === 'v4-utterance';
   const isV3 = () => appStore.transcriptionMode() === 'v3-streaming';
   const maxWasmThreads = () => getMaxHardwareThreads();
+  const [encoderQuantOptions, setEncoderQuantOptions] = createSignal<Array<'int8' | 'fp32' | 'fp16'>>(['fp16', 'int8', 'fp32']);
+  const [decoderQuantOptions, setDecoderQuantOptions] = createSignal<Array<'int8' | 'fp32' | 'fp16'>>(['fp16', 'int8', 'fp32']);
 
   const expandUp = () => props.expandUp?.() ?? false;
   const section = () => props.section ?? 'full';
@@ -43,6 +161,48 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
   const showAudio = () => section() === 'full' || section() === 'audio';
   const showSliders = () => section() === 'full';
   const showDebug = () => section() === 'full';
+
+  createEffect(() => {
+    const selectedModelId = appStore.selectedModelId();
+    const requestedRevision = appStore.modelRevision() || DEFAULT_MODEL_REVISION;
+    const repoId = getModelRepoId(selectedModelId);
+    let cancelled = false;
+
+    void (async () => {
+      const revisions = await fetchModelRevisions(repoId);
+      if (cancelled) return;
+
+      const resolvedRevision = pickPreferredRevision(revisions, requestedRevision);
+      if (resolvedRevision !== appStore.modelRevision()) {
+        appStore.setModelRevision(resolvedRevision);
+      }
+
+      let files = await fetchModelFiles(repoId, resolvedRevision);
+      if (!files.length && resolvedRevision !== DEFAULT_MODEL_REVISION) {
+        files = await fetchModelFiles(repoId, DEFAULT_MODEL_REVISION);
+        if (files.length > 0 && appStore.modelRevision() !== DEFAULT_MODEL_REVISION) {
+          appStore.setModelRevision(DEFAULT_MODEL_REVISION);
+        }
+      }
+      if (cancelled) return;
+
+      const encOptions = getAvailableQuantModes(files, 'encoder-model');
+      const decOptions = getAvailableQuantModes(files, 'decoder_joint-model');
+      const backendMode = appStore.modelBackendMode();
+      setEncoderQuantOptions(encOptions);
+      setDecoderQuantOptions(decOptions);
+      if (!encOptions.includes(appStore.encoderQuant())) {
+        appStore.setEncoderQuant(pickPreferredQuant(encOptions, backendMode));
+      }
+      if (!decOptions.includes(appStore.decoderQuant())) {
+        appStore.setDecoderQuant(pickPreferredQuant(decOptions, backendMode));
+      }
+    })();
+
+    onCleanup(() => {
+      cancelled = true;
+    });
+  });
 
   return (
     <div class="flex flex-col min-h-0">
@@ -127,11 +287,12 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
               <select
                 class="w-full text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
                 value={appStore.encoderQuant()}
-                onInput={(e) => appStore.setEncoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32')}
+                onInput={(e) => appStore.setEncoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32' | 'fp16')}
                 disabled={appStore.modelState() === 'loading'}
               >
-                <option value="fp32">fp32</option>
-                <option value="int8">int8</option>
+                <For each={encoderQuantOptions()}>
+                  {(quant) => <option value={quant}>{quant}</option>}
+                </For>
               </select>
             </div>
             <div class="space-y-1">
@@ -139,11 +300,12 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
               <select
                 class="w-full text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
                 value={appStore.decoderQuant()}
-                onInput={(e) => appStore.setDecoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32')}
+                onInput={(e) => appStore.setDecoderQuant((e.target as HTMLSelectElement).value as 'int8' | 'fp32' | 'fp16')}
                 disabled={appStore.modelState() === 'loading'}
               >
-                <option value="int8">int8</option>
-                <option value="fp32">fp32</option>
+                <For each={decoderQuantOptions()}>
+                  {(quant) => <option value={quant}>{quant}</option>}
+                </For>
               </select>
             </div>
           </div>

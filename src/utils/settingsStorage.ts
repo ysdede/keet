@@ -24,9 +24,10 @@ export interface PersistedSettings {
   };
   model?: {
     selectedModelId?: string;
+    revision?: string;
     backend?: 'webgpu-hybrid' | 'wasm';
-    encoderQuant?: 'int8' | 'fp32';
-    decoderQuant?: 'int8' | 'fp32';
+    encoderQuant?: 'int8' | 'fp32' | 'fp16';
+    decoderQuant?: 'int8' | 'fp32' | 'fp16';
   };
   audio?: {
     selectedDeviceId?: string;
@@ -106,8 +107,8 @@ const readModelBackend = (value: unknown): 'webgpu-hybrid' | 'wasm' | undefined 
   return undefined;
 };
 
-const readQuantization = (value: unknown): 'int8' | 'fp32' | undefined => {
-  if (value === 'int8' || value === 'fp32') return value;
+const readQuantization = (value: unknown): 'int8' | 'fp32' | 'fp16' | undefined => {
+  if (value === 'int8' || value === 'fp32' || value === 'fp16') return value;
   return undefined;
 };
 
@@ -134,12 +135,14 @@ const sanitizeSettings = (value: unknown): PersistedSettings => {
   const model = isRecord(value.model) ? value.model : null;
   if (model) {
     const selectedModelId = readString(model.selectedModelId);
+    const revision = readString(model.revision);
     const backend = readModelBackend(model.backend);
     const encoderQuant = readQuantization(model.encoderQuant);
     const decoderQuant = readQuantization(model.decoderQuant);
-    if (selectedModelId || backend || encoderQuant || decoderQuant) {
+    if (selectedModelId || revision || backend || encoderQuant || decoderQuant) {
       settings.model = {};
       if (selectedModelId) settings.model.selectedModelId = selectedModelId;
+      if (revision) settings.model.revision = revision;
       if (backend) settings.model.backend = backend;
       if (encoderQuant) settings.model.encoderQuant = encoderQuant;
       if (decoderQuant) settings.model.decoderQuant = decoderQuant;
