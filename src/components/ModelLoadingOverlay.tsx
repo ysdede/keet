@@ -26,7 +26,11 @@ interface ModelLoadingOverlayProps {
 }
 
 /** Built-in ASR model options available in the loader UI. */
-export const PREFERRED_FP16_REVISION = 'feat/fp16-canonical-v3';
+const DEFAULT_MODEL_REVISION = 'main';
+const PREFERRED_MODEL_REVISIONS: Record<string, string> = {
+    'parakeet-tdt-0.6b-v2': 'feat/fp16-canonical-v2',
+    'parakeet-tdt-0.6b-v3': 'feat/fp16-canonical-v3',
+};
 
 export const MODELS = [
     {
@@ -61,6 +65,16 @@ export function getModelDisplayName(id: string): string {
 export function getModelRepoId(id: string): string | null {
     const normalizedId = id === 'parakeet-tdt-0.6b-v3-fp16' ? 'parakeet-tdt-0.6b-v3' : id;
     return MODELS.find((m) => m.id === normalizedId)?.repoId ?? null;
+}
+
+/**
+ * Resolves the preferred default revision for a model.
+ * @param id - Internal model ID.
+ * @returns Preferred branch name when configured, otherwise `main`.
+ */
+export function getPreferredModelRevision(id: string): string {
+    const normalizedId = id === 'parakeet-tdt-0.6b-v3-fp16' ? 'parakeet-tdt-0.6b-v3' : id;
+    return PREFERRED_MODEL_REVISIONS[normalizedId] ?? DEFAULT_MODEL_REVISION;
 }
 
 /** Modal flow for selecting, downloading, and initializing ASR models. */

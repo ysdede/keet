@@ -69,7 +69,7 @@ export interface V4MergerStats {
 
 /** Creates the root application store with state signals, setters, and UI actions. */
 export function createAppStore() {
-  const defaultModelRevision = 'feat/fp16-canonical-v3';
+  const defaultModelRevision = 'feat/fp16-canonical-v2';
   const hardwareThreads = getMaxHardwareThreads();
   const defaultWasmThreads = hardwareThreads <= 2
     ? 1

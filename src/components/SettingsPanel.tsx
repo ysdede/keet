@@ -1,6 +1,6 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { appStore } from '../stores/appStore';
-import { getModelDisplayName, getModelRepoId, MODELS, PREFERRED_FP16_REVISION } from './ModelLoadingOverlay';
+import { getModelDisplayName, getModelRepoId, getPreferredModelRevision, MODELS } from './ModelLoadingOverlay';
 import type { AudioEngine } from '../lib/audio/types';
 import { getMaxHardwareThreads } from '../utils/hardwareThreads';
 
@@ -106,8 +106,13 @@ const getAvailableQuantModes = (
   return options.length > 0 ? options : ['fp32'];
 };
 
-const pickPreferredRevision = (revisions: string[], currentRevision: string): string => {
-  if (revisions.includes(PREFERRED_FP16_REVISION)) return PREFERRED_FP16_REVISION;
+const pickPreferredRevision = (
+  revisions: string[],
+  currentRevision: string,
+  modelId: string,
+): string => {
+  const preferredRevision = getPreferredModelRevision(modelId);
+  if (revisions.includes(preferredRevision)) return preferredRevision;
   if (revisions.includes(currentRevision)) return currentRevision;
   if (revisions.includes(DEFAULT_MODEL_REVISION)) return DEFAULT_MODEL_REVISION;
   return revisions[0] || DEFAULT_MODEL_REVISION;
@@ -172,7 +177,7 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
       const revisions = await fetchModelRevisions(repoId);
       if (cancelled) return;
 
-      const resolvedRevision = pickPreferredRevision(revisions, requestedRevision);
+      const resolvedRevision = pickPreferredRevision(revisions, requestedRevision, selectedModelId);
       if (resolvedRevision !== appStore.modelRevision()) {
         appStore.setModelRevision(resolvedRevision);
       }
