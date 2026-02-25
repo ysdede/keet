@@ -15,7 +15,7 @@ export type QuantizationMode = 'int8' | 'fp32' | 'fp16';
 export interface ModelConfig {
   /** Selected model identifier or key. */
   modelId: string;
-  /** Optional HF git revision/branch/tag (defaults to `main`). */
+  /** Optional HF git revision/branch/tag (defaults to `feat/fp16-canonical-v3`). */
   revision?: string;
   /** Optional backend override. */
   backend?: ModelBackendMode;
