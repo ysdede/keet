@@ -17,6 +17,7 @@ import type {
 
 // Default model configuration (Parakeet TDT 0.6B)
 const DEFAULT_MODEL_ID = 'parakeet-tdt-0.6b-v2';
+const DEFAULT_MODEL_REVISION = 'feat/fp16-canonical-v3';
 
 const CACHE_NAME = 'keet-model-cache-v1';
 const PARAKEET_DB_NAME = 'parakeet-cache-db';
@@ -382,7 +383,7 @@ export class ModelManager {
 
   private _normalizeRevision(value?: string): string {
     const trimmed = typeof value === 'string' ? value.trim() : '';
-    return trimmed.length > 0 ? trimmed : 'main';
+    return trimmed.length > 0 ? trimmed : DEFAULT_MODEL_REVISION;
   }
 
   private async _resolveBackend(requestedBackend: ModelBackendMode): Promise<{ effectiveBackend: ModelBackendMode; runtimeBackend: BackendType }> {

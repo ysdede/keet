@@ -1,6 +1,6 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { appStore } from '../stores/appStore';
-import { getModelDisplayName, getModelRepoId, MODELS } from './ModelLoadingOverlay';
+import { getModelDisplayName, getModelRepoId, MODELS, PREFERRED_FP16_REVISION } from './ModelLoadingOverlay';
 import type { AudioEngine } from '../lib/audio/types';
 import { getMaxHardwareThreads } from '../utils/hardwareThreads';
 
@@ -9,7 +9,8 @@ const formatInterval = (ms: number) => {
   return `${ms}ms`;
 };
 
-const DEFAULT_MODEL_REVISIONS = ['main'];
+const DEFAULT_MODEL_REVISION = 'main';
+const DEFAULT_MODEL_REVISIONS = [DEFAULT_MODEL_REVISION];
 const MODEL_REVISIONS_CACHE = new Map<string, string[]>();
 const MODEL_FILES_CACHE = new Map<string, string[]>();
 const QUANTIZATION_ORDER: Array<'fp16' | 'int8' | 'fp32'> = ['fp16', 'int8', 'fp32'];
@@ -19,6 +20,14 @@ const formatRepoPath = (repoId: string): string =>
     .split('/')
     .map((part) => encodeURIComponent(part))
     .join('/');
+
+const normalizePath = (path: string): string =>
+  String(path || '').replace(/^\.\/+/, '').replace(/\\/g, '/');
+
+const hasFile = (files: string[], filename: string): boolean => {
+  const target = normalizePath(filename);
+  return files.some((path) => path === target || path.endsWith(`/${target}`));
+};
 
 const fetchModelRevisions = async (repoId: string | null): Promise<string[]> => {
   if (!repoId) return DEFAULT_MODEL_REVISIONS;
@@ -48,20 +57,39 @@ const fetchModelFiles = async (repoId: string | null, revision: string): Promise
   const cached = MODEL_FILES_CACHE.get(cacheKey);
   if (cached) return cached;
 
+  const repoPath = formatRepoPath(repoId);
+  const encodedRevision = encodeURIComponent(revision);
+  const treeUrl = `https://huggingface.co/api/models/${repoPath}/tree/${encodedRevision}?recursive=1`;
+  const metadataUrl = `https://huggingface.co/api/models/${repoPath}?revision=${encodedRevision}`;
+
   try {
-    const repoPath = formatRepoPath(repoId);
-    const response = await fetch(`https://huggingface.co/api/models/${repoPath}/tree/${encodeURIComponent(revision)}?recursive=1`);
+    const response = await fetch(treeUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     const files = Array.isArray(payload)
       ? payload
         .filter((entry: { type?: string; path?: string }) => entry?.type === 'file' && typeof entry?.path === 'string')
-        .map((entry: { path: string }) => entry.path)
+        .map((entry: { path: string }) => normalizePath(entry.path))
       : [];
     MODEL_FILES_CACHE.set(cacheKey, files);
     return files;
-  } catch (error) {
-    console.warn(`[SettingsPanel] Failed to fetch files for ${repoId}@${revision}`, error);
+  } catch (treeError) {
+    console.warn(`[SettingsPanel] Tree listing failed for ${repoId}@${revision}; trying metadata`, treeError);
+  }
+
+  try {
+    const response = await fetch(metadataUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const files = Array.isArray(payload?.siblings)
+      ? payload.siblings
+        .map((entry: { rfilename?: string }) => normalizePath(entry?.rfilename || ''))
+        .filter(Boolean)
+      : [];
+    MODEL_FILES_CACHE.set(cacheKey, files);
+    return files;
+  } catch (metadataError) {
+    console.warn(`[SettingsPanel] Failed to fetch files for ${repoId}@${revision}`, metadataError);
     return [];
   }
 };
@@ -70,13 +98,19 @@ const getAvailableQuantModes = (
   files: string[],
   baseName: 'encoder-model' | 'decoder_joint-model',
 ): Array<'int8' | 'fp32' | 'fp16'> => {
-  const existing = new Set(files);
   const options = QUANTIZATION_ORDER.filter((quant) => {
-    if (quant === 'fp32') return existing.has(`${baseName}.onnx`);
-    if (quant === 'fp16') return existing.has(`${baseName}.fp16.onnx`);
-    return existing.has(`${baseName}.int8.onnx`);
+    if (quant === 'fp32') return hasFile(files, `${baseName}.onnx`);
+    if (quant === 'fp16') return hasFile(files, `${baseName}.fp16.onnx`);
+    return hasFile(files, `${baseName}.int8.onnx`);
   });
   return options.length > 0 ? options : ['fp32'];
+};
+
+const pickPreferredRevision = (revisions: string[], currentRevision: string): string => {
+  if (revisions.includes(PREFERRED_FP16_REVISION)) return PREFERRED_FP16_REVISION;
+  if (revisions.includes(currentRevision)) return currentRevision;
+  if (revisions.includes(DEFAULT_MODEL_REVISION)) return DEFAULT_MODEL_REVISION;
+  return revisions[0] || DEFAULT_MODEL_REVISION;
 };
 
 const pickPreferredQuant = (
@@ -118,7 +152,6 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
   const isV4 = () => appStore.transcriptionMode() === 'v4-utterance';
   const isV3 = () => appStore.transcriptionMode() === 'v3-streaming';
   const maxWasmThreads = () => getMaxHardwareThreads();
-  const [modelRevisions, setModelRevisions] = createSignal<string[]>(DEFAULT_MODEL_REVISIONS);
   const [encoderQuantOptions, setEncoderQuantOptions] = createSignal<Array<'int8' | 'fp32' | 'fp16'>>(['fp16', 'int8', 'fp32']);
   const [decoderQuantOptions, setDecoderQuantOptions] = createSignal<Array<'int8' | 'fp32' | 'fp16'>>(['fp16', 'int8', 'fp32']);
 
@@ -131,21 +164,27 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
 
   createEffect(() => {
     const selectedModelId = appStore.selectedModelId();
-    const revision = appStore.modelRevision() || 'main';
+    const requestedRevision = appStore.modelRevision() || DEFAULT_MODEL_REVISION;
     const repoId = getModelRepoId(selectedModelId);
     let cancelled = false;
 
     void (async () => {
-      const [revisions, files] = await Promise.all([
-        fetchModelRevisions(repoId),
-        fetchModelFiles(repoId, revision),
-      ]);
+      const revisions = await fetchModelRevisions(repoId);
       if (cancelled) return;
-      setModelRevisions(revisions);
-      const currentRevision = appStore.modelRevision();
-      if (!revisions.includes(currentRevision)) {
-        appStore.setModelRevision(revisions[0] || 'main');
+
+      const resolvedRevision = pickPreferredRevision(revisions, requestedRevision);
+      if (resolvedRevision !== appStore.modelRevision()) {
+        appStore.setModelRevision(resolvedRevision);
       }
+
+      let files = await fetchModelFiles(repoId, resolvedRevision);
+      if (!files.length && resolvedRevision !== DEFAULT_MODEL_REVISION) {
+        files = await fetchModelFiles(repoId, DEFAULT_MODEL_REVISION);
+        if (files.length > 0 && appStore.modelRevision() !== DEFAULT_MODEL_REVISION) {
+          appStore.setModelRevision(DEFAULT_MODEL_REVISION);
+        }
+      }
+      if (cancelled) return;
 
       const encOptions = getAvailableQuantModes(files, 'encoder-model');
       const decOptions = getAvailableQuantModes(files, 'decoder_joint-model');
@@ -216,29 +255,6 @@ export const SettingsContent: Component<SettingsContentProps> = (props) => {
             {appStore.modelState() === 'ready' ? getModelDisplayName(appStore.selectedModelId()) : appStore.modelState()}
           </p>
           <div class="grid grid-cols-2 gap-x-4 gap-y-3 pt-1">
-            <div class="space-y-1 col-span-2">
-              <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Model branch</span>
-              <div class="flex items-center gap-2">
-                <select
-                  class="w-48 text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
-                  value={appStore.modelRevision()}
-                  onInput={(e) => appStore.setModelRevision((e.target as HTMLSelectElement).value)}
-                  disabled={appStore.modelState() === 'loading'}
-                >
-                  <For each={modelRevisions()}>
-                    {(revision) => <option value={revision}>{revision}</option>}
-                  </For>
-                </select>
-                <input
-                  type="text"
-                  class="flex-1 text-sm bg-transparent border-b border-[var(--color-earthy-sage)]/40 px-0 py-1.5 text-[var(--color-earthy-dark-brown)] focus:outline-none focus:border-[var(--color-earthy-muted-green)]"
-                  value={appStore.modelRevision()}
-                  onInput={(e) => appStore.setModelRevision((e.target as HTMLInputElement).value)}
-                  disabled={appStore.modelState() === 'loading'}
-                  placeholder="custom branch or tag"
-                />
-              </div>
-            </div>
             <div class="space-y-1">
               <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--color-earthy-soft-brown)]">Backend</span>
               <select

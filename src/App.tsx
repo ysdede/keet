@@ -233,12 +233,15 @@ const App: Component = () => {
   const persistedAudio = persistedSettings.audio;
   const persistedModel = persistedSettings.model;
   const persistedModelId = persistedModel?.selectedModelId;
+  const migratedModelId = persistedModelId === 'parakeet-tdt-0.6b-v3-fp16'
+    ? 'parakeet-tdt-0.6b-v3'
+    : persistedModelId;
   const persistedUi = persistedSettings.ui;
   const hasPersistedEncoderQuant = persistedModel?.encoderQuant !== undefined;
   const hasPersistedDecoderQuant = persistedModel?.decoderQuant !== undefined;
 
-  if (persistedModelId && MODELS.some((model) => model.id === persistedModelId)) {
-    appStore.setSelectedModelId(persistedModelId);
+  if (migratedModelId && MODELS.some((model) => model.id === migratedModelId)) {
+    appStore.setSelectedModelId(migratedModelId);
   }
   if (persistedModel?.backend !== undefined) {
     appStore.setModelBackendMode(persistedModel.backend);
