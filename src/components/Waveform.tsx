@@ -141,9 +141,6 @@ export const Waveform: Component<WaveformProps> = (props) => {
   );
 };
 
-/** Default number of bars used by compact spectrum-like waveform renderers. */
-export const SPECTRUM_BAR_COUNT = 128;
-
 /** Compact wrapper around `Waveform` with defaults for tight layouts. */
 export const CompactWaveform: Component<WaveformProps> = (props) => (
   <Waveform {...props} />
