@@ -134,7 +134,8 @@ export class AudioEngine implements IAudioEngine {
 
         // Initialize visualization summary (2000 points for 30s)
         // Note: Raw visualization buffer removed in favor of summary buffer (performance)
-        this.visualizationSummary = new Float32Array(this.VIS_SUMMARY_SIZE * 2);
+        // Using shadow buffer (double size) to enable linear reading without modulo
+        this.visualizationSummary = new Float32Array(this.VIS_SUMMARY_SIZE * 4);
         this.visualizationSummaryPosition = 0;
 
         console.log('[AudioEngine] Initialized with config:', this.config);
@@ -813,10 +814,15 @@ export class AudioEngine implements IAudioEngine {
                 if (v > max) max = v;
             }
 
-            // Write to circular summary
+            // Write to circular summary and shadow copy
             const targetIdx = this.visualizationSummaryPosition * 2;
             this.visualizationSummary[targetIdx] = min;
             this.visualizationSummary[targetIdx + 1] = max;
+
+            const shadowIdx = (this.visualizationSummaryPosition + this.VIS_SUMMARY_SIZE) * 2;
+            this.visualizationSummary[shadowIdx] = min;
+            this.visualizationSummary[shadowIdx + 1] = max;
+
             this.visualizationSummaryPosition = (this.visualizationSummaryPosition + 1) % this.VIS_SUMMARY_SIZE;
         }
     }
@@ -852,7 +858,8 @@ export class AudioEngine implements IAudioEngine {
             let first = true;
 
             for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
-                const idx = ((this.visualizationSummaryPosition + s) % this.VIS_SUMMARY_SIZE) * 2;
+                // Use shadow buffer property to read linearly without modulo
+                const idx = (this.visualizationSummaryPosition + s) * 2;
                 const vMin = this.visualizationSummary[idx];
                 const vMax = this.visualizationSummary[idx + 1];
 
