@@ -8,7 +8,7 @@
  * Ported from legacy UI project/src/utils/SentenceBoundaryDetector.js to TypeScript.
  */
 
-import winkNLP from 'wink-nlp';
+import winkNLP, { type WinkMethods } from 'wink-nlp';
 import model from 'wink-eng-lite-web-model';
 
 /** A word object with text and timing information */
@@ -62,7 +62,7 @@ export interface SentenceBoundaryDetectorConfig {
 /** Detects sentence endings from ASR words using NLP with heuristic fallback. */
 export class SentenceBoundaryDetector {
     private config: SentenceBoundaryDetectorConfig;
-    private nlp: any | null = null;
+    private nlp: WinkMethods | null = null;
     private cache: Map<string, DetectedSentence[]> = new Map();
     private lastProcessedWordCount: number = 0;
     private lastSentenceEndings: SentenceEndingWord[] = [];

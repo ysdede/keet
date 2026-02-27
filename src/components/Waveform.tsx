@@ -1,15 +1,5 @@
 import { Component, onCleanup, onMount } from 'solid-js';
-
-interface WaveformProps {
-  /** Normalized audio level used by parent UI widgets. */
-  audioLevel: number;
-  /** Oscilloscope samples: Float32Array -1..1 from getByteTimeDomainData */
-  barLevels?: Float32Array;
-  /** Recording state used to throttle drawing when idle/backgrounded. */
-  isRecording: boolean;
-  /** Optional sample count hint for compact renderers. */
-  barCount?: number;
-}
+import type { WaveformProps } from '../types';
 
 /**
  * Oscilloscope-style waveform using AnalyserNode.getByteTimeDomainData (native, fast).
@@ -151,12 +141,9 @@ export const Waveform: Component<WaveformProps> = (props) => {
   );
 };
 
-/** Default number of bars used by compact spectrum-like waveform renderers. */
-export const SPECTRUM_BAR_COUNT = 128;
-
 /** Compact wrapper around `Waveform` with defaults for tight layouts. */
 export const CompactWaveform: Component<WaveformProps> = (props) => (
-  <Waveform {...props} barCount={props.barLevels?.length} />
+  <Waveform {...props} />
 );
 
 export default Waveform;

@@ -135,6 +135,8 @@ export interface TranscriptPanelProps {
 export interface WaveformProps {
   /** Normalized audio level in the range 0-1. */
   audioLevel: number;
+  /** Oscilloscope samples in the range -1..1. */
+  barLevels?: Float32Array;
   /** Whether recording is active. */
   isRecording: boolean;
 }

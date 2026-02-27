@@ -5,8 +5,8 @@
  * to prevent UI stuttering on the main thread.
  *
  * Supports both:
- * - v3 token-stream mode (LCSPTFAMerger, fixed-window)
- * - v4 utterance mode (UtteranceBasedMerger, cursor-based windowing)
+ * - pipeline v3 token-stream mode (LCSPTFAMerger, fixed-window)
+ * - pipeline v4 utterance mode (UtteranceBasedMerger, cursor-based windowing)
  */
 
 import { ParakeetModel, getParakeetModel } from 'parakeet.js';
