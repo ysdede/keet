@@ -518,6 +518,17 @@ export class AudioEngine implements IAudioEngine {
 
     dispose(): void {
         this.stop();
+        if (this.workletNode) {
+            this.workletNode.port.onmessage = null;
+            this.workletNode.onprocessorerror = null;
+            try {
+                this.workletNode.port.close();
+            } catch {
+                // Ignore if port is already closed/disconnected.
+            }
+            this.workletNode.disconnect();
+        }
+        this.sourceNode?.disconnect();
         this.disposeAnalyser();
         this.mediaStream?.getTracks().forEach(track => track.stop());
         this.audioContext?.close();
