@@ -442,33 +442,44 @@ export class AudioSegmentProcessor {
 
     /**
      * Update internal statistics.
+     * Performance optimization: Mutates this.state.currentStats in place to avoid allocations per chunk.
      */
     private updateStats(): void {
-        const stats: CurrentStats = {
-            silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
-            speech: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
-            noiseFloor: this.state.noiseFloor,
-            snr: this.state.recentChunks.length > 0
-                ? this.state.recentChunks[this.state.recentChunks.length - 1].snr
-                : 0,
-            snrThreshold: this.options.snrThreshold,
-            minSnrThreshold: this.options.minSnrThreshold,
-            energyRiseThreshold: this.options.energyRiseThreshold
-        };
+        const stats = this.state.currentStats;
 
+        // Update primitives directly
+        stats.noiseFloor = this.state.noiseFloor;
+        stats.snr = this.state.recentChunks.length > 0
+            ? this.state.recentChunks[this.state.recentChunks.length - 1].snr
+            : 0;
+        stats.snrThreshold = this.options.snrThreshold;
+        stats.minSnrThreshold = this.options.minSnrThreshold;
+        stats.energyRiseThreshold = this.options.energyRiseThreshold;
+
+        // Update silence stats
         if (this.state.silenceStats.length > 0) {
-            stats.silence = this.summarizeSegmentStats(this.state.silenceStats);
+            this.summarizeSegmentStats(this.state.silenceStats, stats.silence);
+        } else {
+            this.resetStatsSummary(stats.silence);
         }
 
+        // Update speech stats
         if (this.state.cachedSpeechSummary !== null) {
-            stats.speech = { ...this.state.cachedSpeechSummary };
+            // Use cached summary to update current stats
+            Object.assign(stats.speech, this.state.cachedSpeechSummary);
         } else if (this.state.speechStats.length > 0) {
-            const speechSummary = this.summarizeSegmentStats(this.state.speechStats);
-            this.state.cachedSpeechSummary = speechSummary;
-            stats.speech = { ...speechSummary };
+            // Recalculate and update cache
+            this.summarizeSegmentStats(this.state.speechStats, stats.speech);
+            this.state.cachedSpeechSummary = { ...stats.speech };
+        } else {
+            this.resetStatsSummary(stats.speech);
         }
+    }
 
-        this.state.currentStats = stats;
+    private resetStatsSummary(target: StatsSummary): void {
+        target.avgDuration = 0;
+        target.avgEnergy = 0;
+        target.avgEnergyIntegral = 0;
     }
 
     private recordSpeechStat(stat: SegmentStats): void {
@@ -479,26 +490,35 @@ export class AudioSegmentProcessor {
         this.state.cachedSpeechSummary = null;
     }
 
-    private summarizeSegmentStats(segments: SegmentStats[]): StatsSummary {
-        if (segments.length === 0) {
-            return { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 };
-        }
-
+    private summarizeSegmentStats(segments: SegmentStats[], target?: StatsSummary): StatsSummary {
         let durationSum = 0;
         let energySum = 0;
         let energyIntegralSum = 0;
 
-        for (const segment of segments) {
-            durationSum += segment.duration;
-            energySum += segment.avgEnergy;
-            energyIntegralSum += segment.energyIntegral;
+        const count = segments.length;
+        if (count > 0) {
+            for (const segment of segments) {
+                durationSum += segment.duration;
+                energySum += segment.avgEnergy;
+                energyIntegralSum += segment.energyIntegral;
+            }
         }
 
-        const count = segments.length;
+        const avgDuration = count > 0 ? durationSum / count : 0;
+        const avgEnergy = count > 0 ? energySum / count : 0;
+        const avgEnergyIntegral = count > 0 ? energyIntegralSum / count : 0;
+
+        if (target) {
+            target.avgDuration = avgDuration;
+            target.avgEnergy = avgEnergy;
+            target.avgEnergyIntegral = avgEnergyIntegral;
+            return target;
+        }
+
         return {
-            avgDuration: durationSum / count,
-            avgEnergy: energySum / count,
-            avgEnergyIntegral: energyIntegralSum / count
+            avgDuration,
+            avgEnergy,
+            avgEnergyIntegral
         };
     }
 
