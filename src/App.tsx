@@ -310,6 +310,11 @@ const App: Component = () => {
   let onBeforeUnload: (() => void) | undefined;
   let onPageHide: (() => void) | undefined;
   let onVisibilityChange: (() => void) | undefined;
+  let warmupIdleHandle: number | null = null;
+  let warmupTimeoutHandle: number | undefined;
+  let removeWarmupGestureListeners: (() => void) | null = null;
+  let warmupCancelled = false;
+  let warmupStarted = false;
 
   const isRecording = () => appStore.recordingState() === 'recording';
   const isModelReady = () => appStore.modelState() === 'ready';
@@ -478,6 +483,77 @@ const App: Component = () => {
     saveSettingsToStorage(getSettingsSnapshot());
   };
 
+  const cancelWasmWarmupSchedule = () => {
+    if (warmupIdleHandle !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+      (window as any).cancelIdleCallback(warmupIdleHandle);
+      warmupIdleHandle = null;
+    }
+    if (warmupTimeoutHandle !== undefined) {
+      clearTimeout(warmupTimeoutHandle);
+      warmupTimeoutHandle = undefined;
+    }
+  };
+
+  const runWasmWarmup = async () => {
+    if (warmupCancelled || warmupStarted) return;
+    if (isRecording() || appStore.modelState() === 'loading') {
+      scheduleWasmWarmup();
+      return;
+    }
+
+    warmupStarted = true;
+    const warmupClient = new TenVADWorkerClient();
+    try {
+      const wasmPath = `${import.meta.env.BASE_URL}wasm/`;
+      await warmupClient.init({ hopSize: 256, threshold: 0.5, wasmPath });
+      await warmupClient.reset();
+      console.debug('[perf] TEN-VAD wasm warm-up complete');
+    } catch (err) {
+      console.debug('[perf] TEN-VAD wasm warm-up skipped:', err);
+    } finally {
+      warmupClient.dispose();
+    }
+  };
+
+  const scheduleWasmWarmup = () => {
+    cancelWasmWarmupSchedule();
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      warmupIdleHandle = (window as any).requestIdleCallback(() => {
+        warmupIdleHandle = null;
+        void runWasmWarmup();
+      }, { timeout: 2500 });
+      return;
+    }
+    warmupTimeoutHandle = window.setTimeout(() => {
+      warmupTimeoutHandle = undefined;
+      void runWasmWarmup();
+    }, 1200);
+  };
+
+  const armWasmWarmupOnFirstGesture = () => {
+    if (typeof window === 'undefined') return;
+    let armed = true;
+    const onGesture = () => {
+      if (!armed) return;
+      armed = false;
+      scheduleWasmWarmup();
+      removeWarmupGestureListeners?.();
+      removeWarmupGestureListeners = null;
+    };
+
+    const addOpts: AddEventListenerOptions = { passive: true };
+    document.addEventListener('pointerdown', onGesture, addOpts);
+    document.addEventListener('touchstart', onGesture, addOpts);
+    document.addEventListener('keydown', onGesture);
+
+    removeWarmupGestureListeners = () => {
+      armed = false;
+      document.removeEventListener('pointerdown', onGesture);
+      document.removeEventListener('touchstart', onGesture);
+      document.removeEventListener('keydown', onGesture);
+    };
+  };
+
   createEffect(() => {
     if (!settingsReadyForPersist()) return;
     const snapshot = getSettingsSnapshot();
@@ -534,6 +610,7 @@ const App: Component = () => {
       setSettingsReadyForPersist(true);
     });
     setWorkerReady(true);
+    armWasmWarmupOnFirstGesture();
   });
 
   // No longer auto-show blocking model overlay; model selection is in the settings panel.
@@ -545,6 +622,10 @@ const App: Component = () => {
     if (onPageHide) window.removeEventListener('pagehide', onPageHide);
     if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
     clearTimeout(panelHoverCloseTimeout);
+    warmupCancelled = true;
+    cancelWasmWarmupSchedule();
+    removeWarmupGestureListeners?.();
+    removeWarmupGestureListeners = null;
     flushSettingsSave();
     visualizationUnsubscribe?.();
     cleanupV4Pipeline();

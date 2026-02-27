@@ -18,9 +18,10 @@ export const Waveform: Component<WaveformProps> = (props) => {
   let canvasRef: HTMLCanvasElement | undefined;
   let ctx: CanvasRenderingContext2D | null = null;
   let animationId: number | undefined;
+  let timeoutId: number | undefined;
   let resizeObserver: ResizeObserver | null = null;
+  let themeObserver: MutationObserver | null = null;
   let lastDrawTs = 0;
-  let lastStyleRefreshTs = 0;
   let bgColor = '#faf8f5';
   let strokeColor = '#14b8a6';
   const FOREGROUND_FRAME_MS = 33;
@@ -46,9 +47,28 @@ export const Waveform: Component<WaveformProps> = (props) => {
     strokeColor = computed.getPropertyValue('--color-primary').trim() || '#14b8a6';
   };
 
+  const scheduleNextFrame = (hidden: boolean, recording: boolean) => {
+    if (!hidden && recording) {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
+      animationId = requestAnimationFrame(animate);
+      return;
+    }
+    if (animationId !== undefined) {
+      cancelAnimationFrame(animationId);
+      animationId = undefined;
+    }
+    const nextDelay = hidden ? HIDDEN_FRAME_MS : IDLE_FRAME_MS;
+    timeoutId = window.setTimeout(() => animate(performance.now()), nextDelay);
+  };
+
   const animate = (ts: number) => {
-    animationId = requestAnimationFrame(animate);
-    if (!ctx || !canvasRef) return;
+    if (!ctx || !canvasRef) {
+      scheduleNextFrame(false, props.isRecording);
+      return;
+    }
 
     const hidden = typeof document !== 'undefined' && document.visibilityState !== 'visible';
     const minFrameInterval = hidden
@@ -56,17 +76,18 @@ export const Waveform: Component<WaveformProps> = (props) => {
       : props.isRecording
         ? FOREGROUND_FRAME_MS
         : IDLE_FRAME_MS;
-    if (ts - lastDrawTs < minFrameInterval) return;
-    lastDrawTs = ts;
-
-    if (ts - lastStyleRefreshTs > 1000) {
-      refreshThemeColors();
-      lastStyleRefreshTs = ts;
+    if (ts - lastDrawTs < minFrameInterval) {
+      scheduleNextFrame(hidden, props.isRecording);
+      return;
     }
+    lastDrawTs = ts;
 
     const w = canvasRef.width;
     const h = canvasRef.height;
-    if (w === 0 || h === 0) return;
+    if (w === 0 || h === 0) {
+      scheduleNextFrame(hidden, props.isRecording);
+      return;
+    }
 
     const samples = props.barLevels;
     const n = samples && samples.length > 0 ? samples.length : 0;
@@ -89,6 +110,8 @@ export const Waveform: Component<WaveformProps> = (props) => {
       }
       ctx.stroke();
     }
+
+    scheduleNextFrame(hidden, props.isRecording);
   };
 
   onMount(() => {
@@ -100,14 +123,25 @@ export const Waveform: Component<WaveformProps> = (props) => {
         resizeObserver.observe(canvasRef.parentElement ?? canvasRef);
       }
     }
-    animationId = requestAnimationFrame(animate);
+    if (typeof document !== 'undefined') {
+      themeObserver = new MutationObserver(() => refreshThemeColors());
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    }
+    animate(performance.now());
   });
 
   onCleanup(() => {
     if (animationId !== undefined) {
       cancelAnimationFrame(animationId);
     }
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
     resizeObserver?.disconnect();
+    themeObserver?.disconnect();
   });
 
   return (
