@@ -88,6 +88,30 @@ describe('AudioSegmentProcessor', () => {
         expect(state.noiseFloor).toBeGreaterThan(0);
     });
 
+    it('should mark speech start at or before the first speech frame after silence', () => {
+        const processor = createProcessor({
+            energyThreshold: 0.01,
+            snrThreshold: 0,
+            minSnrThreshold: 0,
+        });
+        const silenceChunk = new Float32Array(CHUNK_SIZE).fill(0);
+        const speechChunk = new Float32Array(CHUNK_SIZE).fill(SPEECH_ENERGY);
+
+        // Stabilize noise floor and history with silence first.
+        for (let i = 0; i < 10; i++) {
+            processor.processAudioData(silenceChunk, (i + 1) * CHUNK_DURATION_SEC, SILENCE_ENERGY);
+        }
+
+        const speechStartTime = 11 * CHUNK_DURATION_SEC;
+        processor.processAudioData(speechChunk, speechStartTime, SPEECH_ENERGY);
+
+        const state = processor.getStateInfo();
+        expect(state.inSpeech).toBe(true);
+        expect(state.speechStartTime).not.toBeNull();
+        // Lookback can move start earlier, but never later than detected speech frame.
+        expect(state.speechStartTime!).toBeLessThanOrEqual(speechStartTime);
+    });
+
     it('should end speech after configured silence threshold', () => {
         const silenceThresholdSec = 0.16;
         const processor = createProcessor({

@@ -312,9 +312,10 @@ self.onmessage = async (e: MessageEvent) => {
             default:
                 console.warn('[TranscriptionWorker] Unknown message type:', type);
         }
-    } catch (err: any) {
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         console.error('[TranscriptionWorker] Error:', err);
-        postMessage({ type: 'ERROR', payload: err.message, id });
+        postMessage({ type: 'ERROR', payload: message, id });
     }
 };
 
