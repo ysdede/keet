@@ -103,4 +103,10 @@ describe('TranscriptionWorkerClient', () => {
         const file = new File([''], 'model.onnx');
         await expect(client.initLocalModel([file])).resolves.toBeUndefined();
     });
+
+    it('should reject pending requests when disposed', async () => {
+        const pending = client.initService({ sampleRate: 16000 });
+        client.dispose();
+        await expect(pending).rejects.toThrow('TranscriptionWorkerClient disposed');
+    });
 });

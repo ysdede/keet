@@ -306,7 +306,12 @@ export class TranscriptionWorkerClient {
     }
 
     dispose() {
+        this.worker.onmessage = null;
+        this.worker.onerror = null;
         this.worker.terminate();
+        for (const [, pending] of this.pendingPromises) {
+            pending.reject(new Error('TranscriptionWorkerClient disposed'));
+        }
         this.pendingPromises.clear();
     }
 }

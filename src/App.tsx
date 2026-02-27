@@ -550,6 +550,9 @@ const App: Component = () => {
     cleanupV4Pipeline();
     melClient?.dispose();
     workerClient?.dispose();
+    audioEngine?.dispose();
+    audioEngine = null;
+    setAudioEngineSignal(null);
   });
 
   // ---- v4 pipeline tick: periodic window building + inference ----

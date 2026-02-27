@@ -52,11 +52,28 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
   const showTimeMarkers = () => props.showTimeMarkers ?? true;
   const visible = () => props.visible ?? true;
 
-  let animationFrameId: number | undefined;
+  let rafId: number | undefined;
+  let timeoutId: number | undefined;
   let resizeObserver: ResizeObserver | null = null;
   let needsRedraw = true;
   let lastDrawTime = 0;
   const DRAW_INTERVAL_MS = 33;
+
+  const scheduleRaf = () => {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
+    rafId = requestAnimationFrame(drawLoop);
+  };
+
+  const scheduleTimeout = () => {
+    if (rafId !== undefined) {
+      cancelAnimationFrame(rafId);
+      rafId = undefined;
+    }
+    timeoutId = window.setTimeout(drawLoop, 100);
+  };
 
   // Draw function
   const draw = () => {
@@ -382,9 +399,9 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
   const drawLoop = () => {
     if (!ctx || !canvasRef || canvasRef.width === 0) {
       if (visible()) {
-        animationFrameId = requestAnimationFrame(drawLoop);
+        scheduleRaf();
       } else {
-        animationFrameId = window.setTimeout(drawLoop, 100) as unknown as number;
+        scheduleTimeout();
       }
       return;
     }
@@ -396,10 +413,10 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
         needsRedraw = false;
         draw();
       }
-      animationFrameId = requestAnimationFrame(drawLoop);
+      scheduleRaf();
     } else {
       // When not visible, check less frequently to save CPU
-      animationFrameId = window.setTimeout(drawLoop, 100) as unknown as number;
+      scheduleTimeout();
     }
   };
 
@@ -487,13 +504,21 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
     }
 
     // Start animation loop
-    animationFrameId = requestAnimationFrame(drawLoop);
+    if (visible()) {
+      scheduleRaf();
+    } else {
+      scheduleTimeout();
+    }
   });
 
   onCleanup(() => {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId);
-      clearTimeout(animationFrameId);
+    if (rafId !== undefined) {
+      cancelAnimationFrame(rafId);
+      rafId = undefined;
+    }
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
     }
     if (resizeObserver) {
       resizeObserver.disconnect();
