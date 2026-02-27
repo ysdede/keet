@@ -624,34 +624,35 @@ const App: Component = () => {
       } catch (_) { /* ignore state query errors */ }
     }
 
-    if (!hasSpeech) {
-      // Check for silence-based flush using BufferWorker summary.
-      // Tail silence is always computed from energyVad for parity.
-      const silenceDuration = vadSummary.silenceTailDurationSec;
-      if (silenceDuration >= appStore.v4SilenceFlushSec()) {
-        // Flush pending sentence via timeout finalization
-        try {
-          const flushResult = await workerClient.v4FinalizeTimeout();
-          if (flushResult) {
-            batch(() => {
-              appStore.setMatureText(flushResult.matureText);
-              appStore.setImmatureText(flushResult.immatureText);
-              appStore.setMatureCursorTime(flushResult.matureCursorTime);
-              appStore.setTranscript(flushResult.fullText);
-              appStore.appendV4SentenceEntries(flushResult.matureSentences);
-              appStore.setV4MergerStats({
-                sentencesFinalized: flushResult.matureSentenceCount,
-                cursorUpdates: flushResult.stats?.matureCursorUpdates || 0,
-                utterancesProcessed: flushResult.stats?.utterancesProcessed || 0,
-              });
+    // Check for silence-based flush regardless of current hasSpeech state.
+    // This prevents stuck pending text when hasSpeech remains true due to historical context.
+    const silenceDuration = vadSummary.silenceTailDurationSec;
+    const hasPendingText = appStore.immatureText().trim().length > 0;
+    if (silenceDuration >= appStore.v4SilenceFlushSec() && hasPendingText) {
+      try {
+        const flushResult = await workerClient.v4FinalizeTimeout();
+        if (flushResult) {
+          batch(() => {
+            appStore.setMatureText(flushResult.matureText);
+            appStore.setImmatureText(flushResult.immatureText);
+            appStore.setMatureCursorTime(flushResult.matureCursorTime);
+            appStore.setTranscript(flushResult.fullText);
+            appStore.appendV4SentenceEntries(flushResult.matureSentences);
+            appStore.setV4MergerStats({
+              sentencesFinalized: flushResult.matureSentenceCount,
+              cursorUpdates: flushResult.stats?.matureCursorUpdates || 0,
+              utterancesProcessed: flushResult.stats?.utterancesProcessed || 0,
             });
-            // Advance window builder cursor
-            windowBuilder.advanceMatureCursorByTime(flushResult.matureCursorTime);
-          }
-        } catch (err) {
-          console.error('[v4Tick] Flush error:', err);
+          });
+          // Advance window builder cursor
+          windowBuilder.advanceMatureCursorByTime(flushResult.matureCursorTime);
         }
+      } catch (err) {
+        console.error('[v4Tick] Flush error:', err);
       }
+    }
+
+    if (!hasSpeech) {
       return;
     }
 
