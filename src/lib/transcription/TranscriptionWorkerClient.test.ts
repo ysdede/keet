@@ -5,10 +5,14 @@ import { TranscriptionWorkerClient } from './TranscriptionWorkerClient';
 class MockWorker {
     onmessage: ((this: Worker, ev: MessageEvent) => any) | null = null;
     onerror: ((this: Worker, ev: ErrorEvent) => any) | null = null;
+    static throwOnPostMessage = false;
 
     constructor(stringUrl: string | URL, options?: WorkerOptions) {}
 
     postMessage(data: any) {
+        if (MockWorker.throwOnPostMessage) {
+            throw new Error('postMessage failed');
+        }
         // Simulate async response
         setTimeout(() => {
             if (this.onmessage) {
@@ -67,6 +71,7 @@ describe('TranscriptionWorkerClient', () => {
     });
 
     beforeEach(() => {
+        MockWorker.throwOnPostMessage = false;
         client = new TranscriptionWorkerClient();
     });
 
@@ -108,5 +113,16 @@ describe('TranscriptionWorkerClient', () => {
         const pending = client.initService({ sampleRate: 16000 });
         client.dispose();
         await expect(pending).rejects.toThrow('TranscriptionWorkerClient disposed');
+    });
+
+    it('should reject requests after disposal', async () => {
+        client.dispose();
+        await expect(client.initService({ sampleRate: 16000 })).rejects.toThrow('TranscriptionWorkerClient disposed');
+    });
+
+    it('should reject and cleanup pending map when postMessage throws', async () => {
+        MockWorker.throwOnPostMessage = true;
+        await expect(client.initService({ sampleRate: 16000 })).rejects.toThrow('postMessage failed');
+        expect((client as any).pendingPromises.size).toBe(0);
     });
 });
