@@ -21,8 +21,6 @@ interface SidebarProps {
   selectedDeviceId: string;
   /** Updates the selected microphone device. */
   onDeviceSelect: (id: string) => void;
-  /** Current normalized input level (0-1). */
-  audioLevel: number;
 }
 
 /** Left rail with recording, model, and device actions. */
