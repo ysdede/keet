@@ -75,8 +75,12 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
 
     // State for last fetch to throttle spectrogram updates
     let lastSpecFetchTime = 0;
-    const SPEC_FETCH_INTERVAL = 100; // Update spectrogram every 100ms (10fps)
-    const DRAW_INTERVAL_MS = 33; // Throttle full redraw to ~30fps
+    const DRAW_INTERVAL_FOREGROUND_MS = 33;
+    const DRAW_INTERVAL_IDLE_MS = 100;
+    const DRAW_INTERVAL_HIDDEN_MS = 220;
+    const SPEC_FETCH_INTERVAL_FOREGROUND_MS = 100;
+    const SPEC_FETCH_INTERVAL_IDLE_MS = 250;
+    const SPEC_FETCH_INTERVAL_HIDDEN_MS = 700;
     let lastDrawTime = 0;
 
     // --- Cached layout dimensions (updated via ResizeObserver, NOT per-frame) ---
@@ -195,7 +199,14 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
             return;
         }
 
-        if (now - lastDrawTime < DRAW_INTERVAL_MS) {
+        const hidden = typeof document !== 'undefined' && document.visibilityState !== 'visible';
+        const recording = appStore.recordingState() === 'recording';
+        const drawInterval = hidden
+            ? DRAW_INTERVAL_HIDDEN_MS
+            : recording
+                ? DRAW_INTERVAL_FOREGROUND_MS
+                : DRAW_INTERVAL_IDLE_MS;
+        if (now - lastDrawTime < drawInterval) {
             animationFrameId = requestAnimationFrame(loop);
             return;
         }
@@ -234,7 +245,12 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
 
         // 1. Spectrogram (async fetch with stored alignment)
         if (props.melClient && specCtx && specCanvas) {
-            if (now - lastSpecFetchTime > SPEC_FETCH_INTERVAL) {
+            const specFetchInterval = hidden
+                ? SPEC_FETCH_INTERVAL_HIDDEN_MS
+                : recording
+                    ? SPEC_FETCH_INTERVAL_FOREGROUND_MS
+                    : SPEC_FETCH_INTERVAL_IDLE_MS;
+            if (now - lastSpecFetchTime > specFetchInterval) {
                 lastSpecFetchTime = now;
 
                 const fetchStartSample = Math.round(startTime * sampleRate);
