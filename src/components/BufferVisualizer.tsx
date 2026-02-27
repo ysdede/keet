@@ -32,7 +32,8 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
   // State
   const [isDarkSignal, setIsDarkSignal] = createSignal(false);
   const [canvasWidth, setCanvasWidth] = createSignal(0);
-  const [waveformData, setWaveformData] = createSignal<Float32Array>(new Float32Array(0));
+  // Use { equals: false } because we reuse the same buffer reference for performance
+  const [waveformData, setWaveformData] = createSignal<Float32Array>(new Float32Array(0), { equals: false });
   const [metrics, setMetrics] = createSignal<AudioMetrics>({
     currentEnergy: 0,
     averageEnergy: 0,
@@ -435,7 +436,9 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
       // Subscribe to updates
       const sub = engine.onVisualizationUpdate((data, newMetrics, endTime) => {
         if (visible()) {
-          setWaveformData(new Float32Array(data));
+          // Optimization: Reuse shared buffer from AudioEngine to avoid GC.
+          // The buffer content is mutable and updated in place by the engine.
+          setWaveformData(data);
           setMetrics(newMetrics);
           setBufferEndTime(endTime);
 
