@@ -70,7 +70,7 @@ export class ModelManager {
    * Check if model is already cached (partial check)
    */
   async checkCache(): Promise<boolean> {
-    // In v2.0 we rely on parakeet.js/IndexedDB cache, but we can do a quick check
+    // We rely on parakeet.js/IndexedDB cache for full cache checks; this is a quick check.
     return this._isCached;
   }
 
@@ -276,8 +276,7 @@ export class ModelManager {
       });
 
       this._setProgress({ stage: 'import', progress: 20, message: 'Initialising parakeet.js...' });
-      const { ParakeetModel } = await import(
-        'parakeet.js');
+      const { ParakeetModel } = await import('parakeet.js');
 
       this._setProgress({ stage: 'compile', progress: 40, message: 'Compiling local model...' });
 
