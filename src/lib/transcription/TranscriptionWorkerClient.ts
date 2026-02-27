@@ -100,6 +100,7 @@ export interface WorkerMessageMap {
     V4_RESET: { payload: void; response: void };
 }
 export class TranscriptionWorkerClient {
+    private static readonly DISPOSED_ERROR_MESSAGE = 'TranscriptionWorkerClient disposed';
     private worker: Worker;
     private messageId = 0;
     private pendingPromises: Map<number, { resolve: Function; reject: Function }> = new Map();
@@ -166,13 +167,10 @@ export class TranscriptionWorkerClient {
         payload?: WorkerMessageMap[T]['payload'],
         transfer?: Transferable[]
     ): Promise<WorkerMessageMap[T]['response']> {
-        if (this.disposed) {
-            return Promise.reject(new Error('TranscriptionWorkerClient disposed'));
-        }
         const id = this.messageId++;
         return new Promise((resolve, reject) => {
             if (this.disposed) {
-                reject(new Error('TranscriptionWorkerClient disposed'));
+                reject(this.disposedError());
                 return;
             }
             this.pendingPromises.set(id, { resolve, reject });
@@ -192,6 +190,10 @@ export class TranscriptionWorkerClient {
     private normalizeCpuThreads(cpuThreads?: number): number | undefined {
         if (!Number.isFinite(cpuThreads)) return undefined;
         return Math.max(1, Math.floor(cpuThreads as number));
+    }
+
+    private disposedError(): Error {
+        return new Error(TranscriptionWorkerClient.DISPOSED_ERROR_MESSAGE);
     }
 
     // API Methods
@@ -328,7 +330,7 @@ export class TranscriptionWorkerClient {
         this.pendingPromises.clear();
         for (const entry of pending) {
             // Reject pending callers so await chains don't hang after teardown.
-            entry.reject(new Error('TranscriptionWorkerClient disposed'));
+            entry.reject(this.disposedError());
         }
     }
 }
