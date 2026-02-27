@@ -21,10 +21,10 @@
   --font-story: "Crimson Pro", serif;
 
   /* Softer shadows for earthy theme */
-  --shadow-neu-flat: 4px 4px 10px rgba(183, 183, 164, 0.25), -4px -4px 10px rgba(255, 255, 255, 0.8);
-  --shadow-neu-pressed: inset 3px 3px 6px rgba(183, 183, 164, 0.2), inset -3px -3px 6px rgba(255, 255, 255, 0.6);
-  --shadow-neu-btn: 3px 3px 8px rgba(183, 183, 164, 0.2), -3px -3px 8px rgba(255, 255, 255, 0.7);
-  --shadow-neu-btn-hover: 2px 2px 5px rgba(183, 183, 164, 0.2), -2px -2px 5px rgba(255, 255, 255, 0.6);
+  --shadow-neu-flat: 4px 4px 10px rgb(183 183 164 / 25%), -4px -4px 10px rgb(255 255 255 / 80%);
+  --shadow-neu-pressed: inset 3px 3px 6px rgb(183 183 164 / 20%), inset -3px -3px 6px rgb(255 255 255 / 60%);
+  --shadow-neu-btn: 3px 3px 8px rgb(183 183 164 / 20%), -3px -3px 8px rgb(255 255 255 / 70%);
+  --shadow-neu-btn-hover: 2px 2px 5px rgb(183 183 164 / 20%), -2px -2px 5px rgb(255 255 255 / 60%);
 }
 
 /* Material Symbols - ensure they load and look sharp. */
@@ -221,7 +221,7 @@ pre,
   border-radius: 50%;
   background: var(--color-earthy-muted-green);
   border: 1px solid var(--color-earthy-dark-brown);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 15%);
   margin-top: -5px;
   cursor: pointer;
 }
@@ -239,7 +239,7 @@ pre,
   border-radius: 50%;
   background: var(--color-earthy-muted-green);
   border: 1px solid var(--color-earthy-dark-brown);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 15%);
   cursor: pointer;
 }
 
@@ -247,7 +247,7 @@ pre,
 .settings-panel-slide {
   transform: translateX(100%);
   transition: transform 0.3s ease-out;
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
+  box-shadow: -4px 0 24px rgb(0 0 0 / 8%);
 }
 .settings-panel-slide--open {
   transform: translateX(0);
