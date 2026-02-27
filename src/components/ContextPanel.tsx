@@ -11,7 +11,7 @@ interface ContextPanelProps {
   onLoadModel: () => void;
   /** Opens the developer/debug panel. */
   onOpenDebug: () => void;
-  /** Called when the selected input device changes. */
+  /** @internal Called by App when the selected input device changes. */
   onDeviceSelect?: (id: string) => void;
 }
 
