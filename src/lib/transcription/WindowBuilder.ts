@@ -59,6 +59,13 @@ export class WindowBuilder {
     private matureCursorFrame: number = 0;
     private firstSentenceReceived: boolean = false;
 
+    /**
+     * Create a window builder for cursor-aware transcription.
+     * @param ringBuffer Source audio ring buffer providing base/current frame offsets.
+     * @param vadBuffer Optional VAD buffer; when `null`, VAD boundary refinement is disabled.
+     * @param config Partial configuration that overrides built-in defaults.
+     * Duration fields are expressed in seconds.
+     */
     constructor(
         ringBuffer: IRingBuffer,
         vadBuffer: VADRingBuffer | null = null,
@@ -84,6 +91,8 @@ export class WindowBuilder {
 
     /**
      * Record the end frame of a fully finalized sentence.
+     * @param frameIdx Finalized sentence end frame in global frame coordinates.
+     * @returns `void`
      */
     markSentenceEnd(frameIdx: number): void {
         this.sentenceEnds.push(frameIdx);
@@ -105,6 +114,8 @@ export class WindowBuilder {
     /**
      * Advance the mature cursor to a finalized sentence boundary.
      * The mature cursor marks where transcription is considered stable.
+     * @param frameIdx Cursor target frame in global frame coordinates.
+     * @returns `void`
      */
     advanceMatureCursor(frameIdx: number): void {
         if (frameIdx > this.matureCursorFrame) {
@@ -127,6 +138,8 @@ export class WindowBuilder {
     /**
      * Advance the mature cursor using a time value (seconds).
      * Converts to frame offset based on sample rate.
+     * @param timeSec Cursor target time in seconds.
+     * @returns `void`
      */
     advanceMatureCursorByTime(timeSec: number): void {
         const frameIdx = Math.round(timeSec * this.config.sampleRate);
@@ -135,6 +148,7 @@ export class WindowBuilder {
 
     /**
      * Get current mature cursor position in frames.
+     * @returns Current mature cursor frame.
      */
     getMatureCursorFrame(): number {
         return this.matureCursorFrame;
@@ -142,6 +156,7 @@ export class WindowBuilder {
 
     /**
      * Get current mature cursor position in seconds.
+     * @returns Current mature cursor time in seconds.
      */
     getMatureCursorTime(): number {
         return this.matureCursorFrame / this.config.sampleRate;
