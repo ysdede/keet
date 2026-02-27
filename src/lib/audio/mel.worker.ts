@@ -404,9 +404,10 @@ self.onmessage = (e: MessageEvent) => {
             default:
                 console.warn('[MelWorker] Unknown message type:', type);
         }
-    } catch (err: any) {
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         console.error('[MelWorker] Error:', err);
-        postMessage({ type: 'ERROR', payload: err.message, id });
+        postMessage({ type: 'ERROR', payload: message, id });
     }
 };
 
