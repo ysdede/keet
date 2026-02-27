@@ -103,6 +103,7 @@ export class TranscriptionWorkerClient {
     private worker: Worker;
     private messageId = 0;
     private pendingPromises: Map<number, { resolve: Function; reject: Function }> = new Map();
+    private disposed = false;
 
     // Callbacks for reactive updates
     public onModelProgress?: (p: ModelProgress) => void;
@@ -165,10 +166,22 @@ export class TranscriptionWorkerClient {
         payload?: WorkerMessageMap[T]['payload'],
         transfer?: Transferable[]
     ): Promise<WorkerMessageMap[T]['response']> {
+        if (this.disposed) {
+            return Promise.reject(new Error('TranscriptionWorkerClient disposed'));
+        }
         const id = this.messageId++;
         return new Promise((resolve, reject) => {
+            if (this.disposed) {
+                reject(new Error('TranscriptionWorkerClient disposed'));
+                return;
+            }
             this.pendingPromises.set(id, { resolve, reject });
-            this.worker.postMessage({ type, payload, id }, transfer || []);
+            try {
+                this.worker.postMessage({ type, payload, id }, transfer || []);
+            } catch (err) {
+                this.pendingPromises.delete(id);
+                reject(err instanceof Error ? err : new Error(String(err)));
+            }
         });
     }
 
@@ -306,13 +319,17 @@ export class TranscriptionWorkerClient {
     }
 
     dispose() {
+        if (this.disposed) return;
+        this.disposed = true;
         this.worker.onmessage = null;
         this.worker.onerror = null;
         this.worker.terminate();
-        for (const [, pending] of this.pendingPromises) {
-            pending.reject(new Error('TranscriptionWorkerClient disposed'));
-        }
+        const pending = Array.from(this.pendingPromises.values());
         this.pendingPromises.clear();
+        for (const entry of pending) {
+            // Reject pending callers so await chains don't hang after teardown.
+            entry.reject(new Error('TranscriptionWorkerClient disposed'));
+        }
     }
 }
 
