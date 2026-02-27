@@ -133,8 +133,8 @@ Mode behavior:
 
 | Package | Version |
 |---|---|
-| `keet` | `1.0.0` |
-| `parakeet.js` | `1.2.1` |
+| `keet` | `1.3.0` |
+| `parakeet.js` | `1.4.0` |
 | `onnxruntime-web` | `1.24.1` |
 
 ## Deployment
