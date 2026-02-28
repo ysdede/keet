@@ -270,9 +270,10 @@ export class UtteranceBasedMerger {
 
     private isDuplicateSentence(text: string, endTime: number): boolean {
         const norm = text.trim().toLowerCase();
-        for (const sentence of this.finalizedSentencesMeta) {
+        for (let i = this.finalizedSentencesMeta.length - 1; i >= 0; i--) {
+            const sentence = this.finalizedSentencesMeta[i];
             if (
-                sentence.text.trim().toLowerCase() === norm &&
+                sentence.normalizedText === norm &&
                 Math.abs(sentence.end_time - endTime) < this.config.dedupToleranceSec
             ) {
                 return true;
@@ -334,6 +335,7 @@ export class UtteranceBasedMerger {
             text,
             start_time: startTime,
             end_time: endTime,
+            normalizedText: text.trim().toLowerCase()
         });
         this.stats.matureSentencesCreated++;
 
