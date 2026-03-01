@@ -102,6 +102,12 @@ export interface AudioSegmentProcessorConfig {
 export class AudioSegmentProcessor {
     private options: AudioSegmentProcessorConfig;
     private state!: ProcessorState;
+    private cachedStateInfo = {
+        inSpeech: false,
+        noiseFloor: 0,
+        snr: 0,
+        speechStartTime: null as number | null
+    };
 
     constructor(options: Partial<AudioSegmentProcessorConfig> = {}) {
         const sampleRate = options.sampleRate ?? defaultAudioParams.sampleRate ?? 16000;
@@ -523,6 +529,14 @@ export class AudioSegmentProcessor {
     }
 
     /**
+     * Get internal stats without defensive copying.
+     * WARNING: Do not mutate the returned object.
+     */
+    getCurrentStats(): Readonly<CurrentStats> {
+        return this.state.currentStats;
+    }
+
+    /**
      * Get current statistics.
      */
     getStats(): CurrentStats {
@@ -536,14 +550,15 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current state info for debugging.
+     * WARNING: Returns a shared reference that mutates on subsequent calls.
+     * Do not retain or mutate the returned object.
      */
     getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
-        return {
-            inSpeech: this.state.inSpeech,
-            noiseFloor: this.state.noiseFloor,
-            snr: this.state.currentStats.snr,
-            speechStartTime: this.state.speechStartTime
-        };
+        this.cachedStateInfo.inSpeech = this.state.inSpeech;
+        this.cachedStateInfo.noiseFloor = this.state.noiseFloor;
+        this.cachedStateInfo.snr = this.state.currentStats.snr;
+        this.cachedStateInfo.speechStartTime = this.state.speechStartTime;
+        return this.cachedStateInfo;
     }
 
     /**
