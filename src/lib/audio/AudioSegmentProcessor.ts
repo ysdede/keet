@@ -102,6 +102,12 @@ export interface AudioSegmentProcessorConfig {
 export class AudioSegmentProcessor {
     private options: AudioSegmentProcessorConfig;
     private state!: ProcessorState;
+    private cachedStateInfo: { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } = {
+        inSpeech: false,
+        noiseFloor: 0.005,
+        snr: 0,
+        speechStartTime: null
+    };
 
     constructor(options: Partial<AudioSegmentProcessorConfig> = {}) {
         const sampleRate = options.sampleRate ?? defaultAudioParams.sampleRate ?? 16000;
@@ -535,15 +541,25 @@ export class AudioSegmentProcessor {
     }
 
     /**
+     * Get current statistics as a zero-allocation, read-only reference.
+     * WARNING: This returns a direct reference to internal state.
+     * Callers MUST read primitive values immediately and MUST NOT mutate the object.
+     */
+    getCurrentStats(): CurrentStats {
+        return this.state.currentStats;
+    }
+
+    /**
      * Get current state info for debugging.
+     * WARNING: Returns a shared, mutated class-level reference to eliminate GC overhead.
+     * Callers must read primitives immediately and not retain or mutate the returned object.
      */
     getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
-        return {
-            inSpeech: this.state.inSpeech,
-            noiseFloor: this.state.noiseFloor,
-            snr: this.state.currentStats.snr,
-            speechStartTime: this.state.speechStartTime
-        };
+        this.cachedStateInfo.inSpeech = this.state.inSpeech;
+        this.cachedStateInfo.noiseFloor = this.state.noiseFloor;
+        this.cachedStateInfo.snr = this.state.currentStats.snr;
+        this.cachedStateInfo.speechStartTime = this.state.speechStartTime;
+        return this.cachedStateInfo;
     }
 
     /**
