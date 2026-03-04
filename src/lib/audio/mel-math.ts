@@ -53,11 +53,19 @@ export function melToHz(mel: number): number {
         : mel * F_SP;
 }
 
+const _melFilterbankCache = new Map<number, Float32Array>();
+
 /**
  * Create mel filterbank matrix [nMels × N_FREQ_BINS] with Slaney normalization.
  * Returns a flat Float32Array in row-major order.
+ * Results are cached per nMels to avoid recomputation.
  */
 export function createMelFilterbank(nMels: number): Float32Array {
+    const cached = _melFilterbankCache.get(nMels);
+    if (cached) {
+        return new Float32Array(cached);
+    }
+
     const { SAMPLE_RATE, N_FREQ_BINS } = MEL_CONSTANTS;
     const fMax = SAMPLE_RATE / 2; // 8000
 
@@ -89,7 +97,9 @@ export function createMelFilterbank(nMels: number): Float32Array {
             fb[fbOffset + k] = Math.max(0, Math.min(downSlope, upSlope)) * enorm;
         }
     }
-    return fb;
+
+    _melFilterbankCache.set(nMels, fb);
+    return new Float32Array(fb);
 }
 
 /**
