@@ -435,9 +435,7 @@ const App: Component = () => {
 
   const getSettingsSnapshot = () => {
     const selectedDeviceId = appStore.selectedDeviceId();
-    const selectedDevice = appStore
-      .availableDevices()
-      .find((device) => device.deviceId === selectedDeviceId);
+    const selectedDevice = appStore.availableDevicesMap().get(selectedDeviceId);
 
     return {
       general: {

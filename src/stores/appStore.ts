@@ -79,6 +79,13 @@ export function createAppStore() {
   const [recordingState, setRecordingState] = createSignal<RecordingState>('idle');
   const [sessionDuration, setSessionDuration] = createSignal(0);
   const [availableDevices, setAvailableDevices] = createSignal<MediaDeviceInfo[]>([]);
+  const availableDevicesMap = createMemo(() => {
+    const map = new Map<string, MediaDeviceInfo>();
+    for (const device of availableDevices()) {
+      map.set(device.deviceId, device);
+    }
+    return map;
+  });
   const [selectedDeviceId, setSelectedDeviceId] = createSignal('');
 
   let timerInterval: number | undefined;
@@ -315,6 +322,7 @@ export function createAppStore() {
     // State (readonly)
     recordingState,
     availableDevices,
+    availableDevicesMap,
     selectedDeviceId,
     sessionDuration,
     modelState,
