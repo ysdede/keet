@@ -524,6 +524,7 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current statistics.
+     * Returns a defensive copy to prevent external mutation of internal state.
      */
     getStats(): CurrentStats {
         const stats = this.state.currentStats;
@@ -534,16 +535,25 @@ export class AudioSegmentProcessor {
         };
     }
 
+    // Cached state info object to eliminate allocations in getStateInfo()
+    private cachedStateInfo = {
+        inSpeech: false,
+        noiseFloor: 0,
+        snr: 0,
+        speechStartTime: null as number | null
+    };
+
     /**
      * Get current state info for debugging.
+     * Returns a shared, mutated class-level reference to eliminate GC overhead.
+     * Callers must read primitives immediately and not retain or mutate the returned object.
      */
     getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
-        return {
-            inSpeech: this.state.inSpeech,
-            noiseFloor: this.state.noiseFloor,
-            snr: this.state.currentStats.snr,
-            speechStartTime: this.state.speechStartTime
-        };
+        this.cachedStateInfo.inSpeech = this.state.inSpeech;
+        this.cachedStateInfo.noiseFloor = this.state.noiseFloor;
+        this.cachedStateInfo.snr = this.state.currentStats.snr;
+        this.cachedStateInfo.speechStartTime = this.state.speechStartTime;
+        return this.cachedStateInfo;
     }
 
     /**
