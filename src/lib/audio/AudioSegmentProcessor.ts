@@ -103,6 +103,14 @@ export class AudioSegmentProcessor {
     private options: AudioSegmentProcessorConfig;
     private state!: ProcessorState;
 
+    // Cache to prevent allocation during frequent polling
+    private cachedStateInfo: { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } = {
+        inSpeech: false,
+        noiseFloor: 0,
+        snr: 0,
+        speechStartTime: null
+    };
+
     constructor(options: Partial<AudioSegmentProcessorConfig> = {}) {
         const sampleRate = options.sampleRate ?? defaultAudioParams.sampleRate ?? 16000;
 
@@ -536,14 +544,14 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current state info for debugging.
+     * Performance optimization: Mutates and returns this.cachedStateInfo to avoid allocations.
      */
     getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
-        return {
-            inSpeech: this.state.inSpeech,
-            noiseFloor: this.state.noiseFloor,
-            snr: this.state.currentStats.snr,
-            speechStartTime: this.state.speechStartTime
-        };
+        this.cachedStateInfo.inSpeech = this.state.inSpeech;
+        this.cachedStateInfo.noiseFloor = this.state.noiseFloor;
+        this.cachedStateInfo.snr = this.state.currentStats.snr;
+        this.cachedStateInfo.speechStartTime = this.state.speechStartTime;
+        return this.cachedStateInfo;
     }
 
     /**
