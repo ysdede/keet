@@ -103,6 +103,8 @@ export class AudioSegmentProcessor {
     private options: AudioSegmentProcessorConfig;
     private state!: ProcessorState;
 
+
+
     constructor(options: Partial<AudioSegmentProcessorConfig> = {}) {
         const sampleRate = options.sampleRate ?? defaultAudioParams.sampleRate ?? 16000;
 
@@ -536,14 +538,15 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current state info for debugging.
+     * Performance optimization: Accepts an optional out object to eliminate GC overhead in high-frequency loops.
      */
-    getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
-        return {
-            inSpeech: this.state.inSpeech,
-            noiseFloor: this.state.noiseFloor,
-            snr: this.state.currentStats.snr,
-            speechStartTime: this.state.speechStartTime
-        };
+    getStateInfo(out?: { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null }): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
+        const result = out || { inSpeech: false, noiseFloor: 0, snr: 0, speechStartTime: null };
+        result.inSpeech = this.state.inSpeech;
+        result.noiseFloor = this.state.noiseFloor;
+        result.snr = this.state.currentStats.snr;
+        result.speechStartTime = this.state.speechStartTime;
+        return result;
     }
 
     /**
