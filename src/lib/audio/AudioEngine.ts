@@ -36,6 +36,14 @@ export class AudioEngine implements IAudioEngine {
 
     private currentEnergy: number = 0;
 
+    // Cached state objects to prevent GC churn during audio processing loop
+    private readonly processorStateInfo = {
+        inSpeech: false,
+        noiseFloor: 0,
+        snr: 0,
+        speechStartTime: null as number | null
+    };
+
     private segmentCallbacks: Array<(segment: AudioSegment) => void> = [];
 
     // Fixed-window streaming state (v3 token streaming mode)
@@ -424,7 +432,7 @@ export class AudioEngine implements IAudioEngine {
     }
 
     isSpeechActive(): boolean {
-        return this.audioProcessor.getStateInfo().inSpeech;
+        return this.audioProcessor.getStateInfo(this.processorStateInfo).inSpeech;
     }
 
     getRingBuffer(): IRingBuffer {
@@ -590,7 +598,7 @@ export class AudioEngine implements IAudioEngine {
 
         // 2.6 Update metrics
         const stats = this.audioProcessor.getStats();
-        const stateInfo = this.audioProcessor.getStateInfo();
+        const stateInfo = this.audioProcessor.getStateInfo(this.processorStateInfo);
 
         this.metrics.currentEnergy = energy;
         this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + energy * 0.05;
@@ -775,7 +783,7 @@ export class AudioEngine implements IAudioEngine {
         const segments = [...this.recentSegments];
 
         // Add pending segment if speech is currently active
-        const vadState = this.audioProcessor.getStateInfo();
+        const vadState = this.audioProcessor.getStateInfo(this.processorStateInfo);
         if (vadState.inSpeech && vadState.speechStartTime !== null) {
             segments.push({
                 startTime: vadState.speechStartTime,
