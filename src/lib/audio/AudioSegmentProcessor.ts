@@ -536,14 +536,23 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current state info for debugging.
+     * Performance optimization: Can pass an existing object to avoid GC allocation.
      */
-    getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
-        return {
-            inSpeech: this.state.inSpeech,
-            noiseFloor: this.state.noiseFloor,
-            snr: this.state.currentStats.snr,
-            speechStartTime: this.state.speechStartTime
-        };
+    getStateInfo(out?: { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null }): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
+        if (!out) {
+            out = {
+                inSpeech: this.state.inSpeech,
+                noiseFloor: this.state.noiseFloor,
+                snr: this.state.currentStats.snr,
+                speechStartTime: this.state.speechStartTime
+            };
+            return out;
+        }
+        out.inSpeech = this.state.inSpeech;
+        out.noiseFloor = this.state.noiseFloor;
+        out.snr = this.state.currentStats.snr;
+        out.speechStartTime = this.state.speechStartTime;
+        return out;
     }
 
     /**
