@@ -39,12 +39,8 @@ const fetchModelRevisions = async (repoId: string | null): Promise<string[]> => 
     const response = await fetch(`https://huggingface.co/api/models/${repoPath}/refs`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
-    // Performance: replace map().filter() chain with single-pass reduce to avoid intermediate array GC overhead
     const branches = Array.isArray(payload?.branches)
-      ? payload.branches.reduce((acc: string[], branch: { name?: string }) => {
-          if (branch?.name) acc.push(branch.name);
-          return acc;
-        }, [])
+      ? payload.branches.map((branch: { name?: string }) => branch?.name).filter(Boolean)
       : [];
     const revisions = branches.length > 0 ? branches : DEFAULT_MODEL_REVISIONS;
     MODEL_REVISIONS_CACHE.set(repoId, revisions);
@@ -70,14 +66,10 @@ const fetchModelFiles = async (repoId: string | null, revision: string): Promise
     const response = await fetch(treeUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
-    // Performance: replace filter().map() chain with single-pass reduce to avoid intermediate array GC overhead
     const files = Array.isArray(payload)
-      ? payload.reduce((acc: string[], entry: { type?: string; path?: string }) => {
-          if (entry?.type === 'file' && typeof entry?.path === 'string') {
-            acc.push(normalizePath(entry.path));
-          }
-          return acc;
-        }, [])
+      ? payload
+        .filter((entry: { type?: string; path?: string }) => entry?.type === 'file' && typeof entry?.path === 'string')
+        .map((entry: { path: string }) => normalizePath(entry.path))
       : [];
     MODEL_FILES_CACHE.set(cacheKey, files);
     return files;
@@ -89,13 +81,10 @@ const fetchModelFiles = async (repoId: string | null, revision: string): Promise
     const response = await fetch(metadataUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
-    // Performance: replace map().filter() chain with single-pass reduce to avoid intermediate array GC overhead
     const files = Array.isArray(payload?.siblings)
-      ? payload.siblings.reduce((acc: string[], entry: { rfilename?: string }) => {
-          const path = normalizePath(entry?.rfilename || '');
-          if (path) acc.push(path);
-          return acc;
-        }, [])
+      ? payload.siblings
+        .map((entry: { rfilename?: string }) => normalizePath(entry?.rfilename || ''))
+        .filter(Boolean)
       : [];
     MODEL_FILES_CACHE.set(cacheKey, files);
     return files;
