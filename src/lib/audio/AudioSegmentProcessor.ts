@@ -47,6 +47,14 @@ interface CurrentStats {
     energyRiseThreshold: number;
 }
 
+/** Debug state information */
+export interface VadState {
+    inSpeech: boolean;
+    noiseFloor: number;
+    snr: number;
+    speechStartTime: number | null;
+}
+
 /** Processor state */
 interface ProcessorState {
     inSpeech: boolean;
@@ -536,8 +544,16 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current state info for debugging.
+     * Performance optimization: Pass an optional `out` object to avoid GC allocation.
      */
-    getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
+    getStateInfo(out?: VadState): VadState {
+        if (out) {
+            out.inSpeech = this.state.inSpeech;
+            out.noiseFloor = this.state.noiseFloor;
+            out.snr = this.state.currentStats.snr;
+            out.speechStartTime = this.state.speechStartTime;
+            return out;
+        }
         return {
             inSpeech: this.state.inSpeech,
             noiseFloor: this.state.noiseFloor,
