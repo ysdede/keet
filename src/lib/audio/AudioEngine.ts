@@ -1,6 +1,6 @@
 import { AudioEngine as IAudioEngine, AudioEngineConfig, AudioSegment, IRingBuffer, AudioMetrics } from './types';
 import { RingBuffer } from './RingBuffer';
-import { AudioSegmentProcessor, ProcessedSegment } from './AudioSegmentProcessor';
+import { AudioSegmentProcessor, ProcessedSegment, VadState } from './AudioSegmentProcessor';
 import { resampleLinear } from './utils';
 
 /** Duration of the visualization buffer in seconds */
@@ -71,6 +71,14 @@ export class AudioEngine implements IAudioEngine {
         noiseFloor: 0.01,
         currentSNR: 0,
         isSpeaking: false,
+    };
+
+    // Cached state to avoid allocations in high-frequency loop
+    private processorStateInfo: VadState = {
+        inSpeech: false,
+        noiseFloor: 0.01,
+        snr: 0,
+        speechStartTime: null
     };
 
     // Subscribers for visualization updates
@@ -424,7 +432,7 @@ export class AudioEngine implements IAudioEngine {
     }
 
     isSpeechActive(): boolean {
-        return this.audioProcessor.getStateInfo().inSpeech;
+        return this.audioProcessor.getStateInfo(this.processorStateInfo).inSpeech;
     }
 
     getRingBuffer(): IRingBuffer {
@@ -590,7 +598,7 @@ export class AudioEngine implements IAudioEngine {
 
         // 2.6 Update metrics
         const stats = this.audioProcessor.getStats();
-        const stateInfo = this.audioProcessor.getStateInfo();
+        const stateInfo = this.audioProcessor.getStateInfo(this.processorStateInfo);
 
         this.metrics.currentEnergy = energy;
         this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + energy * 0.05;
@@ -775,7 +783,7 @@ export class AudioEngine implements IAudioEngine {
         const segments = [...this.recentSegments];
 
         // Add pending segment if speech is currently active
-        const vadState = this.audioProcessor.getStateInfo();
+        const vadState = this.audioProcessor.getStateInfo(this.processorStateInfo);
         if (vadState.inSpeech && vadState.speechStartTime !== null) {
             segments.push({
                 startTime: vadState.speechStartTime,
