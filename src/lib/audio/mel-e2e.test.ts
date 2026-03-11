@@ -158,7 +158,7 @@ function fullMelPipeline(audio: Float32Array, nMels: number = 128) {
 const PARAKEET_ROOT = join(__dirname, '..', '..', '..', '..', 'parakeet.js');
 const MEL_REFERENCE_PATH = join(PARAKEET_ROOT, 'tests', 'mel_reference.json');
 const WAV_LOCAL_PATH = join(PARAKEET_ROOT, 'examples', 'demo', 'public', 'assets', 'life_Jim.wav');
-const WAV_GITHUB_URL = 'https://github.com/ysdede/parakeet.js/raw/refs/heads/master/examples/demo/public/assets/life_Jim.wav';
+const WAV_GITHUB_URL = 'https://raw.githubusercontent.com/ysdede/parakeet.js/master/examples/demo/public/assets/Harvard-L2-1.ogg';
 
 // ─── ONNX Reference Cross-Validation ─────────────────────────────────────
 
