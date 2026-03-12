@@ -137,6 +137,10 @@ export class UtteranceBasedMerger {
 
     // Fast-merger state parity
     private mergedTranscript: InternalWord[] = []; // finalized only
+    // Performance optimization: incrementally accumulated mature text to avoid O(N^2)
+    // string concatenation and GC churn when getMatureText() is called frequently.
+    // Assumes space-separated appending is sufficient for the target language.
+    private cachedMatureText: string = '';
     private lastImmatureWords: InternalWord[] = []; // current pending tail
     private matureCursorTime = 0;
     private finalizedSentencesMeta: FinalizedSentenceMeta[] = [];
@@ -409,6 +413,13 @@ export class UtteranceBasedMerger {
                 const startWordIndex = this.mergedTranscript.length;
                 this.mergedTranscript.push(...finalizedWords);
 
+                const appendedText = this.joinWords(finalizedWords);
+                if (appendedText) {
+                    this.cachedMatureText = this.cachedMatureText
+                        ? `${this.cachedMatureText} ${appendedText}`
+                        : appendedText;
+                }
+
                 const matureSentence = this.appendFinalizedSentence(
                     joined,
                     finalizedWords,
@@ -476,6 +487,13 @@ export class UtteranceBasedMerger {
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
 
+        const appendedText = this.joinWords(finalizedWords);
+        if (appendedText) {
+            this.cachedMatureText = this.cachedMatureText
+                ? `${this.cachedMatureText} ${appendedText}`
+                : appendedText;
+        }
+
         const matured = this.appendFinalizedSentence(
             pendingText,
             finalizedWords,
@@ -516,6 +534,14 @@ export class UtteranceBasedMerger {
         const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
+
+        const appendedText = this.joinWords(finalizedWords);
+        if (appendedText) {
+            this.cachedMatureText = this.cachedMatureText
+                ? `${this.cachedMatureText} ${appendedText}`
+                : appendedText;
+        }
+
         this.appendFinalizedSentence(
             pendingText,
             finalizedWords,
@@ -541,7 +567,7 @@ export class UtteranceBasedMerger {
     }
 
     getMatureText(): string {
-        return this.joinWords(this.mergedTranscript);
+        return this.cachedMatureText;
     }
 
     getCurrentText(): string {
@@ -587,6 +613,7 @@ export class UtteranceBasedMerger {
 
     reset(): void {
         this.mergedTranscript = [];
+        this.cachedMatureText = '';
         this.lastImmatureWords = [];
         this.matureCursorTime = 0;
         this.finalizedSentencesMeta = [];
