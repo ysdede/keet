@@ -148,6 +148,8 @@ export class UtteranceBasedMerger {
     private utteranceCount = 0;
     private sentenceSequence = 0;
 
+    private _cachedMatureText: string | null = null;
+
     private stats: MergerStats = {
         utterancesProcessed: 0,
         sentencesDetected: 0,
@@ -408,6 +410,7 @@ export class UtteranceBasedMerger {
                 const finalizedWords = sentenceWords.map((w) => ({ ...w, finalized: true }));
                 const startWordIndex = this.mergedTranscript.length;
                 this.mergedTranscript.push(...finalizedWords);
+                this._cachedMatureText = null;
 
                 const matureSentence = this.appendFinalizedSentence(
                     joined,
@@ -475,6 +478,7 @@ export class UtteranceBasedMerger {
         const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
+        this._cachedMatureText = null;
 
         const matured = this.appendFinalizedSentence(
             pendingText,
@@ -516,6 +520,7 @@ export class UtteranceBasedMerger {
         const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
+        this._cachedMatureText = null;
         this.appendFinalizedSentence(
             pendingText,
             finalizedWords,
@@ -541,7 +546,10 @@ export class UtteranceBasedMerger {
     }
 
     getMatureText(): string {
-        return this.joinWords(this.mergedTranscript);
+        if (this._cachedMatureText === null) {
+            this._cachedMatureText = this.joinWords(this.mergedTranscript);
+        }
+        return this._cachedMatureText;
     }
 
     getCurrentText(): string {
@@ -587,6 +595,7 @@ export class UtteranceBasedMerger {
 
     reset(): void {
         this.mergedTranscript = [];
+        this._cachedMatureText = null;
         this.lastImmatureWords = [];
         this.matureCursorTime = 0;
         this.finalizedSentencesMeta = [];
