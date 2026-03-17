@@ -137,6 +137,7 @@ export class UtteranceBasedMerger {
 
     // Fast-merger state parity
     private mergedTranscript: InternalWord[] = []; // finalized only
+    private cachedMatureText: string = ''; // Optimization: cached string of mergedTranscript
     private lastImmatureWords: InternalWord[] = []; // current pending tail
     private matureCursorTime = 0;
     private finalizedSentencesMeta: FinalizedSentenceMeta[] = [];
@@ -409,6 +410,10 @@ export class UtteranceBasedMerger {
                 const startWordIndex = this.mergedTranscript.length;
                 this.mergedTranscript.push(...finalizedWords);
 
+                if (joined) {
+                    this.cachedMatureText = this.cachedMatureText ? `${this.cachedMatureText} ${joined}` : joined;
+                }
+
                 const matureSentence = this.appendFinalizedSentence(
                     joined,
                     finalizedWords,
@@ -476,6 +481,10 @@ export class UtteranceBasedMerger {
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
 
+        if (pendingText) {
+            this.cachedMatureText = this.cachedMatureText ? `${this.cachedMatureText} ${pendingText}` : pendingText;
+        }
+
         const matured = this.appendFinalizedSentence(
             pendingText,
             finalizedWords,
@@ -516,6 +525,11 @@ export class UtteranceBasedMerger {
         const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
+
+        if (pendingText) {
+            this.cachedMatureText = this.cachedMatureText ? `${this.cachedMatureText} ${pendingText}` : pendingText;
+        }
+
         this.appendFinalizedSentence(
             pendingText,
             finalizedWords,
@@ -541,7 +555,7 @@ export class UtteranceBasedMerger {
     }
 
     getMatureText(): string {
-        return this.joinWords(this.mergedTranscript);
+        return this.cachedMatureText;
     }
 
     getCurrentText(): string {
@@ -587,6 +601,7 @@ export class UtteranceBasedMerger {
 
     reset(): void {
         this.mergedTranscript = [];
+        this.cachedMatureText = '';
         this.lastImmatureWords = [];
         this.matureCursorTime = 0;
         this.finalizedSentencesMeta = [];
