@@ -294,7 +294,10 @@ describe('Real audio: life_Jim.wav', () => {
                         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                             return download(res.headers.location, redirects + 1);
                         }
-                        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+                        if (res.statusCode !== 200) {
+                            console.warn(`[mel-e2e.test.ts] WARNING: Could not fetch URL (HTTP ${res.statusCode}). Skipping tests dependent on this file.`);
+                            return reject(new Error(`HTTP_SKIP`));
+                        }
                         const chunks: Buffer[] = [];
                         res.on('data', (chunk: Buffer) => chunks.push(chunk));
                         res.on('end', () => {
@@ -305,7 +308,14 @@ describe('Real audio: life_Jim.wav', () => {
                     }).on('error', reject);
                 };
                 download(WAV_GITHUB_URL);
+            }).catch(e => {
+                if (e.message === 'HTTP_SKIP') {
+                    return null as unknown as ArrayBuffer;
+                }
+                throw e;
             });
+
+            if (!wavBuffer) return; // Skip
             console.log(`Downloaded WAV: ${wavBuffer.byteLength} bytes`);
         }
 
@@ -325,7 +335,8 @@ describe('Real audio: life_Jim.wav', () => {
         console.log(`Audio duration: ${audioDuration.toFixed(2)}s`);
     });
 
-    it('should parse the WAV file correctly', () => {
+    it('should parse the WAV file correctly', (ctx) => {
+        if (!audioData) return ctx.skip();
         expect(audioData).toBeInstanceOf(Float32Array);
         expect(audioData.length).toBeGreaterThan(0);
         // life_Jim.wav is about 1.4 seconds of speech
@@ -333,7 +344,8 @@ describe('Real audio: life_Jim.wav', () => {
         expect(audioDuration).toBeLessThan(10);
     });
 
-    it('should have valid PCM values in [-1, 1] range', () => {
+    it('should have valid PCM values in [-1, 1] range', (ctx) => {
+        if (!audioData) return ctx.skip();
         let min = Infinity, max = -Infinity;
         for (let i = 0; i < audioData.length; i++) {
             if (audioData[i] < min) min = audioData[i];
@@ -347,13 +359,15 @@ describe('Real audio: life_Jim.wav', () => {
         console.log(`Audio range: [${min.toFixed(4)}, ${max.toFixed(4)}]`);
     });
 
-    it('should produce correct number of mel frames', () => {
+    it('should produce correct number of mel frames', (ctx) => {
+        if (!audioData) return ctx.skip();
         const expectedFrames = sampleToFrame(audioData.length);
         expect(expectedFrames).toBeGreaterThan(0);
         console.log(`Expected frames: ${expectedFrames} (${audioDuration.toFixed(2)}s × 100 fps)`);
     });
 
-    it('should produce finite, normalized mel features', () => {
+    it('should produce finite, normalized mel features', (ctx) => {
+        if (!audioData) return ctx.skip();
         const { features, T } = fullMelPipeline(audioData, 128);
 
         expect(T).toBeGreaterThan(0);
@@ -375,7 +389,8 @@ describe('Real audio: life_Jim.wav', () => {
         }
     });
 
-    it('should produce deterministic results', () => {
+    it('should produce deterministic results', (ctx) => {
+        if (!audioData) return ctx.skip();
         const result1 = fullMelPipeline(audioData, 128);
         const result2 = fullMelPipeline(audioData, 128);
 
@@ -387,7 +402,8 @@ describe('Real audio: life_Jim.wav', () => {
         }
     });
 
-    it('should produce different features for different time windows', () => {
+    it('should produce different features for different time windows', (ctx) => {
+        if (!audioData) return ctx.skip();
         const { features, T } = fullMelPipeline(audioData, 128);
 
         // Compare first and second halves — they should differ (it's speech, not silence)
@@ -404,7 +420,8 @@ describe('Real audio: life_Jim.wav', () => {
         expect(diffCount).toBeGreaterThan(10);
     });
 
-    it('should match mel-worker output for the same audio', async () => {
+    it('should match mel-worker output for the same audio', async (ctx) => {
+        if (!audioData) return ctx.skip();
         // This test validates that our mel-math (used by mel.worker.ts) produces
         // the same features as the full pipeline, ensuring the worker's incremental
         // computation matches batch processing.
@@ -440,7 +457,8 @@ describe('Real audio: life_Jim.wav', () => {
         }
     });
 
-    it('should complete mel processing under 100ms for this audio', () => {
+    it('should complete mel processing under 100ms for this audio', (ctx) => {
+        if (!audioData) return ctx.skip();
         const t0 = performance.now();
         const { features, T } = fullMelPipeline(audioData, 128);
         const elapsed = performance.now() - t0;
