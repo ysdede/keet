@@ -52,6 +52,7 @@ export class AudioEngine implements IAudioEngine {
 
     // SMA buffer for energy calculation
     private energyHistory: number[] = [];
+    private energyHistorySum: number = 0;
 
     // Last N energy values for bar visualizer (oldest first when read)
     private energyBarHistory: number[] = [];
@@ -557,10 +558,11 @@ export class AudioEngine implements IAudioEngine {
 
         // SMA Smoothing (matching legacy UI project logic)
         this.energyHistory.push(maxAbs);
+        this.energyHistorySum += maxAbs;
         if (this.energyHistory.length > 6) {
-            this.energyHistory.shift();
+            this.energyHistorySum -= this.energyHistory.shift()!;
         }
-        const energy = this.energyHistory.reduce((a: number, b: number) => a + b, 0) / this.energyHistory.length;
+        const energy = this.energyHistorySum / this.energyHistory.length;
 
         this.currentEnergy = energy;
         this.energyBarHistory.push(energy);
