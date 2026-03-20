@@ -5,3 +5,6 @@ Action: Apply this pattern to other fixed-size sliding window buffers in the aud
 ## 2025-05-18 - Memory vs Code Reality
 Learning: The project memory stated `AudioSegmentProcessor` uses zero-allocation `updateStats`, but the code actually allocated new objects every frame.
 Action: Always verify performance claims in memory against the actual code before assuming they are implemented.
+## 2025-05-28 - Test Dependency Network Access
+Learning: Some tests like `mel-e2e.test.ts` attempt network requests to download fixtures from GitHub. In restricted environments where networking to external hosts fails or times out, these tests will fail or hang.
+Action: Handle network timeouts gracefully or skip tests dynamically when external resources are unavailable, preventing environment issues from breaking the suite.
