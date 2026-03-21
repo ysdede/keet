@@ -40,7 +40,10 @@ const fetchModelRevisions = async (repoId: string | null): Promise<string[]> => 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     const branches = Array.isArray(payload?.branches)
-      ? payload.branches.map((branch: { name?: string }) => branch?.name).filter(Boolean)
+      ? payload.branches.reduce((acc: string[], branch: { name?: string }) => {
+          if (branch?.name) acc.push(branch.name);
+          return acc;
+        }, [])
       : [];
     const revisions = branches.length > 0 ? branches : DEFAULT_MODEL_REVISIONS;
     MODEL_REVISIONS_CACHE.set(repoId, revisions);
@@ -66,10 +69,14 @@ const fetchModelFiles = async (repoId: string | null, revision: string): Promise
     const response = await fetch(treeUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
+    // Performance: replace .filter().map() with .reduce() to prevent intermediate allocations
     const files = Array.isArray(payload)
-      ? payload
-        .filter((entry: { type?: string; path?: string }) => entry?.type === 'file' && typeof entry?.path === 'string')
-        .map((entry: { path: string }) => normalizePath(entry.path))
+      ? payload.reduce((acc: string[], entry: { type?: string; path?: string }) => {
+          if (entry?.type === 'file' && typeof entry?.path === 'string') {
+            acc.push(normalizePath(entry.path));
+          }
+          return acc;
+        }, [])
       : [];
     MODEL_FILES_CACHE.set(cacheKey, files);
     return files;
@@ -81,10 +88,13 @@ const fetchModelFiles = async (repoId: string | null, revision: string): Promise
     const response = await fetch(metadataUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
+    // Performance: replace .map().filter() with .reduce() to prevent intermediate allocations
     const files = Array.isArray(payload?.siblings)
-      ? payload.siblings
-        .map((entry: { rfilename?: string }) => normalizePath(entry?.rfilename || ''))
-        .filter(Boolean)
+      ? payload.siblings.reduce((acc: string[], entry: { rfilename?: string }) => {
+          const p = normalizePath(entry?.rfilename || '');
+          if (p) acc.push(p);
+          return acc;
+        }, [])
       : [];
     MODEL_FILES_CACHE.set(cacheKey, files);
     return files;
