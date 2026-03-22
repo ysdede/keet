@@ -485,7 +485,7 @@ const App: Component = () => {
 
   const cancelWasmWarmupSchedule = () => {
     if (warmupIdleHandle !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
-      (window as any).cancelIdleCallback(warmupIdleHandle);
+      window.cancelIdleCallback(warmupIdleHandle);
       warmupIdleHandle = null;
     }
     if (warmupTimeoutHandle !== undefined) {
@@ -518,7 +518,7 @@ const App: Component = () => {
   const scheduleWasmWarmup = () => {
     cancelWasmWarmupSchedule();
     if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      warmupIdleHandle = (window as any).requestIdleCallback(() => {
+      warmupIdleHandle = window.requestIdleCallback(() => {
         warmupIdleHandle = null;
         void runWasmWarmup();
       }, { timeout: 2500 });
