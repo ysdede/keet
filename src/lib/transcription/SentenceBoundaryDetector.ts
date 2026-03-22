@@ -285,19 +285,21 @@ export class SentenceBoundaryDetector {
      * Fallback heuristic sentence boundary detection.
      */
     private detectSentenceEndingsHeuristic(words: DetectorWord[]): SentenceEndingWord[] {
-        return words
-            .filter(word => /[.?!]$/.test(word.text))
-            .map((word, _idx) => {
-                const wordIndex = words.indexOf(word);
-                return {
+        const results: SentenceEndingWord[] = [];
+        for (let i = 0; i < words.length; i++) {
+            const word = words[i];
+            if (/[.?!]$/.test(word.text)) {
+                results.push({
                     ...word,
-                    wordIndex,
+                    wordIndex: i,
                     sentenceMetadata: {
                         sentenceText: word.text,
                         detectionMethod: 'heuristic' as const,
                     },
-                };
-            });
+                });
+            }
+        }
+        return results;
     }
 
     /**

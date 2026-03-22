@@ -166,6 +166,28 @@ describe('UtteranceBasedMerger fast-merger parity', () => {
         expect(next.immatureText).toBe('New words.');
     });
 
+    test('recent duplicate stays deduped even after a longer mature history', () => {
+        const merger = createMerger();
+
+        merger.processASRResult(
+            asr([mkWord('One', 0.0), mkWord('done.', 0.5), mkWord('Two', 1.0)]),
+        );
+        merger.processASRResult(
+            asr([mkWord('Two', 1.0), mkWord('done.', 1.5), mkWord('Three', 2.0)]),
+        );
+        merger.processASRResult(
+            asr([mkWord('Three', 2.0), mkWord('done.', 2.5), mkWord('Four', 3.0)]),
+        );
+
+        const stale = merger.processASRResult(
+            asr([mkWord('Three', 2.0), mkWord('done.', 2.5), mkWord('Four', 3.0), mkWord('pending', 3.5)]),
+        );
+
+        expect(stale.matureText).toBe('One done. Two done. Three done.');
+        expect(stale.allMatureSentences).toHaveLength(3);
+        expect(stale.immatureText).toBe('Four pending');
+    });
+
     test('flush returns null when nothing pending', () => {
         const merger = createMerger();
 
@@ -206,6 +228,23 @@ describe('UtteranceBasedMerger fast-merger parity', () => {
         expect(merger.getImmatureText()).toBe('');
         expect(merger.getMatureCursorTime()).toBe(0);
         expect(merger.getPendingSentence()).toBeNull();
+    });
+
+    test('mature text cache refreshes when new sentences finalize', () => {
+        const merger = createMerger();
+
+        merger.processASRResult(
+            asr([mkWord('Hello', 0.0), mkWord('world.', 0.5), mkWord('How', 1.0)]),
+        );
+        expect(merger.getMatureText()).toBe('Hello world.');
+        expect(merger.getMatureText()).toBe('Hello world.');
+
+        merger.processASRResult(
+            asr([mkWord('How', 1.0), mkWord('are', 1.5), mkWord('you?', 2.0), mkWord('Next', 2.5)]),
+        );
+
+        expect(merger.getMatureText()).toBe('Hello world. How are you?');
+        expect(merger.getFullText()).toBe('Hello world. How are you? Next');
     });
 
     test('empty input keeps current state', () => {
