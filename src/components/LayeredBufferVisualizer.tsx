@@ -1,7 +1,7 @@
 import { Component, onMount, onCleanup, createSignal } from 'solid-js';
 import type { AudioEngine } from '../lib/audio/types';
 import type { MelWorkerClient } from '../lib/audio/MelWorkerClient';
-import { normalizeMelForDisplay } from '../lib/audio/mel-display';
+import { MEL_DISPLAY_MIN_DB, MEL_DISPLAY_DB_RANGE } from '../lib/audio/mel-display';
 import { appStore } from '../stores/appStore';
 
 interface LayeredBufferVisualizerProps {
@@ -347,6 +347,9 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         const timeScale = timeSteps / width;
         const freqScale = melBins / height;
 
+        // Pre-calculate scaling factor to avoid division in hot loop
+        const melScaleFactor = 255 / MEL_DISPLAY_DB_RANGE;
+
         for (let x = 0; x < width; x++) {
             const t = Math.floor(x * timeScale);
             if (t >= timeSteps) break;
@@ -357,8 +360,12 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
                 if (m >= melBins) continue;
 
                 const val = features[m * timeSteps + t];
-                const clamped = normalizeMelForDisplay(val);
-                const lutIdx = (clamped * 255) | 0;
+
+                // Inline normalizeMelForDisplay logic for performance
+                let lutIdx = ((val - MEL_DISPLAY_MIN_DB) * melScaleFactor) | 0;
+                if (lutIdx < 0) lutIdx = 0;
+                else if (lutIdx > 255) lutIdx = 255;
+
                 const lutBase = lutIdx * 3;
 
                 const idx = (y * width + x) * 4;
