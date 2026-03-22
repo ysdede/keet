@@ -99,6 +99,16 @@ export interface WorkerMessageMap {
     V4_FINALIZE_TIMEOUT: { payload: void; response: V4ProcessResult | null };
     V4_RESET: { payload: void; response: void };
 }
+
+/** Valid incoming messages from the worker */
+export type WorkerIncomingMessage =
+    | { type: 'MODEL_PROGRESS'; payload: ModelProgress; id?: number }
+    | { type: 'MODEL_STATE'; payload: ModelState; id?: number }
+    | { type: 'V3_CONFIRMED'; payload: { text: string; words: any[] }; id?: number }
+    | { type: 'V3_PENDING'; payload: { text: string; words: any[] }; id?: number }
+    | { type: 'ERROR'; payload: string; id?: number }
+    | { type: string; payload?: any; id: number };
+
 export class TranscriptionWorkerClient {
     private static readonly DISPOSED_ERROR_MESSAGE = 'TranscriptionWorkerClient disposed';
     private worker: Worker;
@@ -126,7 +136,7 @@ export class TranscriptionWorkerClient {
         };
     }
 
-    private handleMessage(data: any) {
+    private handleMessage(data: WorkerIncomingMessage) {
         const { type, payload, id } = data;
 
         // Handle promise resolutions
