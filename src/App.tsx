@@ -71,20 +71,9 @@ const v4CacheTelemetry = {
 };
 
 const trackV4CacheTelemetry = (
-  bucket: keyof typeof v4CacheTelemetry,
-  detail: { rawPrefixSeconds: number; windowDurationSeconds: number }
+  bucket: keyof typeof v4CacheTelemetry
 ) => {
   v4CacheTelemetry[bucket]++;
-  const total = v4CacheTelemetry.enabled
-    + v4CacheTelemetry.bypassNonPositivePrefix
-    + v4CacheTelemetry.bypassOutsideWindow;
-  if (!V4_TRACE_LOGS || total % V4_CACHE_TELEMETRY_LOG_EVERY !== 0) return;
-  console.log(
-    `[v4CacheTelemetry] total=${total}, enabled=${v4CacheTelemetry.enabled}, ` +
-    `bypass_non_positive=${v4CacheTelemetry.bypassNonPositivePrefix}, ` +
-    `bypass_outside_window=${v4CacheTelemetry.bypassOutsideWindow}, ` +
-    `rawPrefix=${detail.rawPrefixSeconds.toFixed(4)}s, window=${detail.windowDurationSeconds.toFixed(4)}s`
-  );
 };
 
 const shouldLogV4Tick = (tick: number, every = 20): boolean =>
@@ -787,24 +776,15 @@ const App: Component = () => {
       // Guard decoder cache reuse: prefix must exist in the current window.
       let incrementalCache: { cacheKey: string; prefixSeconds: number } | undefined;
       if (rawPrefixSeconds <= 0) {
-        trackV4CacheTelemetry('bypassNonPositivePrefix', {
-          rawPrefixSeconds,
-          windowDurationSeconds: window.durationSeconds,
-        });
+        trackV4CacheTelemetry('bypassNonPositivePrefix');
       } else if (rawPrefixSeconds >= window.durationSeconds) {
-        trackV4CacheTelemetry('bypassOutsideWindow', {
-          rawPrefixSeconds,
-          windowDurationSeconds: window.durationSeconds,
-        });
+        trackV4CacheTelemetry('bypassOutsideWindow');
       } else {
         incrementalCache = {
           cacheKey: 'v4-stream',
           prefixSeconds: rawPrefixSeconds,
         };
-        trackV4CacheTelemetry('enabled', {
-          rawPrefixSeconds,
-          windowDurationSeconds: window.durationSeconds,
-        });
+        trackV4CacheTelemetry('enabled');
       }
 
       const result: V4ProcessResult = await workerClient.processV4ChunkWithFeatures({
