@@ -91,7 +91,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     let cachedDpr = window.devicePixelRatio || 1;
     let resizeObserver: ResizeObserver | null = null;
     let dprMediaQuery: MediaQueryList | null = null;
-    let dprChangeHandler: ((this: MediaQueryList, ev: MediaQueryListEvent) => any) | null = null;
+    let dprChangeHandler: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | null = null;
 
     /** Recompute physical canvas dimensions from cached logical size + DPR. */
     const updateCanvasDimensions = (logicalW: number, logicalH: number) => {
