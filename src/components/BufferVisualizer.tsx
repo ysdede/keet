@@ -137,21 +137,27 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
         // Helper to draw the full waveform path
         const drawPath = (offsetX: number, offsetY: number) => {
           if (!ctx) return;
+
+          const scale = centerY * 0.9;
+          const fallbackYMin = centerY - 0.5 + offsetY;
+          const fallbackYMax = centerY + 0.5 + offsetY;
+          const baseCenter = centerY + offsetY;
+
           ctx.beginPath();
           for (let i = 0; i < numPoints; i++) {
             const x = i * step + offsetX;
-            // Ensure min/max have at least 1px difference for visibility even when silent
-            let minVal = data[i * 2];
-            let maxVal = data[i * 2 + 1];
+            const minVal = data[i * 2];
+            const maxVal = data[i * 2 + 1];
 
-            // Scaled values
-            let yMin = centerY - (minVal * centerY * 0.9) + offsetY;
-            let yMax = centerY - (maxVal * centerY * 0.9) + offsetY;
+            let yMin, yMax;
 
             // Ensure tiny signals are visible (min 1px height)
-            if (Math.abs(yMax - yMin) < 1) {
-              yMin = centerY - 0.5 + offsetY;
-              yMax = centerY + 0.5 + offsetY;
+            if (Math.abs(maxVal - minVal) * scale < 1) {
+              yMin = fallbackYMin;
+              yMax = fallbackYMax;
+            } else {
+              yMin = baseCenter - (minVal * scale);
+              yMax = baseCenter - (maxVal * scale);
             }
 
             ctx.moveTo(x, yMin);
