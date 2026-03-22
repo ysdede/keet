@@ -12,11 +12,12 @@ import type {
   TranscriptionWord
 } from './types';
 import { ModelManager } from './ModelManager';
+import type { StatefulStreamingTranscriber } from 'parakeet.js';
 
 /** High-level transcription facade for streaming chunks and finalized segments. */
 export class TranscriptionService {
   private _modelManager: ModelManager;
-  private _streamer: any = null; // StatefulStreamingTranscriber
+  private _streamer: StatefulStreamingTranscriber | null = null;
   private _config: TranscriptionServiceConfig;
   private _callbacks: TranscriptionCallbacks = {};
   private _isProcessing: boolean = false;
