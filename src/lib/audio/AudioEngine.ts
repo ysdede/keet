@@ -36,19 +36,19 @@ export class AudioEngine implements IAudioEngine {
 
     private currentEnergy: number = 0;
 
-    private segmentCallbacks: Array<(segment: AudioSegment) => void> = [];
+    private segmentCallbacks = new Set<(segment: AudioSegment) => void>();
 
     // Fixed-window streaming state (v3 token streaming mode)
-    private windowCallbacks: Array<{
+    private windowCallbacks = new Set<{
         windowDuration: number;
         overlapDuration: number;
         triggerInterval: number;
         callback: (audio: Float32Array, startTime: number) => void;
         lastWindowEnd: number; // Frame offset of last window end
-    }> = [];
+    }>();
 
     // Resampled audio chunk callbacks (for mel worker, etc.)
-    private audioChunkCallbacks: Array<(chunk: Float32Array) => void> = [];
+    private audioChunkCallbacks = new Set<(chunk: Float32Array) => void>();
 
     // SMA buffer for energy calculation
     private energyHistory: number[] = [];
@@ -75,7 +75,7 @@ export class AudioEngine implements IAudioEngine {
     };
 
     // Subscribers for visualization updates
-    private visualizationCallbacks: Array<(data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void> = [];
+    private visualizationCallbacks = new Set<(data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void>();
     private lastVisualizationNotifyTime: number = 0;
     private readonly VISUALIZATION_NOTIFY_INTERVAL_MS = 33; // ~30fps in foreground
     private readonly VISUALIZATION_NOTIFY_HIDDEN_INTERVAL_MS = 250; // Lower cadence for hidden tab
@@ -440,9 +440,9 @@ export class AudioEngine implements IAudioEngine {
     }
 
     onSpeechSegment(callback: (segment: AudioSegment) => void): () => void {
-        this.segmentCallbacks.push(callback);
+        this.segmentCallbacks.add(callback);
         return () => {
-            this.segmentCallbacks = this.segmentCallbacks.filter((cb) => cb !== callback);
+            this.segmentCallbacks.delete(callback);
         };
     }
 
@@ -463,10 +463,10 @@ export class AudioEngine implements IAudioEngine {
             callback,
             lastWindowEnd: 0, // Will be set on first chunk
         };
-        this.windowCallbacks.push(entry);
+        this.windowCallbacks.add(entry);
 
         return () => {
-            this.windowCallbacks = this.windowCallbacks.filter((e) => e !== entry);
+            this.windowCallbacks.delete(entry);
         };
     }
 
@@ -476,9 +476,9 @@ export class AudioEngine implements IAudioEngine {
      * Returns an unsubscribe function.
      */
     onAudioChunk(callback: (chunk: Float32Array) => void): () => void {
-        this.audioChunkCallbacks.push(callback);
+        this.audioChunkCallbacks.add(callback);
         return () => {
-            this.audioChunkCallbacks = this.audioChunkCallbacks.filter((cb) => cb !== callback);
+            this.audioChunkCallbacks.delete(callback);
         };
     }
 
@@ -933,9 +933,9 @@ export class AudioEngine implements IAudioEngine {
      * - Callbacks must not mutate `data` in place.
      */
     onVisualizationUpdate(callback: (data: Float32Array, metrics: AudioMetrics, bufferEndTime: number) => void): () => void {
-        this.visualizationCallbacks.push(callback);
+        this.visualizationCallbacks.add(callback);
         return () => {
-            this.visualizationCallbacks = this.visualizationCallbacks.filter((cb) => cb !== callback);
+            this.visualizationCallbacks.delete(callback);
         };
     }
 
