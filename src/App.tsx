@@ -311,7 +311,7 @@ const App: Component = () => {
   let onPageHide: (() => void) | undefined;
   let onVisibilityChange: (() => void) | undefined;
   let warmupIdleHandle: number | null = null;
-  let warmupTimeoutHandle: number | undefined;
+  let warmupTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
   let removeWarmupGestureListeners: (() => void) | null = null;
   let warmupCancelled = false;
   let warmupStarted = false;
@@ -524,7 +524,7 @@ const App: Component = () => {
       }, { timeout: 2500 });
       return;
     }
-    warmupTimeoutHandle = window.setTimeout(() => {
+    warmupTimeoutHandle = globalThis.setTimeout(() => {
       warmupTimeoutHandle = undefined;
       void runWasmWarmup();
     }, 1200);
