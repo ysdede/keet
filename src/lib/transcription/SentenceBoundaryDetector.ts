@@ -283,6 +283,8 @@ export class SentenceBoundaryDetector {
 
     /**
      * Fallback heuristic sentence boundary detection.
+     * Uses a single pass and preserves positional `wordIndex` values even when
+     * repeated word objects or duplicate token texts appear in the input.
      */
     private detectSentenceEndingsHeuristic(words: DetectorWord[]): SentenceEndingWord[] {
         const results: SentenceEndingWord[] = [];

@@ -27,6 +27,8 @@ This README reflects recent repository history (Jan-Feb 2026), including:
 - `feat(transcription): port fast utterance merger parity`
 - `feat(ui): enhance merged transcript layout and responsiveness`
 - Sentence boundary context changes based on sentence timestamps
+- Post-PR-sweep hardening for transcript merge hot paths and AudioEngine smoothing
+- Real-audio mel regression coverage aligned to `parakeet.js/compat-tests` assets with graceful skip behavior when fixtures are unavailable
 - GitHub Pages deploy hardening (`BASE_PATH=/keet/`, COOP/COEP, TEN-VAD path fixes)
 - Floating/hover-targeted settings UX and lightweight waveform preview updates
 - Project rebrand from BoncukJS to Keet
@@ -98,6 +100,12 @@ npm run dev:local
 npm test
 npm run test:watch
 ```
+
+Notes:
+
+- `src/lib/audio/mel-e2e.test.ts` uses the sibling `../parakeet.js/compat-tests/shared/assets/life_Jim.wav` fixture when available.
+- If that fixture is missing, the real-audio suite falls back to the raw GitHub asset URL and skips those cases cleanly when the asset cannot be loaded.
+- The sibling `parakeet.js` checkout is still the best local setup for full mel regression coverage.
 
 ### Quality Gates
 

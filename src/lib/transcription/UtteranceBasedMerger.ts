@@ -552,6 +552,10 @@ export class UtteranceBasedMerger {
         return SENTENCE_END_RE.test(trimmed);
     }
 
+    /**
+     * Return finalized transcript text.
+     * The joined string is cached and recomputed only after mature words change.
+     */
     getMatureText(): string {
         if (this.matureTextDirty) {
             this.cachedMatureText = this.joinWords(this.mergedTranscript);
