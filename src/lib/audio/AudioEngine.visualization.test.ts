@@ -142,6 +142,21 @@ describe('AudioEngine Visualization', () => {
         expect(maxValAfter).toBe(0);
     });
 
+    it('should clear energy smoothing history on reset', () => {
+        const loudChunk = new Float32Array(1600);
+        loudChunk.fill(1.0);
+        injectAudio(loudChunk);
+        expect(engine.getCurrentEnergy()).toBeCloseTo(1.0, 5);
+
+        engine.reset();
+
+        const quietChunk = new Float32Array(1600);
+        quietChunk.fill(0.2);
+        injectAudio(quietChunk);
+
+        expect(engine.getCurrentEnergy()).toBeCloseTo(0.2, 5);
+    });
+
     it('should handle wrapping correctly', () => {
         // VIS_SUMMARY_SIZE is 2000.
         // Buffer duration 30s.

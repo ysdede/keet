@@ -118,6 +118,7 @@ interface InternalWord {
 
 interface FinalizedSentenceMeta {
     text: string;
+    normalizedText: string;
     start_time: number;
     end_time: number;
 }
@@ -137,6 +138,8 @@ export class UtteranceBasedMerger {
 
     // Fast-merger state parity
     private mergedTranscript: InternalWord[] = []; // finalized only
+    private cachedMatureText = '';
+    private matureTextDirty = false;
     private lastImmatureWords: InternalWord[] = []; // current pending tail
     private matureCursorTime = 0;
     private finalizedSentencesMeta: FinalizedSentenceMeta[] = [];
@@ -216,6 +219,10 @@ export class UtteranceBasedMerger {
         return value.replace(/\s+/g, '').toLowerCase();
     }
 
+    private normalizeSentenceText(value: string): string {
+        return value.trim().toLowerCase();
+    }
+
     private mapSentencesToWordBoundaries(words: InternalWord[], sentences: string[]): number[] {
         const boundaries: number[] = [];
         let wordIdx = 0;
@@ -269,10 +276,11 @@ export class UtteranceBasedMerger {
     }
 
     private isDuplicateSentence(text: string, endTime: number): boolean {
-        const norm = text.trim().toLowerCase();
-        for (const sentence of this.finalizedSentencesMeta) {
+        const norm = this.normalizeSentenceText(text);
+        for (let i = this.finalizedSentencesMeta.length - 1; i >= 0; i--) {
+            const sentence = this.finalizedSentencesMeta[i];
             if (
-                sentence.text.trim().toLowerCase() === norm &&
+                sentence.normalizedText === norm &&
                 Math.abs(sentence.end_time - endTime) < this.config.dedupToleranceSec
             ) {
                 return true;
@@ -332,6 +340,7 @@ export class UtteranceBasedMerger {
 
         this.finalizedSentencesMeta.push({
             text,
+            normalizedText: this.normalizeSentenceText(text),
             start_time: startTime,
             end_time: endTime,
         });
@@ -408,6 +417,7 @@ export class UtteranceBasedMerger {
                 const finalizedWords = sentenceWords.map((w) => ({ ...w, finalized: true }));
                 const startWordIndex = this.mergedTranscript.length;
                 this.mergedTranscript.push(...finalizedWords);
+                this.matureTextDirty = true;
 
                 const matureSentence = this.appendFinalizedSentence(
                     joined,
@@ -475,6 +485,7 @@ export class UtteranceBasedMerger {
         const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
+        this.matureTextDirty = true;
 
         const matured = this.appendFinalizedSentence(
             pendingText,
@@ -516,6 +527,7 @@ export class UtteranceBasedMerger {
         const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
+        this.matureTextDirty = true;
         this.appendFinalizedSentence(
             pendingText,
             finalizedWords,
@@ -541,7 +553,11 @@ export class UtteranceBasedMerger {
     }
 
     getMatureText(): string {
-        return this.joinWords(this.mergedTranscript);
+        if (this.matureTextDirty) {
+            this.cachedMatureText = this.joinWords(this.mergedTranscript);
+            this.matureTextDirty = false;
+        }
+        return this.cachedMatureText;
     }
 
     getCurrentText(): string {
@@ -587,6 +603,8 @@ export class UtteranceBasedMerger {
 
     reset(): void {
         this.mergedTranscript = [];
+        this.cachedMatureText = '';
+        this.matureTextDirty = false;
         this.lastImmatureWords = [];
         this.matureCursorTime = 0;
         this.finalizedSentencesMeta = [];
