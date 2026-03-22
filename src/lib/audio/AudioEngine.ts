@@ -355,6 +355,7 @@ export class AudioEngine implements IAudioEngine {
     /**
      * Reset buffers and VAD state for a new session while keeping the audio graph.
      * Aligns visualization + segment timebase to 0, matching legacy UI project behavior.
+     * Also clears the short SMA energy history so the next chunk starts from fresh state.
      */
     reset(): void {
         // Reset audio/VAD state
@@ -397,7 +398,11 @@ export class AudioEngine implements IAudioEngine {
         return this.currentEnergy;
     }
 
-    /** Oscilloscope waveform from AnalyserNode.getByteTimeDomainData (native, fast). Values -1..1. */
+    /**
+     * Oscilloscope waveform from AnalyserNode.getByteTimeDomainData (native, fast).
+     * Falls back to a fresh bar-level snapshot only when the analyser path is unavailable.
+     * Values are in the `[-1, 1]` range.
+     */
     getBarLevels(): Float32Array {
         if (this.analyserNode && this.analyserTimeBuffer && this.waveformOut) {
             (this.analyserNode as { getByteTimeDomainData(array: Uint8Array): void }).getByteTimeDomainData(this.analyserTimeBuffer);
