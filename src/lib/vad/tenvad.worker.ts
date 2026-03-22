@@ -11,7 +11,7 @@
  * the AudioWorklet) and the worker handles the hop alignment internally.
  */
 
-import type { TenVADRequest, TenVADResult } from '../buffer/types';
+import type { TenVADRequest, TenVADResult, TenVADResponse } from '../buffer/types';
 
 // ---- TEN-VAD Module Interface ----
 
@@ -217,7 +217,7 @@ function handleProcess(samples: Float32Array, globalSampleOffset: number): void 
             processingTimeMs: performance.now() - startTime,
         };
 
-        (self as any).postMessage(
+        respond(
             { type: 'RESULT', payload: result },
             [trimmedProbs.buffer, trimmedFlags.buffer]
         );
@@ -258,7 +258,7 @@ function handleDispose(id: number): void {
     respond({ type: 'DISPOSE', id, payload: { success: true } });
 }
 
-function respond(msg: any, transfers?: Transferable[]): void {
+function respond(msg: TenVADResponse, transfers?: Transferable[]): void {
     try {
         if (transfers) {
             (self as any).postMessage(msg, transfers);
