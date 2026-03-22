@@ -5,3 +5,7 @@ Action: Apply this pattern to other fixed-size sliding window buffers in the aud
 ## 2025-05-18 - Memory vs Code Reality
 Learning: The project memory stated `AudioSegmentProcessor` uses zero-allocation `updateStats`, but the code actually allocated new objects every frame.
 Action: Always verify performance claims in memory against the actual code before assuming they are implemented.
+
+## 2025-05-18 - Optimized Array Reductions in Hot Paths
+Learning: Array methods like `.reduce()` create closure allocations and function call overhead per iteration, making them unsuitable for high-frequency hot paths like audio buffer processing (e.g., `AudioSegmentProcessor.processAudioData`).
+Action: Replace higher-order array methods with highly optimized `for` loops or running O(1) sums to calculate aggregates in fast-path streaming operations.
