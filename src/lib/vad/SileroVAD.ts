@@ -1,7 +1,8 @@
 import type { SileroVADConfig, SileroVADResult } from './types';
+import type { InferenceSession, Tensor } from 'onnxruntime-web';
 
 // Use the globally-exposed ort from parakeet.js / onnxruntime-web
-declare const ort: any;
+declare const ort: typeof import('onnxruntime-web');
 
 /**
  * Silero VAD ONNX model runner for browser-side voice activity detection.
@@ -17,13 +18,13 @@ declare const ort: any;
  */
 export class SileroVAD {
     private config: SileroVADConfig;
-    private session: any | null = null;
+    private session: InferenceSession | null = null;
     private initialized: boolean = false;
 
     // Internal LSTM state tensors (persisted across calls)
-    private stateH: any | null = null;
-    private stateC: any | null = null;
-    private srTensor: any | null = null;
+    private stateH: Tensor | null = null;
+    private stateC: Tensor | null = null;
+    private srTensor: Tensor | null = null;
 
     // Silero model constants
     // For 16kHz: hop_size=512 (32ms), context_size=64
@@ -137,7 +138,7 @@ export class SileroVAD {
         const probability = outputData[0];
 
         // Update persistent state
-        this.stateH = results.stateN;
+        this.stateH = results.stateN as Tensor;
 
         const isSpeech = probability >= this.config.threshold;
 
