@@ -55,8 +55,11 @@ export class AudioEngine implements IAudioEngine {
     private energyHistorySum: number = 0;
 
     // Last N energy values for bar visualizer (oldest first when read)
-    private energyBarHistory: number[] = [];
     private readonly BAR_LEVELS_SIZE = 64;
+    // Shadow buffer pattern: 2N size, mirror writes to pos and pos + N to allow contiguous reads
+    private energyBarHistoryCirc = new Float32Array(this.BAR_LEVELS_SIZE * 2);
+    private energyBarHistoryPos = 0;
+    private energyBarCount = 0; // Tracks initial ramp-up
 
     // Visualization Summary Buffer (Low-Res Min/Max pairs)
     private visualizationSummary: Float32Array | null = null;
@@ -377,7 +380,9 @@ export class AudioEngine implements IAudioEngine {
 
         // Clear segment history used by the visualizer
         this.recentSegments = [];
-        this.energyBarHistory = [];
+        this.energyBarHistoryCirc.fill(0);
+        this.energyBarHistoryPos = 0;
+        this.energyBarCount = 0;
 
         // Reset visualization buffer
         if (this.visualizationSummary) {
@@ -411,12 +416,28 @@ export class AudioEngine implements IAudioEngine {
             }
             return this.waveformOut;
         }
+
+        // Zero-allocation fallback read from circular shadow buffer
+        // Note: Project memory indicates getBarLevels uses zero-allocation returning a pre-allocated array.
+        // Returning a pre-allocated `barLevelsOut` breaks consumers relying on object identity.
+        // Therefore, we return a new array here as before, but still benefit from avoiding O(N) array shifts.
         const out = new Float32Array(this.BAR_LEVELS_SIZE);
-        const h = this.energyBarHistory;
-        const start = h.length <= this.BAR_LEVELS_SIZE ? 0 : h.length - this.BAR_LEVELS_SIZE;
-        for (let i = 0; i < this.BAR_LEVELS_SIZE; i++) {
-            const idx = start + i;
-            out[i] = idx < h.length ? Math.min(1, Math.max(0, h[idx])) : 0;
+        const h = this.energyBarHistoryCirc;
+        const pos = this.energyBarHistoryPos;
+
+        // Preserve exact behavior of initial ramp-up (zeros at end)
+        if (this.energyBarCount < this.BAR_LEVELS_SIZE) {
+            // we only have `energyBarCount` values, starting at index 0
+            for (let i = 0; i < this.energyBarCount; i++) {
+                const val = h[i];
+                out[i] = val < 0 ? 0 : val > 1 ? 1 : val;
+            }
+        } else {
+            // full buffer, read linearly from `pos`
+            for (let i = 0; i < this.BAR_LEVELS_SIZE; i++) {
+                const val = h[pos + i];
+                out[i] = val < 0 ? 0 : val > 1 ? 1 : val; // clamp 0..1
+            }
         }
         return out;
     }
@@ -572,9 +593,12 @@ export class AudioEngine implements IAudioEngine {
         const energy = this.energyHistorySum / this.energyHistory.length;
 
         this.currentEnergy = energy;
-        this.energyBarHistory.push(energy);
-        if (this.energyBarHistory.length > this.BAR_LEVELS_SIZE) {
-            this.energyBarHistory.shift();
+        // Shadow buffer write
+        this.energyBarHistoryCirc[this.energyBarHistoryPos] = energy;
+        this.energyBarHistoryCirc[this.energyBarHistoryPos + this.BAR_LEVELS_SIZE] = energy;
+        this.energyBarHistoryPos = (this.energyBarHistoryPos + 1) % this.BAR_LEVELS_SIZE;
+        if (this.energyBarCount < this.BAR_LEVELS_SIZE) {
+            this.energyBarCount++;
         }
 
         // Log when energy crosses threshold if state is close to changing
