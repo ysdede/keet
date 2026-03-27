@@ -1,6 +1,6 @@
 import { AudioEngine as IAudioEngine, AudioEngineConfig, AudioSegment, IRingBuffer, AudioMetrics } from './types';
 import { RingBuffer } from './RingBuffer';
-import { AudioSegmentProcessor, ProcessedSegment } from './AudioSegmentProcessor';
+import { AudioSegmentProcessor, ProcessedSegment, CurrentStats } from './AudioSegmentProcessor';
 import { resampleLinear } from './utils';
 
 /** Duration of the visualization buffer in seconds */
@@ -72,6 +72,17 @@ export class AudioEngine implements IAudioEngine {
         noiseFloor: 0.01,
         currentSNR: 0,
         isSpeaking: false,
+    };
+
+    // Cached objects to avoid GC churn in hot paths
+    private cachedStats: CurrentStats = {
+        silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
+        speech: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
+        noiseFloor: 0.01,
+        snr: 0,
+        snrThreshold: 3.0,
+        minSnrThreshold: 1.0,
+        energyRiseThreshold: 0.08
     };
 
     // Subscribers for visualization updates
@@ -422,7 +433,7 @@ export class AudioEngine implements IAudioEngine {
     }
 
     getSignalMetrics(): { noiseFloor: number; snr: number; threshold: number; snrThreshold: number } {
-        const stats = this.audioProcessor.getStats();
+        const stats = this.audioProcessor.getStats(this.cachedStats);
         return {
             noiseFloor: stats.noiseFloor ?? 0.0001,
             snr: stats.snr ?? 0,
@@ -598,7 +609,7 @@ export class AudioEngine implements IAudioEngine {
         this.updateVisualizationBuffer(chunk);
 
         // 2.6 Update metrics
-        const stats = this.audioProcessor.getStats();
+        const stats = this.audioProcessor.getStats(this.cachedStats);
         const stateInfo = this.audioProcessor.getStateInfo();
 
         this.metrics.currentEnergy = energy;
