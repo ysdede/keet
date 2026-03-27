@@ -37,7 +37,7 @@ interface StatsSummary {
 }
 
 /** Current stats snapshot */
-interface CurrentStats {
+export interface CurrentStats {
     silence: StatsSummary;
     speech: StatsSummary;
     noiseFloor: number;
@@ -524,9 +524,29 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current statistics.
+     * @param out Optional pre-allocated object to avoid GC overhead
      */
-    getStats(): CurrentStats {
+    getStats(out?: CurrentStats): CurrentStats {
         const stats = this.state.currentStats;
+
+        if (out) {
+            out.noiseFloor = stats.noiseFloor;
+            out.snr = stats.snr;
+            out.snrThreshold = stats.snrThreshold;
+            out.minSnrThreshold = stats.minSnrThreshold;
+            out.energyRiseThreshold = stats.energyRiseThreshold;
+
+            out.silence.avgDuration = stats.silence.avgDuration;
+            out.silence.avgEnergy = stats.silence.avgEnergy;
+            out.silence.avgEnergyIntegral = stats.silence.avgEnergyIntegral;
+
+            out.speech.avgDuration = stats.speech.avgDuration;
+            out.speech.avgEnergy = stats.speech.avgEnergy;
+            out.speech.avgEnergyIntegral = stats.speech.avgEnergyIntegral;
+
+            return out;
+        }
+
         return {
             ...stats,
             silence: { ...stats.silence },
