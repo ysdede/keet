@@ -869,32 +869,34 @@ export class AudioEngine implements IAudioEngine {
             : new Float32Array(outSize);
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
 
+        // Optimized downsampling: eliminate Math.floor per iteration and the 'first' branch check
+        let startS = 0;
+
         for (let i = 0; i < width; i++) {
-            const rangeStart = i * samplesPerTarget;
-            const rangeEnd = (i + 1) * samplesPerTarget;
+            const endS = Math.floor((i + 1) * samplesPerTarget);
 
             let minVal = 0;
             let maxVal = 0;
-            let first = true;
 
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
-                // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
-                const vMin = this.visualizationSummary[idx];
-                const vMax = this.visualizationSummary[idx + 1];
+            if (startS < endS) {
+                let idx = (this.visualizationSummaryPosition + startS) * 2;
+                minVal = this.visualizationSummary[idx];
+                maxVal = this.visualizationSummary[idx + 1];
 
-                if (first) {
-                    minVal = vMin;
-                    maxVal = vMax;
-                    first = false;
-                } else {
+                for (let s = startS + 1; s < endS; s++) {
+                    idx += 2;
+                    const vMin = this.visualizationSummary[idx];
+                    const vMax = this.visualizationSummary[idx + 1];
                     if (vMin < minVal) minVal = vMin;
                     if (vMax > maxVal) maxVal = vMax;
                 }
             }
 
-            subsampledBuffer[i * 2] = minVal;
-            subsampledBuffer[i * 2 + 1] = maxVal;
+            const outIdx = i * 2;
+            subsampledBuffer[outIdx] = minVal;
+            subsampledBuffer[outIdx + 1] = maxVal;
+
+            startS = endS;
         }
         return subsampledBuffer;
     }
