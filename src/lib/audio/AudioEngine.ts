@@ -54,6 +54,23 @@ export class AudioEngine implements IAudioEngine {
     private energyHistory: number[] = [];
     private energyHistorySum: number = 0;
 
+    // Pre-allocated object for passing out metrics without GC churn
+    private cachedStats = {
+        silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
+        speech: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
+        noiseFloor: 0.005,
+        snr: 0,
+        snrThreshold: 3.0,
+        minSnrThreshold: 1.0,
+        energyRiseThreshold: 0.1
+    };
+    private processorStateInfo = {
+        inSpeech: false,
+        noiseFloor: 0,
+        snr: 0,
+        speechStartTime: null as number | null
+    };
+
     // Last N energy values for bar visualizer (oldest first when read)
     private energyBarHistory: number[] = [];
     private readonly BAR_LEVELS_SIZE = 64;
@@ -422,17 +439,18 @@ export class AudioEngine implements IAudioEngine {
     }
 
     getSignalMetrics(): { noiseFloor: number; snr: number; threshold: number; snrThreshold: number } {
-        const stats = this.audioProcessor.getStats();
+        this.audioProcessor.getStats(this.cachedStats);
         return {
-            noiseFloor: stats.noiseFloor ?? 0.0001,
-            snr: stats.snr ?? 0,
+            noiseFloor: this.cachedStats.noiseFloor ?? 0.0001,
+            snr: this.cachedStats.snr ?? 0,
             threshold: this.config.energyThreshold,
-            snrThreshold: stats.snrThreshold ?? 3.0
+            snrThreshold: this.cachedStats.snrThreshold ?? 3.0
         };
     }
 
     isSpeechActive(): boolean {
-        return this.audioProcessor.getStateInfo().inSpeech;
+        this.audioProcessor.getStateInfo(this.processorStateInfo);
+        return this.processorStateInfo.inSpeech;
     }
 
     getRingBuffer(): IRingBuffer {
@@ -598,15 +616,15 @@ export class AudioEngine implements IAudioEngine {
         this.updateVisualizationBuffer(chunk);
 
         // 2.6 Update metrics
-        const stats = this.audioProcessor.getStats();
-        const stateInfo = this.audioProcessor.getStateInfo();
+        this.audioProcessor.getStats(this.cachedStats);
+        this.audioProcessor.getStateInfo(this.processorStateInfo);
 
         this.metrics.currentEnergy = energy;
         this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + energy * 0.05;
         this.metrics.peakEnergy = Math.max(this.metrics.peakEnergy * 0.99, energy);
-        this.metrics.noiseFloor = stats.noiseFloor ?? 0.01;
-        this.metrics.currentSNR = stats.snr ?? 0;
-        this.metrics.isSpeaking = stateInfo.inSpeech;
+        this.metrics.noiseFloor = this.cachedStats.noiseFloor ?? 0.01;
+        this.metrics.currentSNR = this.cachedStats.snr ?? 0;
+        this.metrics.isSpeaking = this.processorStateInfo.inSpeech;
 
         // Periodic debug log
         if (this.HOT_PATH_DEBUG_LOGS && Math.random() < 0.05) {
@@ -784,10 +802,10 @@ export class AudioEngine implements IAudioEngine {
         const segments = [...this.recentSegments];
 
         // Add pending segment if speech is currently active
-        const vadState = this.audioProcessor.getStateInfo();
-        if (vadState.inSpeech && vadState.speechStartTime !== null) {
+        this.audioProcessor.getStateInfo(this.processorStateInfo);
+        if (this.processorStateInfo.inSpeech && this.processorStateInfo.speechStartTime !== null) {
             segments.push({
-                startTime: vadState.speechStartTime,
+                startTime: this.processorStateInfo.speechStartTime,
                 endTime: this.ringBuffer.getCurrentTime(),
                 isProcessed: false // Pending
             });
