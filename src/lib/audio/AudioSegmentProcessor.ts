@@ -524,9 +524,19 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current statistics.
+     * @param out Optional pre-allocated object to mutate and return, avoiding GC overhead.
+     * Note: When `out` is provided, nested objects (silence, speech) are intentionally NOT deep-copied for performance.
      */
-    getStats(): CurrentStats {
+    getStats(out?: Partial<CurrentStats>): CurrentStats | Partial<CurrentStats> {
         const stats = this.state.currentStats;
+        if (out) {
+            out.noiseFloor = stats.noiseFloor;
+            out.snr = stats.snr;
+            out.snrThreshold = stats.snrThreshold;
+            out.minSnrThreshold = stats.minSnrThreshold;
+            out.energyRiseThreshold = stats.energyRiseThreshold;
+            return out;
+        }
         return {
             ...stats,
             silence: { ...stats.silence },
@@ -536,8 +546,16 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current state info for debugging.
+     * @param out Optional pre-allocated object to mutate and return, avoiding GC overhead.
      */
-    getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
+    getStateInfo(out?: { inSpeech?: boolean; noiseFloor?: number; snr?: number; speechStartTime?: number | null }): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } | Partial<{ inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null }> {
+        if (out) {
+            out.inSpeech = this.state.inSpeech;
+            out.noiseFloor = this.state.noiseFloor;
+            out.snr = this.state.currentStats.snr;
+            out.speechStartTime = this.state.speechStartTime;
+            return out;
+        }
         return {
             inSpeech: this.state.inSpeech,
             noiseFloor: this.state.noiseFloor,
