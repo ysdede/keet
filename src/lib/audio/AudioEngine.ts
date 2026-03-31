@@ -64,6 +64,10 @@ export class AudioEngine implements IAudioEngine {
     private readonly VIS_SUMMARY_SIZE = 2000; // 2000 min/max pairs for 30 seconds = 15ms resolution
     private visualizationNotifyBuffer: Float32Array | null = null;
 
+    // Cached objects for zero-allocation metrics polling
+    private _cachedStats: Partial<ReturnType<AudioSegmentProcessor['getStats']>> = {};
+    private _cachedStateInfo: Partial<ReturnType<AudioSegmentProcessor['getStateInfo']>> = {};
+
     // Metrics for UI components
     private metrics: AudioMetrics = {
         currentEnergy: 0,
@@ -598,15 +602,16 @@ export class AudioEngine implements IAudioEngine {
         this.updateVisualizationBuffer(chunk);
 
         // 2.6 Update metrics
-        const stats = this.audioProcessor.getStats();
-        const stateInfo = this.audioProcessor.getStateInfo();
+        // Use zero-allocation methods to prevent GC overhead per chunk
+        this.audioProcessor.getStats(this._cachedStats);
+        this.audioProcessor.getStateInfo(this._cachedStateInfo);
 
         this.metrics.currentEnergy = energy;
         this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + energy * 0.05;
         this.metrics.peakEnergy = Math.max(this.metrics.peakEnergy * 0.99, energy);
-        this.metrics.noiseFloor = stats.noiseFloor ?? 0.01;
-        this.metrics.currentSNR = stats.snr ?? 0;
-        this.metrics.isSpeaking = stateInfo.inSpeech;
+        this.metrics.noiseFloor = this._cachedStats.noiseFloor ?? 0.01;
+        this.metrics.currentSNR = this._cachedStats.snr ?? 0;
+        this.metrics.isSpeaking = this._cachedStateInfo.inSpeech ?? false;
 
         // Periodic debug log
         if (this.HOT_PATH_DEBUG_LOGS && Math.random() < 0.05) {
