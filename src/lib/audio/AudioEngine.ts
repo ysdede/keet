@@ -868,33 +868,38 @@ export class AudioEngine implements IAudioEngine {
             ? outBuffer
             : new Float32Array(outSize);
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
+        const pos = this.visualizationSummaryPosition;
+
+        // Optimization: Pre-calculate bounds and sequential pointers to eliminate Math.floor/multiplication per sample
+        let outIdx = 0;
+        let startIdx = 0;
+        let floatEnd = samplesPerTarget;
 
         for (let i = 0; i < width; i++) {
-            const rangeStart = i * samplesPerTarget;
-            const rangeEnd = (i + 1) * samplesPerTarget;
+            const endIdx = Math.floor(floatEnd);
 
             let minVal = 0;
             let maxVal = 0;
-            let first = true;
 
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
-                // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
-                const vMin = this.visualizationSummary[idx];
-                const vMax = this.visualizationSummary[idx + 1];
+            if (startIdx < endIdx) {
+                let idx = (pos + startIdx) * 2;
+                minVal = this.visualizationSummary[idx];
+                maxVal = this.visualizationSummary[idx + 1];
 
-                if (first) {
-                    minVal = vMin;
-                    maxVal = vMax;
-                    first = false;
-                } else {
+                for (let s = startIdx + 1; s < endIdx; s++) {
+                    idx += 2;
+                    const vMin = this.visualizationSummary[idx];
+                    const vMax = this.visualizationSummary[idx + 1];
                     if (vMin < minVal) minVal = vMin;
                     if (vMax > maxVal) maxVal = vMax;
                 }
             }
 
-            subsampledBuffer[i * 2] = minVal;
-            subsampledBuffer[i * 2 + 1] = maxVal;
+            subsampledBuffer[outIdx++] = minVal;
+            subsampledBuffer[outIdx++] = maxVal;
+
+            startIdx = endIdx;
+            floatEnd += samplesPerTarget;
         }
         return subsampledBuffer;
     }
