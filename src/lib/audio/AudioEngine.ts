@@ -870,18 +870,23 @@ export class AudioEngine implements IAudioEngine {
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
 
         for (let i = 0; i < width; i++) {
-            const rangeStart = i * samplesPerTarget;
-            const rangeEnd = (i + 1) * samplesPerTarget;
+            // Optimization: Hoist Math.floor out of the inner loop and calculate bounds once per pixel.
+            // Avoids redundant float-to-int conversion in the hot path.
+            const rangeStart = Math.floor(i * samplesPerTarget);
+            const rangeEnd = Math.floor((i + 1) * samplesPerTarget);
 
             let minVal = 0;
             let maxVal = 0;
             let first = true;
 
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
+            // Optimization: Sequential array access without recalculating indices
+            // by using an accumulator (idx += 2) instead of (pos + s) * 2 inside the loop.
+            let idx = (this.visualizationSummaryPosition + rangeStart) * 2;
+            for (let s = rangeStart; s < rangeEnd; s++) {
                 // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
                 const vMin = this.visualizationSummary[idx];
                 const vMax = this.visualizationSummary[idx + 1];
+                idx += 2;
 
                 if (first) {
                     minVal = vMin;
