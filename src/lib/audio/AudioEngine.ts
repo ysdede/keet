@@ -869,25 +869,28 @@ export class AudioEngine implements IAudioEngine {
             : new Float32Array(outSize);
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
 
+        let rangeStart = 0;
         for (let i = 0; i < width; i++) {
-            const rangeStart = i * samplesPerTarget;
             const rangeEnd = (i + 1) * samplesPerTarget;
+            const startIdx = Math.floor(rangeStart);
+            const endIdx = Math.floor(rangeEnd);
+            rangeStart = rangeEnd; // advance for next iteration
 
             let minVal = 0;
             let maxVal = 0;
-            let first = true;
 
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
-                // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
-                const vMin = this.visualizationSummary[idx];
-                const vMax = this.visualizationSummary[idx + 1];
+            if (startIdx < endIdx) {
+                // Read the first pair directly
+                let ptr = (this.visualizationSummaryPosition + startIdx) * 2;
+                minVal = this.visualizationSummary[ptr];
+                maxVal = this.visualizationSummary[ptr + 1];
 
-                if (first) {
-                    minVal = vMin;
-                    maxVal = vMax;
-                    first = false;
-                } else {
+                // Iterate sequentially for the rest of the window
+                for (let s = startIdx + 1; s < endIdx; s++) {
+                    ptr += 2;
+                    const vMin = this.visualizationSummary[ptr];
+                    const vMax = this.visualizationSummary[ptr + 1];
+
                     if (vMin < minVal) minVal = vMin;
                     if (vMax > maxVal) maxVal = vMax;
                 }
