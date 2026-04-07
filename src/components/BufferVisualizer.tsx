@@ -134,24 +134,36 @@ export const BufferVisualizer: Component<BufferVisualizerProps> = (props) => {
         // Optimized Waveform Path (Consolidated passes)
         ctx.lineCap = 'round';
 
+        // Pre-calculate scale factor to avoid redundant float multiplications
+        // in the inner loop (~400 iterations per pass, up to 4 passes per frame).
+        const scale = centerY * 0.9;
+
         // Helper to draw the full waveform path
         const drawPath = (offsetX: number, offsetY: number) => {
           if (!ctx) return;
           ctx.beginPath();
+
+          // Hoist base Y offset calculation outside loop
+          const baseOffset = centerY + offsetY;
+
           for (let i = 0; i < numPoints; i++) {
             const x = i * step + offsetX;
-            // Ensure min/max have at least 1px difference for visibility even when silent
-            let minVal = data[i * 2];
-            let maxVal = data[i * 2 + 1];
+
+            const idx = i * 2;
+            let minVal = data[idx];
+            let maxVal = data[idx + 1];
 
             // Scaled values
-            let yMin = centerY - (minVal * centerY * 0.9) + offsetY;
-            let yMax = centerY - (maxVal * centerY * 0.9) + offsetY;
+            let yMin = baseOffset - (minVal * scale);
+            let yMax = baseOffset - (maxVal * scale);
 
-            // Ensure tiny signals are visible (min 1px height)
-            if (Math.abs(yMax - yMin) < 1) {
-              yMin = centerY - 0.5 + offsetY;
-              yMax = centerY + 0.5 + offsetY;
+            // Ensure tiny signals are visible (min 1px height).
+            // Use (maxVal - minVal) * scale instead of Math.abs(yMax - yMin)
+            // to avoid calculating difference after applying coordinate transforms.
+            // Assumption: maxVal >= minVal.
+            if ((maxVal - minVal) * scale < 1) {
+              yMin = baseOffset - 0.5;
+              yMax = baseOffset + 0.5;
             }
 
             ctx.moveTo(x, yMin);
