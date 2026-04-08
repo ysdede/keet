@@ -524,9 +524,29 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current statistics.
+     * @param out Optional pre-allocated object to mutate to prevent GC.
      */
-    getStats(): CurrentStats {
+    getStats(out?: CurrentStats): CurrentStats {
         const stats = this.state.currentStats;
+        if (out) {
+            out.noiseFloor = stats.noiseFloor;
+            out.snr = stats.snr;
+            out.snrThreshold = stats.snrThreshold;
+            out.minSnrThreshold = stats.minSnrThreshold;
+            out.energyRiseThreshold = stats.energyRiseThreshold;
+
+            if (!out.silence) out.silence = { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 };
+            out.silence.avgDuration = stats.silence.avgDuration;
+            out.silence.avgEnergy = stats.silence.avgEnergy;
+            out.silence.avgEnergyIntegral = stats.silence.avgEnergyIntegral;
+
+            if (!out.speech) out.speech = { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 };
+            out.speech.avgDuration = stats.speech.avgDuration;
+            out.speech.avgEnergy = stats.speech.avgEnergy;
+            out.speech.avgEnergyIntegral = stats.speech.avgEnergyIntegral;
+            return out;
+        }
+
         return {
             ...stats,
             silence: { ...stats.silence },
@@ -536,8 +556,16 @@ export class AudioSegmentProcessor {
 
     /**
      * Get current state info for debugging.
+     * @param out Optional pre-allocated object to mutate to prevent GC.
      */
-    getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
+    getStateInfo(out?: { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null }): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
+        if (out) {
+            out.inSpeech = this.state.inSpeech;
+            out.noiseFloor = this.state.noiseFloor;
+            out.snr = this.state.currentStats.snr;
+            out.speechStartTime = this.state.speechStartTime;
+            return out;
+        }
         return {
             inSpeech: this.state.inSpeech,
             noiseFloor: this.state.noiseFloor,
