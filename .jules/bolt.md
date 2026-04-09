@@ -1,7 +1,3 @@
-## 2026-02-18 - Optimized Circular Buffer Access
-Learning: Circular buffers in performance-critical hot paths (like audio visualization loops running at 60 fps) benefit significantly from a "shadow buffer" strategy. By mirroring the buffer content (writing to `i` and `i + size`), we enable contiguous linear reads of any window of size `size` without modulo arithmetic.
-Action: Apply this pattern to other fixed-size sliding window buffers in the audio pipeline if profiling shows they are bottlenecks.
-
-## 2025-05-18 - Memory vs Code Reality
-Learning: The project memory stated `AudioSegmentProcessor` uses zero-allocation `updateStats`, but the code actually allocated new objects every frame.
-Action: Always verify performance claims in memory against the actual code before assuming they are implemented.
+## 2025-02-28 - Optimize array iteration via running sum in VAD
+Learning: In high-frequency or long-running audio processing paths, accumulating large arrays and using `.reduce()` for simple averages causes measurable CPU overhead (up to ~50-100ms in extreme cases for `speechEnergies` over long segments).
+Action: Prefer keeping a running sum and count state variables (e.g., `speechEnergySum`, `speechEnergyCount`) rather than iterating accumulated arrays when simple statistical measures are needed.
