@@ -5,3 +5,7 @@ Action: Apply this pattern to other fixed-size sliding window buffers in the aud
 ## 2025-05-18 - Memory vs Code Reality
 Learning: The project memory stated `AudioSegmentProcessor` uses zero-allocation `updateStats`, but the code actually allocated new objects every frame.
 Action: Always verify performance claims in memory against the actual code before assuming they are implemented.
+
+## 2025-05-18 - Hoist loop calculations in high-frequency rendering loops
+Learning: In high-frequency visualizer loops (e.g., `LayeredBufferVisualizer.tsx`), calculations that depend only on outer loop bounds (such as the inner iteration step size `Math.max(1, Math.floor((endIdx - startIdx) / 10))`) should be hoisted outside the inner loop to eliminate redundant arithmetic per iteration.
+Action: Always check nested loops for calculations that don't depend on the inner loop variable, and hoist them out to improve performance.
