@@ -394,7 +394,8 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
             let max = -1;
             let hasData = false;
 
-            for (let i = startIdx; i < endIdx; i += Math.max(1, Math.floor((endIdx - startIdx) / 10))) {
+            const innerStep = Math.max(1, Math.floor((endIdx - startIdx) / 10));
+            for (let i = startIdx; i < endIdx; i += innerStep) {
                 const s = data[i];
                 if (s < min) min = s;
                 if (s > max) max = s;
