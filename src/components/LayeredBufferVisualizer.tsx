@@ -394,7 +394,11 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
             let max = -1;
             let hasData = false;
 
-            for (let i = startIdx; i < endIdx; i += Math.max(1, Math.floor((endIdx - startIdx) / 10))) {
+            // PERFORMANCE: Hoist step calculation outside the inner loop to prevent
+            // redundant Math.max/Math.floor evaluations per sample frame.
+            const innerStep = Math.max(1, Math.floor((endIdx - startIdx) / 10));
+
+            for (let i = startIdx; i < endIdx; i += innerStep) {
                 const s = data[i];
                 if (s < min) min = s;
                 if (s > max) max = s;
