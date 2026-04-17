@@ -869,25 +869,26 @@ export class AudioEngine implements IAudioEngine {
             : new Float32Array(outSize);
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
 
+        // Optimization: hoist bounds calculation and avoid per-pixel index recalculation
+        // using pointer arithmetic (idx += 2) to eliminate Math.floor() overhead inside inner loop
         for (let i = 0; i < width; i++) {
-            const rangeStart = i * samplesPerTarget;
-            const rangeEnd = (i + 1) * samplesPerTarget;
+            const startFloor = Math.floor(i * samplesPerTarget);
+            const endFloor = Math.floor((i + 1) * samplesPerTarget);
 
             let minVal = 0;
             let maxVal = 0;
-            let first = true;
 
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
+            if (startFloor < endFloor) {
                 // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
-                const vMin = this.visualizationSummary[idx];
-                const vMax = this.visualizationSummary[idx + 1];
+                let idx = (this.visualizationSummaryPosition + startFloor) * 2;
+                minVal = this.visualizationSummary[idx];
+                maxVal = this.visualizationSummary[idx + 1];
 
-                if (first) {
-                    minVal = vMin;
-                    maxVal = vMax;
-                    first = false;
-                } else {
+                for (let s = startFloor + 1; s < endFloor; s++) {
+                    idx += 2;
+                    const vMin = this.visualizationSummary[idx];
+                    const vMax = this.visualizationSummary[idx + 1];
+
                     if (vMin < minVal) minVal = vMin;
                     if (vMax > maxVal) maxVal = vMax;
                 }
