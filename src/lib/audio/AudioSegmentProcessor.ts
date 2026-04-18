@@ -54,7 +54,8 @@ interface ProcessorState {
     silenceStartTime: number | null;
     silenceCounter: number;
     recentChunks: ChunkInfo[];
-    speechEnergies: number[];
+    speechEnergySum: number;
+    speechEnergyCount: number;
     silenceEnergies: number[];
     speechStats: SegmentStats[];
     silenceStats: SegmentStats[];
@@ -249,13 +250,14 @@ export class AudioSegmentProcessor {
             // Check if we should allow some silence within speech
             if (silenceDuration < this.options.maxSilenceWithinSpeech) {
                 // Not yet enough silence to consider it a break
-                this.state.speechEnergies.push(energy);
+                this.state.speechEnergySum += energy;
+                this.state.speechEnergyCount++;
             } else if (isConfirmedSilence) {
                 // Confirmed silence - end speech segment
                 if (this.state.speechStartTime !== null) {
                     const speechDuration = currentTime - this.state.speechStartTime;
-                    const avgEnergy = this.state.speechEnergies.length > 0
-                        ? this.state.speechEnergies.reduce((a, b) => a + b, 0) / this.state.speechEnergies.length
+                    const avgEnergy = this.state.speechEnergyCount > 0
+                        ? this.state.speechEnergySum / this.state.speechEnergyCount
                         : 0;
 
                     this.recordSpeechStat({
@@ -280,7 +282,8 @@ export class AudioSegmentProcessor {
         } else {
             // Continue in current state
             if (this.state.inSpeech) {
-                this.state.speechEnergies.push(energy);
+                this.state.speechEnergySum += energy;
+                this.state.speechEnergyCount++;
             } else {
                 this.state.silenceEnergies.push(energy);
             }
@@ -332,7 +335,8 @@ export class AudioSegmentProcessor {
         this.state.inSpeech = true;
         this.state.speechStartTime = time;
         this.state.silenceCounter = 0;
-        this.state.speechEnergies = [energy];
+        this.state.speechEnergySum = energy;
+        this.state.speechEnergyCount = 1;
         this.state.silenceStartTime = null;
         this.state.silenceDuration = 0;
 
@@ -556,7 +560,8 @@ export class AudioSegmentProcessor {
             silenceStartTime: null,
             silenceCounter: 0,
             recentChunks: [],
-            speechEnergies: [],
+            speechEnergySum: 0,
+            speechEnergyCount: 0,
             silenceEnergies: [],
             speechStats: [],
             silenceStats: [],
