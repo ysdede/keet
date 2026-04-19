@@ -870,16 +870,19 @@ export class AudioEngine implements IAudioEngine {
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
 
         for (let i = 0; i < width; i++) {
-            const rangeStart = i * samplesPerTarget;
-            const rangeEnd = (i + 1) * samplesPerTarget;
+            // Performance: Hoist bounds calculations out of the inner loop
+            const startS = Math.floor(i * samplesPerTarget);
+            const endS = Math.floor((i + 1) * samplesPerTarget);
 
             let minVal = 0;
             let maxVal = 0;
             let first = true;
 
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
+            // Performance: Initialize pointer once per sub-range and increment sequentially
+            let idx = (this.visualizationSummaryPosition + startS) * 2;
+
+            for (let s = startS; s < endS; s++) {
                 // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
                 const vMin = this.visualizationSummary[idx];
                 const vMax = this.visualizationSummary[idx + 1];
 
@@ -891,6 +894,7 @@ export class AudioEngine implements IAudioEngine {
                     if (vMin < minVal) minVal = vMin;
                     if (vMax > maxVal) maxVal = vMax;
                 }
+                idx += 2;
             }
 
             subsampledBuffer[i * 2] = minVal;
