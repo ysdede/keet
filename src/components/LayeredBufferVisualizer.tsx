@@ -1,7 +1,7 @@
 import { Component, onMount, onCleanup, createSignal } from 'solid-js';
 import type { AudioEngine } from '../lib/audio/types';
 import type { MelWorkerClient } from '../lib/audio/MelWorkerClient';
-import { normalizeMelForDisplay } from '../lib/audio/mel-display';
+import { MEL_DISPLAY_MIN_DB, MEL_DISPLAY_DB_RANGE } from '../lib/audio/mel-display';
 import { appStore } from '../stores/appStore';
 
 interface LayeredBufferVisualizerProps {
@@ -347,18 +347,30 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         const timeScale = timeSteps / width;
         const freqScale = melBins / height;
 
+        // Precalculate frequency mapping
+        const yToMelMap = new Int32Array(height);
+        for (let y = 0; y < height; y++) {
+            yToMelMap[y] = Math.floor((height - 1 - y) * freqScale);
+        }
+
+        const melScaleFactor = 255 / MEL_DISPLAY_DB_RANGE;
+
         for (let x = 0; x < width; x++) {
             const t = Math.floor(x * timeScale);
             if (t >= timeSteps) break;
 
             for (let y = 0; y < height; y++) {
                 // y=0 is top (high freq), y=height is bottom (low freq).
-                const m = Math.floor((height - 1 - y) * freqScale);
+                const m = yToMelMap[y];
                 if (m >= melBins) continue;
 
                 const val = features[m * timeSteps + t];
-                const clamped = normalizeMelForDisplay(val);
-                const lutIdx = (clamped * 255) | 0;
+
+                // Inline normalizeMelForDisplay calculation to avoid function call overhead
+                let lutIdx = ((val - MEL_DISPLAY_MIN_DB) * melScaleFactor) | 0;
+                if (lutIdx < 0) lutIdx = 0;
+                else if (lutIdx > 255) lutIdx = 255;
+
                 const lutBase = lutIdx * 3;
 
                 const idx = (y * width + x) * 4;
@@ -394,7 +406,8 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
             let max = -1;
             let hasData = false;
 
-            for (let i = startIdx; i < endIdx; i += Math.max(1, Math.floor((endIdx - startIdx) / 10))) {
+            const iStep = Math.max(1, Math.floor((endIdx - startIdx) / 10));
+            for (let i = startIdx; i < endIdx; i += iStep) {
                 const s = data[i];
                 if (s < min) min = s;
                 if (s > max) max = s;
