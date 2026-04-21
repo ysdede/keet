@@ -868,29 +868,30 @@ export class AudioEngine implements IAudioEngine {
             ? outBuffer
             : new Float32Array(outSize);
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
+        const baseIdx = this.visualizationSummaryPosition * 2;
+        const summary = this.visualizationSummary;
 
         for (let i = 0; i < width; i++) {
-            const rangeStart = i * samplesPerTarget;
-            const rangeEnd = (i + 1) * samplesPerTarget;
+            const startInt = Math.floor(i * samplesPerTarget);
+            const endInt = Math.floor((i + 1) * samplesPerTarget);
 
-            let minVal = 0;
-            let maxVal = 0;
-            let first = true;
+            if (startInt >= endInt) {
+                 subsampledBuffer[i * 2] = 0;
+                 subsampledBuffer[i * 2 + 1] = 0;
+                 continue;
+            }
 
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
-                // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
-                const vMin = this.visualizationSummary[idx];
-                const vMax = this.visualizationSummary[idx + 1];
+            let idx = baseIdx + startInt * 2;
+            let minVal = summary[idx];
+            let maxVal = summary[idx + 1];
+            idx += 2;
 
-                if (first) {
-                    minVal = vMin;
-                    maxVal = vMax;
-                    first = false;
-                } else {
-                    if (vMin < minVal) minVal = vMin;
-                    if (vMax > maxVal) maxVal = vMax;
-                }
+            for (let s = startInt + 1; s < endInt; s++) {
+                const vMin = summary[idx];
+                const vMax = summary[idx + 1];
+                if (vMin < minVal) minVal = vMin;
+                if (vMax > maxVal) maxVal = vMax;
+                idx += 2;
             }
 
             subsampledBuffer[i * 2] = minVal;
