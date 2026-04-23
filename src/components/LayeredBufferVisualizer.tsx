@@ -1,7 +1,7 @@
 import { Component, onMount, onCleanup, createSignal } from 'solid-js';
 import type { AudioEngine } from '../lib/audio/types';
 import type { MelWorkerClient } from '../lib/audio/MelWorkerClient';
-import { normalizeMelForDisplay } from '../lib/audio/mel-display';
+import { MEL_DISPLAY_MIN_DB, MEL_DISPLAY_DB_RANGE } from '../lib/audio/mel-display';
 import { appStore } from '../stores/appStore';
 
 interface LayeredBufferVisualizerProps {
@@ -347,25 +347,49 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         const timeScale = timeSteps / width;
         const freqScale = melBins / height;
 
+        // Pre-calculate mappings to avoid per-pixel math and normalize calls
+        const mForY = new Int32Array(height);
+        for (let y = 0; y < height; y++) {
+            // y=0 is top (high freq), y=height is bottom (low freq).
+            mForY[y] = Math.floor((height - 1 - y) * freqScale);
+        }
+
+        const tForX = new Int32Array(width);
         for (let x = 0; x < width; x++) {
-            const t = Math.floor(x * timeScale);
-            if (t >= timeSteps) break;
+            tForX[x] = Math.floor(x * timeScale);
+        }
 
-            for (let y = 0; y < height; y++) {
-                // y=0 is top (high freq), y=height is bottom (low freq).
-                const m = Math.floor((height - 1 - y) * freqScale);
-                if (m >= melBins) continue;
+        // Write linearly to canvas data by iterating Y then X
+        let idx = 0;
+        for (let y = 0; y < height; y++) {
+            const m = mForY[y];
+            if (m >= melBins || m < 0) {
+                idx += width * 4;
+                continue;
+            }
+            const mOffset = m * timeSteps;
 
-                const val = features[m * timeSteps + t];
-                const clamped = normalizeMelForDisplay(val);
-                const lutIdx = (clamped * 255) | 0;
+            for (let x = 0; x < width; x++) {
+                const t = tForX[x];
+                if (t >= timeSteps || t < 0) {
+                    idx += 4;
+                    continue;
+                }
+
+                const val = features[mOffset + t];
+                // Inline normalizeMelForDisplay and map to [0, 255]
+                const normalized = (val - MEL_DISPLAY_MIN_DB) / MEL_DISPLAY_DB_RANGE;
+
+                // Fast clamp for display
+                let lutIdx = (normalized * 255) | 0;
+                if (lutIdx < 0) lutIdx = 0;
+                else if (lutIdx > 255) lutIdx = 255;
+
                 const lutBase = lutIdx * 3;
-
-                const idx = (y * width + x) * 4;
-                data[idx] = COLORMAP_LUT[lutBase];
-                data[idx + 1] = COLORMAP_LUT[lutBase + 1];
-                data[idx + 2] = COLORMAP_LUT[lutBase + 2];
-                data[idx + 3] = 255;
+                data[idx++] = COLORMAP_LUT[lutBase];
+                data[idx++] = COLORMAP_LUT[lutBase + 1];
+                data[idx++] = COLORMAP_LUT[lutBase + 2];
+                data[idx++] = 255;
             }
         }
         ctx.putImageData(imgData, 0, 0);
