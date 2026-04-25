@@ -37,7 +37,7 @@ interface StatsSummary {
 }
 
 /** Current stats snapshot */
-interface CurrentStats {
+export interface CurrentStats {
     silence: StatsSummary;
     speech: StatsSummary;
     noiseFloor: number;
@@ -525,8 +525,22 @@ export class AudioSegmentProcessor {
     /**
      * Get current statistics.
      */
-    getStats(): CurrentStats {
+    getStats(out?: CurrentStats): CurrentStats {
         const stats = this.state.currentStats;
+        if (out) {
+            out.noiseFloor = stats.noiseFloor;
+            out.snr = stats.snr;
+            out.snrThreshold = stats.snrThreshold;
+            out.minSnrThreshold = stats.minSnrThreshold;
+            out.energyRiseThreshold = stats.energyRiseThreshold;
+            out.silence.avgDuration = stats.silence.avgDuration;
+            out.silence.avgEnergy = stats.silence.avgEnergy;
+            out.silence.avgEnergyIntegral = stats.silence.avgEnergyIntegral;
+            out.speech.avgDuration = stats.speech.avgDuration;
+            out.speech.avgEnergy = stats.speech.avgEnergy;
+            out.speech.avgEnergyIntegral = stats.speech.avgEnergyIntegral;
+            return out;
+        }
         return {
             ...stats,
             silence: { ...stats.silence },
@@ -537,7 +551,14 @@ export class AudioSegmentProcessor {
     /**
      * Get current state info for debugging.
      */
-    getStateInfo(): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
+    getStateInfo(out?: { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null }): { inSpeech: boolean; noiseFloor: number; snr: number; speechStartTime: number | null } {
+        if (out) {
+            out.inSpeech = this.state.inSpeech;
+            out.noiseFloor = this.state.noiseFloor;
+            out.snr = this.state.currentStats.snr;
+            out.speechStartTime = this.state.speechStartTime;
+            return out;
+        }
         return {
             inSpeech: this.state.inSpeech,
             noiseFloor: this.state.noiseFloor,
