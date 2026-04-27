@@ -877,11 +877,16 @@ export class AudioEngine implements IAudioEngine {
             let maxVal = 0;
             let first = true;
 
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
+            const startIdx = Math.floor(rangeStart);
+            const endIdx = Math.floor(rangeEnd);
+
+            // Hoist index calculation and iterate linearly
+            let summaryIdx = (this.visualizationSummaryPosition + startIdx) * 2;
+
+            for (let s = startIdx; s < endIdx; s++) {
                 // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
-                const vMin = this.visualizationSummary[idx];
-                const vMax = this.visualizationSummary[idx + 1];
+                const vMin = this.visualizationSummary[summaryIdx];
+                const vMax = this.visualizationSummary[summaryIdx + 1];
 
                 if (first) {
                     minVal = vMin;
@@ -891,6 +896,7 @@ export class AudioEngine implements IAudioEngine {
                     if (vMin < minVal) minVal = vMin;
                     if (vMax > maxVal) maxVal = vMax;
                 }
+                summaryIdx += 2;
             }
 
             subsampledBuffer[i * 2] = minVal;
