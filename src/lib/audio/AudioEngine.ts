@@ -867,27 +867,29 @@ export class AudioEngine implements IAudioEngine {
         const subsampledBuffer = (outBuffer && outBuffer.length === outSize)
             ? outBuffer
             : new Float32Array(outSize);
+        // Optimization: Pre-calculate bounds, use index pointer incrementing rather than
+        // per-iteration multiplication, and hoist Math.floor outside the inner loop to
+        // reduce CPU overhead and improve cache locality during the high-frequency UI loop.
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
+        const startPos = this.visualizationSummaryPosition;
+        const summary = this.visualizationSummary;
 
         for (let i = 0; i < width; i++) {
-            const rangeStart = i * samplesPerTarget;
-            const rangeEnd = (i + 1) * samplesPerTarget;
+            const startSample = Math.floor(i * samplesPerTarget);
+            const endSample = Math.floor((i + 1) * samplesPerTarget);
 
             let minVal = 0;
             let maxVal = 0;
-            let first = true;
 
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
-                // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
-                const vMin = this.visualizationSummary[idx];
-                const vMax = this.visualizationSummary[idx + 1];
+            if (startSample < endSample) {
+                let idx = (startPos + startSample) * 2;
+                minVal = summary[idx];
+                maxVal = summary[idx + 1];
 
-                if (first) {
-                    minVal = vMin;
-                    maxVal = vMax;
-                    first = false;
-                } else {
+                for (let s = startSample + 1; s < endSample; s++) {
+                    idx += 2; // Linear pointer increment
+                    const vMin = summary[idx];
+                    const vMax = summary[idx + 1];
                     if (vMin < minVal) minVal = vMin;
                     if (vMax > maxVal) maxVal = vMax;
                 }
