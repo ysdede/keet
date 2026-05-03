@@ -57,6 +57,7 @@ export class AudioEngine implements IAudioEngine {
     // Last N energy values for bar visualizer (oldest first when read)
     private energyBarHistory: number[] = [];
     private readonly BAR_LEVELS_SIZE = 64;
+    private barLevelsFallbackOut: Float32Array | null = null;
 
     // Visualization Summary Buffer (Low-Res Min/Max pairs)
     private visualizationSummary: Float32Array | null = null;
@@ -378,6 +379,7 @@ export class AudioEngine implements IAudioEngine {
         // Clear segment history used by the visualizer
         this.recentSegments = [];
         this.energyBarHistory = [];
+        this.barLevelsFallbackOut = null;
 
         // Reset visualization buffer
         if (this.visualizationSummary) {
@@ -411,7 +413,11 @@ export class AudioEngine implements IAudioEngine {
             }
             return this.waveformOut;
         }
-        const out = new Float32Array(this.BAR_LEVELS_SIZE);
+
+        if (!this.barLevelsFallbackOut) {
+            this.barLevelsFallbackOut = new Float32Array(this.BAR_LEVELS_SIZE);
+        }
+        const out = this.barLevelsFallbackOut;
         const h = this.energyBarHistory;
         const start = h.length <= this.BAR_LEVELS_SIZE ? 0 : h.length - this.BAR_LEVELS_SIZE;
         for (let i = 0; i < this.BAR_LEVELS_SIZE; i++) {
