@@ -5,3 +5,6 @@ Action: Apply this pattern to other fixed-size sliding window buffers in the aud
 ## 2025-05-18 - Memory vs Code Reality
 Learning: The project memory stated `AudioSegmentProcessor` uses zero-allocation `updateStats`, but the code actually allocated new objects every frame.
 Action: Always verify performance claims in memory against the actual code before assuming they are implemented.
+## 2026-05-06 - Audio Segment Energy Arrays
+Learning: The `AudioSegmentProcessor` code was accumulating per-chunk audio energies in `speechEnergies` and `silenceEnergies` arrays and repeatedly calculating averages using `.reduce()`, which caused unnecessary GC churn and CPU overhead in a high-frequency (12.5Hz - 100Hz) hot path.
+Action: Replace growing arrays with primitive O(1) running sums and counts (`speechEnergySum`, `speechEnergyCount`) for metrics that only require simple aggregation.
