@@ -347,25 +347,48 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         const timeScale = timeSteps / width;
         const freqScale = melBins / height;
 
+        // Pre-compute time scale mapping
+        const tMap = new Int32Array(width);
         for (let x = 0; x < width; x++) {
-            const t = Math.floor(x * timeScale);
-            if (t >= timeSteps) break;
+            const t = (x * timeScale) | 0;
+            tMap[x] = t >= timeSteps ? timeSteps - 1 : t;
+        }
 
-            for (let y = 0; y < height; y++) {
-                // y=0 is top (high freq), y=height is bottom (low freq).
-                const m = Math.floor((height - 1 - y) * freqScale);
-                if (m >= melBins) continue;
+        // Inline MEL_DISPLAY constants to avoid function call overhead
+        const MEL_MIN = -11.0;
+        const MEL_RANGE = 11.0;
 
-                const val = features[m * timeSteps + t];
-                const clamped = normalizeMelForDisplay(val);
-                const lutIdx = (clamped * 255) | 0;
+        let idx = 0;
+        for (let y = 0; y < height; y++) {
+            // y=0 is top (high freq), y=height is bottom (low freq).
+            const m = ((height - 1 - y) * freqScale) | 0;
+
+            // If m is out of bounds, skip writing to data for this row
+            if (m >= melBins) {
+                // Advance idx by width * 4 (one full row of RGBA pixels)
+                // However, we still need to write transparent or black pixels.
+                // It's safer to just continue, but the original code did `continue`,
+                // leaving whatever was in the buffer. We'll do the same but advance idx.
+                idx += width * 4;
+                continue;
+            }
+
+            const mOffset = m * timeSteps;
+
+            for (let x = 0; x < width; x++) {
+                const val = features[mOffset + tMap[x]];
+
+                // Inline normalization and clamping
+                let lutIdx = (((val - MEL_MIN) / MEL_RANGE) * 255) | 0;
+                if (lutIdx < 0) lutIdx = 0;
+                else if (lutIdx > 255) lutIdx = 255;
+
                 const lutBase = lutIdx * 3;
 
-                const idx = (y * width + x) * 4;
-                data[idx] = COLORMAP_LUT[lutBase];
-                data[idx + 1] = COLORMAP_LUT[lutBase + 1];
-                data[idx + 2] = COLORMAP_LUT[lutBase + 2];
-                data[idx + 3] = 255;
+                data[idx++] = COLORMAP_LUT[lutBase];
+                data[idx++] = COLORMAP_LUT[lutBase + 1];
+                data[idx++] = COLORMAP_LUT[lutBase + 2];
+                data[idx++] = 255;
             }
         }
         ctx.putImageData(imgData, 0, 0);
