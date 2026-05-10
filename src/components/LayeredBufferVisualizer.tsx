@@ -1,7 +1,7 @@
 import { Component, onMount, onCleanup, createSignal } from 'solid-js';
 import type { AudioEngine } from '../lib/audio/types';
 import type { MelWorkerClient } from '../lib/audio/MelWorkerClient';
-import { normalizeMelForDisplay } from '../lib/audio/mel-display';
+import { MEL_DISPLAY_MIN_DB, MEL_DISPLAY_DB_RANGE } from '../lib/audio/mel-display';
 import { appStore } from '../stores/appStore';
 
 interface LayeredBufferVisualizerProps {
@@ -116,6 +116,12 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     let cachedSpecImgData: ImageData | null = null;
     let cachedSpecImgWidth = 0;
     let cachedSpecImgHeight = 0;
+
+    // --- Pre-calculated pixel coordinate mappings ---
+    let tMapCache = new Int32Array(0);
+    let mMapCache = new Int32Array(0);
+    let cachedTimeScale = 0;
+    let cachedFreqScale = 0;
 
     // --- Pre-allocated waveform read buffer ---
     // Avoids allocating a new Float32Array(~128000) every animation frame.
@@ -347,25 +353,55 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         const timeScale = timeSteps / width;
         const freqScale = melBins / height;
 
-        for (let x = 0; x < width; x++) {
-            const t = Math.floor(x * timeScale);
-            if (t >= timeSteps) break;
-
+        // Update coordinate maps if dimensions or scale changed
+        if (tMapCache.length !== width || cachedTimeScale !== timeScale) {
+            tMapCache = new Int32Array(width);
+            cachedTimeScale = timeScale;
+            for (let x = 0; x < width; x++) {
+                tMapCache[x] = Math.floor(x * timeScale);
+            }
+        }
+        if (mMapCache.length !== height || cachedFreqScale !== freqScale) {
+            mMapCache = new Int32Array(height);
+            cachedFreqScale = freqScale;
             for (let y = 0; y < height; y++) {
-                // y=0 is top (high freq), y=height is bottom (low freq).
-                const m = Math.floor((height - 1 - y) * freqScale);
-                if (m >= melBins) continue;
+                mMapCache[y] = Math.floor((height - 1 - y) * freqScale);
+            }
+        }
 
-                const val = features[m * timeSteps + t];
-                const clamped = normalizeMelForDisplay(val);
-                const lutIdx = (clamped * 255) | 0;
+        const scale = 255 / MEL_DISPLAY_DB_RANGE;
+        let idx = 0;
+
+        // Iterate y outer, x inner to write linearly to the 1D ImageData buffer
+        for (let y = 0; y < height; y++) {
+            const m = mMapCache[y];
+            if (m >= melBins) {
+                idx += width * 4;
+                continue;
+            }
+
+            const mOffset = m * timeSteps;
+
+            for (let x = 0; x < width; x++) {
+                const t = tMapCache[x];
+                if (t >= timeSteps) {
+                    idx += 4;
+                    continue;
+                }
+
+                // Inline normalization and clamping
+                const val = features[mOffset + t];
+                let lutIdx = ((val - MEL_DISPLAY_MIN_DB) * scale) | 0;
+
+                if (lutIdx < 0) lutIdx = 0;
+                else if (lutIdx > 255) lutIdx = 255;
+
                 const lutBase = lutIdx * 3;
 
-                const idx = (y * width + x) * 4;
-                data[idx] = COLORMAP_LUT[lutBase];
-                data[idx + 1] = COLORMAP_LUT[lutBase + 1];
-                data[idx + 2] = COLORMAP_LUT[lutBase + 2];
-                data[idx + 3] = 255;
+                data[idx++] = COLORMAP_LUT[lutBase];
+                data[idx++] = COLORMAP_LUT[lutBase + 1];
+                data[idx++] = COLORMAP_LUT[lutBase + 2];
+                data[idx++] = 255;
             }
         }
         ctx.putImageData(imgData, 0, 0);
