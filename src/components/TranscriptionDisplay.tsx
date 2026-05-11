@@ -172,11 +172,21 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
         if (props.isV4Mode && activeTab() !== 'merged') {
             return '';
         }
-        return finalizedEntries()
-            .map((entry) => entry.text.trim())
-            .filter((text) => text.length > 0)
-            .join(' ')
-            .trim();
+
+        // Use a manual loop instead of .map().filter().join() to eliminate intermediate
+        // array allocations and improve execution speed for large datasets.
+        const entries = finalizedEntries();
+        let result = "";
+        for (let i = 0; i < entries.length; i++) {
+            const trimmed = entries[i].text.trim();
+            if (trimmed.length > 0) {
+                if (result.length > 0) {
+                    result += " ";
+                }
+                result += trimmed;
+            }
+        }
+        return result;
     });
     const fullTextBody = createMemo(() => {
         const finalized = finalizedMergedText();
