@@ -1,6 +1,6 @@
 import { AudioEngine as IAudioEngine, AudioEngineConfig, AudioSegment, IRingBuffer, AudioMetrics } from './types';
 import { RingBuffer } from './RingBuffer';
-import { AudioSegmentProcessor, ProcessedSegment } from './AudioSegmentProcessor';
+import { AudioSegmentProcessor, ProcessedSegment, CurrentStats } from './AudioSegmentProcessor';
 import { resampleLinear } from './utils';
 
 /** Duration of the visualization buffer in seconds */
@@ -15,6 +15,18 @@ export class AudioEngine implements IAudioEngine {
     private ringBuffer: IRingBuffer;
     private audioProcessor: AudioSegmentProcessor; // Replaces EnergyVAD
     private deviceId: string | null = null;
+
+    // Cached objects for zero-allocation stats retrieval
+    private cachedStatsOut: CurrentStats = {
+        silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
+        speech: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
+        noiseFloor: 0,
+        snr: 0,
+        snrThreshold: 0,
+        minSnrThreshold: 0,
+        energyRiseThreshold: 0
+    };
+    private cachedStateInfoOut = { inSpeech: false, noiseFloor: 0, snr: 0, speechStartTime: null as number | null };
 
     private audioContext: AudioContext | null = null;
     private mediaStream: MediaStream | null = null;
@@ -422,7 +434,7 @@ export class AudioEngine implements IAudioEngine {
     }
 
     getSignalMetrics(): { noiseFloor: number; snr: number; threshold: number; snrThreshold: number } {
-        const stats = this.audioProcessor.getStats();
+        const stats = this.audioProcessor.getStats(this.cachedStatsOut);
         return {
             noiseFloor: stats.noiseFloor ?? 0.0001,
             snr: stats.snr ?? 0,
@@ -432,7 +444,7 @@ export class AudioEngine implements IAudioEngine {
     }
 
     isSpeechActive(): boolean {
-        return this.audioProcessor.getStateInfo().inSpeech;
+        return this.audioProcessor.getStateInfo(this.cachedStateInfoOut).inSpeech;
     }
 
     getRingBuffer(): IRingBuffer {
@@ -598,8 +610,8 @@ export class AudioEngine implements IAudioEngine {
         this.updateVisualizationBuffer(chunk);
 
         // 2.6 Update metrics
-        const stats = this.audioProcessor.getStats();
-        const stateInfo = this.audioProcessor.getStateInfo();
+        const stats = this.audioProcessor.getStats(this.cachedStatsOut);
+        const stateInfo = this.audioProcessor.getStateInfo(this.cachedStateInfoOut);
 
         this.metrics.currentEnergy = energy;
         this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + energy * 0.05;
