@@ -439,19 +439,32 @@ export class UtteranceBasedMerger {
                 lastConsumedIdx = endIdx;
             }
 
-            this.lastImmatureWords = incomingWords
-                .slice(lastConsumedIdx)
-                .map((w) => ({ ...w, finalized: false }));
+            const immatureLen = incomingWords.length - lastConsumedIdx;
+            const nextImmature = new Array(immatureLen);
+            for (let i = 0; i < immatureLen; i++) {
+                nextImmature[i] = { ...incomingWords[lastConsumedIdx + i], finalized: false };
+            }
+            this.lastImmatureWords = nextImmature;
         } else if (sentences.length === 1) {
             const singleText = this.joinWords(incomingWords);
             const singleEnd = incomingWords[incomingWords.length - 1].end_time;
             if (this.isDuplicateSentence(singleText, singleEnd)) {
                 this.lastImmatureWords = [];
             } else {
-                this.lastImmatureWords = incomingWords.map((w) => ({ ...w, finalized: false }));
+                const len = incomingWords.length;
+                const nextImmature = new Array(len);
+                for (let i = 0; i < len; i++) {
+                    nextImmature[i] = { ...incomingWords[i], finalized: false };
+                }
+                this.lastImmatureWords = nextImmature;
             }
         } else {
-            this.lastImmatureWords = incomingWords.map((w) => ({ ...w, finalized: false }));
+            const len = incomingWords.length;
+            const nextImmature = new Array(len);
+            for (let i = 0; i < len; i++) {
+                nextImmature[i] = { ...incomingWords[i], finalized: false };
+            }
+            this.lastImmatureWords = nextImmature;
         }
 
         this.updatePendingSentence();
