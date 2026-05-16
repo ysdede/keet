@@ -190,25 +190,60 @@ export class UtteranceBasedMerger {
         }
     }
 
+    private getPendingEnd(words: InternalWord[]): number {
+        let max = -Infinity;
+        for (let i = 0; i < words.length; i++) {
+            if (words[i].end_time > max) max = words[i].end_time;
+        }
+        return max;
+    }
+
+    private setFinalizedState(words: InternalWord[], finalized: boolean): InternalWord[] {
+        const len = words.length;
+        const res = new Array(len);
+        for (let i = 0; i < len; i++) {
+            const w = words[i];
+            res[i] = {
+                text: w.text,
+                start_time: w.start_time,
+                end_time: w.end_time,
+                confidence: w.confidence,
+                finalized,
+                stability_counter: w.stability_counter,
+            };
+        }
+        return res;
+    }
+
     private normalizeWords(words?: ASRWord[]): InternalWord[] {
         if (!Array.isArray(words)) return [];
-        return words
-            .map((w) => ({
-                text: String(w?.text ?? '').trim(),
-                start_time: Number(w?.start_time ?? 0),
-                end_time: Number(w?.end_time ?? 0),
-                confidence: Number.isFinite(Number(w?.confidence))
-                    ? Math.max(0, Math.min(1, Number(w?.confidence)))
-                    : 1.0,
+        const result: InternalWord[] = [];
+        const len = words.length;
+        for (let i = 0; i < len; i++) {
+            const w = words[i];
+            const text = String(w?.text ?? '').trim();
+            if (text.length === 0) continue;
+
+            const rawStart = Number(w?.start_time ?? 0);
+            const rawEnd = Number(w?.end_time ?? 0);
+            const start_time = Math.max(0, rawStart);
+            const end_time = Math.max(start_time, rawEnd);
+
+            const rawConf = Number(w?.confidence);
+            const confidence = Number.isFinite(rawConf)
+                ? Math.max(0, Math.min(1, rawConf))
+                : 1.0;
+
+            result.push({
+                text,
+                start_time,
+                end_time,
+                confidence,
                 finalized: false,
                 stability_counter: 0,
-            }))
-            .filter((w) => w.text.length > 0)
-            .map((w) => ({
-                ...w,
-                start_time: Math.max(0, w.start_time),
-                end_time: Math.max(w.start_time, w.end_time),
-            }));
+            });
+        }
+        return result;
     }
 
     private joinWords(words: InternalWord[]): string {
@@ -303,6 +338,19 @@ export class UtteranceBasedMerger {
         const startTime = words[0].start_time;
         const endTime = words[words.length - 1].end_time;
         const endWordIndex = startWordIndex + words.length - 1;
+        const len = words.length;
+        const sentenceWords = new Array(len);
+        for (let i = 0; i < len; i++) {
+            const w = words[i];
+            sentenceWords[i] = {
+                text: w.text,
+                start: w.start_time,
+                end: w.end_time,
+                confidence: w.confidence,
+                wordIndex: startWordIndex + i,
+            };
+        }
+
         return {
             id: `sentence_${this.sentenceSequence++}`,
             text,
@@ -310,14 +358,8 @@ export class UtteranceBasedMerger {
             endTime,
             startWordIndex,
             endWordIndex,
-            wordCount: words.length,
-            words: words.map((w, idx) => ({
-                text: w.text,
-                start: w.start_time,
-                end: w.end_time,
-                confidence: w.confidence,
-                wordIndex: startWordIndex + idx,
-            })),
+            wordCount: len,
+            words: sentenceWords,
             detectionMethod,
             isMature,
             utteranceId,
@@ -414,7 +456,7 @@ export class UtteranceBasedMerger {
                     continue;
                 }
 
-                const finalizedWords = sentenceWords.map((w) => ({ ...w, finalized: true }));
+                const finalizedWords = this.setFinalizedState(sentenceWords, true);
                 const startWordIndex = this.mergedTranscript.length;
                 this.mergedTranscript.push(...finalizedWords);
                 this.matureTextDirty = true;
@@ -439,19 +481,20 @@ export class UtteranceBasedMerger {
                 lastConsumedIdx = endIdx;
             }
 
-            this.lastImmatureWords = incomingWords
-                .slice(lastConsumedIdx)
-                .map((w) => ({ ...w, finalized: false }));
+            this.lastImmatureWords = this.setFinalizedState(
+                incomingWords.slice(lastConsumedIdx),
+                false
+            );
         } else if (sentences.length === 1) {
             const singleText = this.joinWords(incomingWords);
             const singleEnd = incomingWords[incomingWords.length - 1].end_time;
             if (this.isDuplicateSentence(singleText, singleEnd)) {
                 this.lastImmatureWords = [];
             } else {
-                this.lastImmatureWords = incomingWords.map((w) => ({ ...w, finalized: false }));
+                this.lastImmatureWords = this.setFinalizedState(incomingWords, false);
             }
         } else {
-            this.lastImmatureWords = incomingWords.map((w) => ({ ...w, finalized: false }));
+            this.lastImmatureWords = this.setFinalizedState(incomingWords, false);
         }
 
         this.updatePendingSentence();
@@ -475,14 +518,14 @@ export class UtteranceBasedMerger {
         const pendingText = this.joinWords(this.lastImmatureWords);
         if (!this.isSentenceCompleteByPunctuation(pendingText)) return null;
 
-        const pendingEnd = Math.max(...this.lastImmatureWords.map((w) => w.end_time));
+        const pendingEnd = this.getPendingEnd(this.lastImmatureWords);
         if (this.isDuplicateSentence(pendingText, pendingEnd)) {
             this.lastImmatureWords = [];
             this.pendingSentence = null;
             return null;
         }
 
-        const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
+        const finalizedWords = this.setFinalizedState(this.lastImmatureWords, true);
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
         this.matureTextDirty = true;
@@ -516,7 +559,7 @@ export class UtteranceBasedMerger {
         if (this.lastImmatureWords.length === 0) return;
 
         const pendingText = this.joinWords(this.lastImmatureWords);
-        const pendingEnd = Math.max(...this.lastImmatureWords.map((w) => w.end_time));
+        const pendingEnd = this.getPendingEnd(this.lastImmatureWords);
 
         if (this.isDuplicateSentence(pendingText, pendingEnd)) {
             this.lastImmatureWords = [];
@@ -524,7 +567,7 @@ export class UtteranceBasedMerger {
             return;
         }
 
-        const finalizedWords = this.lastImmatureWords.map((w) => ({ ...w, finalized: true }));
+        const finalizedWords = this.setFinalizedState(this.lastImmatureWords, true);
         const startWordIndex = this.mergedTranscript.length;
         this.mergedTranscript.push(...finalizedWords);
         this.matureTextDirty = true;
