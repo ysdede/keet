@@ -192,23 +192,32 @@ export class UtteranceBasedMerger {
 
     private normalizeWords(words?: ASRWord[]): InternalWord[] {
         if (!Array.isArray(words)) return [];
-        return words
-            .map((w) => ({
-                text: String(w?.text ?? '').trim(),
-                start_time: Number(w?.start_time ?? 0),
-                end_time: Number(w?.end_time ?? 0),
-                confidence: Number.isFinite(Number(w?.confidence))
-                    ? Math.max(0, Math.min(1, Number(w?.confidence)))
-                    : 1.0,
+        const result: InternalWord[] = [];
+        const len = words.length;
+
+        for (let i = 0; i < len; i++) {
+            const w = words[i];
+            const text = String(w?.text ?? '').trim();
+            if (text.length === 0) continue;
+
+            const start_time = Math.max(0, Number(w?.start_time ?? 0));
+            const end_time = Math.max(start_time, Number(w?.end_time ?? 0));
+
+            const rawConfidence = Number(w?.confidence);
+            const confidence = Number.isFinite(rawConfidence)
+                ? Math.max(0, Math.min(1, rawConfidence))
+                : 1.0;
+
+            result.push({
+                text,
+                start_time,
+                end_time,
+                confidence,
                 finalized: false,
                 stability_counter: 0,
-            }))
-            .filter((w) => w.text.length > 0)
-            .map((w) => ({
-                ...w,
-                start_time: Math.max(0, w.start_time),
-                end_time: Math.max(w.start_time, w.end_time),
-            }));
+            });
+        }
+        return result;
     }
 
     private joinWords(words: InternalWord[]): string {
@@ -475,7 +484,13 @@ export class UtteranceBasedMerger {
         const pendingText = this.joinWords(this.lastImmatureWords);
         if (!this.isSentenceCompleteByPunctuation(pendingText)) return null;
 
-        const pendingEnd = Math.max(...this.lastImmatureWords.map((w) => w.end_time));
+        let pendingEnd = -Infinity;
+        for (let i = 0; i < this.lastImmatureWords.length; i++) {
+            if (this.lastImmatureWords[i].end_time > pendingEnd) {
+                pendingEnd = this.lastImmatureWords[i].end_time;
+            }
+        }
+
         if (this.isDuplicateSentence(pendingText, pendingEnd)) {
             this.lastImmatureWords = [];
             this.pendingSentence = null;
@@ -516,7 +531,12 @@ export class UtteranceBasedMerger {
         if (this.lastImmatureWords.length === 0) return;
 
         const pendingText = this.joinWords(this.lastImmatureWords);
-        const pendingEnd = Math.max(...this.lastImmatureWords.map((w) => w.end_time));
+        let pendingEnd = -Infinity;
+        for (let i = 0; i < this.lastImmatureWords.length; i++) {
+            if (this.lastImmatureWords[i].end_time > pendingEnd) {
+                pendingEnd = this.lastImmatureWords[i].end_time;
+            }
+        }
 
         if (this.isDuplicateSentence(pendingText, pendingEnd)) {
             this.lastImmatureWords = [];
