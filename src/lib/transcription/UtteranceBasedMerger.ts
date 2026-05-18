@@ -192,23 +192,45 @@ export class UtteranceBasedMerger {
 
     private normalizeWords(words?: ASRWord[]): InternalWord[] {
         if (!Array.isArray(words)) return [];
-        return words
-            .map((w) => ({
-                text: String(w?.text ?? '').trim(),
-                start_time: Number(w?.start_time ?? 0),
-                end_time: Number(w?.end_time ?? 0),
-                confidence: Number.isFinite(Number(w?.confidence))
-                    ? Math.max(0, Math.min(1, Number(w?.confidence)))
-                    : 1.0,
+
+        const len = words.length;
+        const result = new Array(len);
+        let count = 0;
+
+        for (let i = 0; i < len; i++) {
+            const w = words[i];
+            if (!w) continue;
+
+            // Fast-path text extraction
+            const rawText = w.text;
+            const text = typeof rawText === 'string' ? rawText.trim() : String(rawText ?? '').trim();
+            if (text.length === 0) continue;
+
+            // Fast-path numeric extraction
+            let startTime = typeof w.start_time === 'number' ? w.start_time : Number(w.start_time ?? 0);
+            let endTime = typeof w.end_time === 'number' ? w.end_time : Number(w.end_time ?? 0);
+            let confidence = typeof w.confidence === 'number' ? w.confidence : Number(w.confidence);
+
+            // Enforce bounds
+            startTime = Math.max(0, startTime);
+            endTime = Math.max(startTime, endTime);
+
+            confidence = Number.isFinite(confidence)
+                ? Math.max(0, Math.min(1, confidence))
+                : 1.0;
+
+            result[count++] = {
+                text,
+                start_time: startTime,
+                end_time: endTime,
+                confidence,
                 finalized: false,
                 stability_counter: 0,
-            }))
-            .filter((w) => w.text.length > 0)
-            .map((w) => ({
-                ...w,
-                start_time: Math.max(0, w.start_time),
-                end_time: Math.max(w.start_time, w.end_time),
-            }));
+            };
+        }
+
+        result.length = count;
+        return result;
     }
 
     private joinWords(words: InternalWord[]): string {
