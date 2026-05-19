@@ -475,7 +475,16 @@ export class UtteranceBasedMerger {
         const pendingText = this.joinWords(this.lastImmatureWords);
         if (!this.isSentenceCompleteByPunctuation(pendingText)) return null;
 
-        const pendingEnd = Math.max(...this.lastImmatureWords.map((w) => w.end_time));
+        // Performance optimization: Avoid intermediate array allocation from .map()
+        // and function call overhead/stack limits from Math.max(...array)
+        let pendingEnd = -Infinity;
+        const len = this.lastImmatureWords.length;
+        for (let i = 0; i < len; i++) {
+            if (this.lastImmatureWords[i].end_time > pendingEnd) {
+                pendingEnd = this.lastImmatureWords[i].end_time;
+            }
+        }
+
         if (this.isDuplicateSentence(pendingText, pendingEnd)) {
             this.lastImmatureWords = [];
             this.pendingSentence = null;
@@ -516,7 +525,16 @@ export class UtteranceBasedMerger {
         if (this.lastImmatureWords.length === 0) return;
 
         const pendingText = this.joinWords(this.lastImmatureWords);
-        const pendingEnd = Math.max(...this.lastImmatureWords.map((w) => w.end_time));
+
+        // Performance optimization: Avoid intermediate array allocation from .map()
+        // and function call overhead/stack limits from Math.max(...array)
+        let pendingEnd = -Infinity;
+        const len = this.lastImmatureWords.length;
+        for (let i = 0; i < len; i++) {
+            if (this.lastImmatureWords[i].end_time > pendingEnd) {
+                pendingEnd = this.lastImmatureWords[i].end_time;
+            }
+        }
 
         if (this.isDuplicateSentence(pendingText, pendingEnd)) {
             this.lastImmatureWords = [];
