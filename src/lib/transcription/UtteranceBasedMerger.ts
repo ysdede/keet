@@ -192,23 +192,32 @@ export class UtteranceBasedMerger {
 
     private normalizeWords(words?: ASRWord[]): InternalWord[] {
         if (!Array.isArray(words)) return [];
-        return words
-            .map((w) => ({
-                text: String(w?.text ?? '').trim(),
-                start_time: Number(w?.start_time ?? 0),
-                end_time: Number(w?.end_time ?? 0),
-                confidence: Number.isFinite(Number(w?.confidence))
-                    ? Math.max(0, Math.min(1, Number(w?.confidence)))
-                    : 1.0,
+
+        // Performance: Replaced .map().filter().map() chain with a single manual for-loop
+        // to eliminate intermediate array allocations and reduce GC churn during high-frequency
+        // ASR word processing. Maintains identical logic to the functional pipeline.
+        const len = words.length;
+        const result: InternalWord[] = [];
+
+        for (let i = 0; i < len; i++) {
+            const w = words[i];
+            const text = String(w?.text ?? '').trim();
+            if (text.length === 0) continue;
+
+            const start_time = Math.max(0, Number(w?.start_time ?? 0));
+            const end_time = Math.max(start_time, Number(w?.end_time ?? 0));
+            const confNum = Number(w?.confidence);
+
+            result.push({
+                text,
+                start_time,
+                end_time,
+                confidence: Number.isFinite(confNum) ? Math.max(0, Math.min(1, confNum)) : 1.0,
                 finalized: false,
                 stability_counter: 0,
-            }))
-            .filter((w) => w.text.length > 0)
-            .map((w) => ({
-                ...w,
-                start_time: Math.max(0, w.start_time),
-                end_time: Math.max(w.start_time, w.end_time),
-            }));
+            });
+        }
+        return result;
     }
 
     private joinWords(words: InternalWord[]): string {
