@@ -5,3 +5,7 @@ Action: Apply this pattern to other fixed-size sliding window buffers in the aud
 ## 2025-05-18 - Memory vs Code Reality
 Learning: The project memory stated `AudioSegmentProcessor` uses zero-allocation `updateStats`, but the code actually allocated new objects every frame.
 Action: Always verify performance claims in memory against the actual code before assuming they are implemented.
+
+## 2026-05-22 - Optimized normalizeWords
+Learning: In high-frequency parsing paths like `normalizeWords` parsing ASR responses, chained array iterations (`.map().filter().map()`) and object spreading (`...w`) create massive GC churn and bottleneck processing.
+Action: Refactor array chains in hot loops into manual, single-pass `for` loops pre-allocating or `.push()`ing properties individually to bypass object spread allocations.
