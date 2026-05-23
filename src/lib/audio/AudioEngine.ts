@@ -85,6 +85,23 @@ export class AudioEngine implements IAudioEngine {
     private recentSegments: Array<{ startTime: number; endTime: number; isProcessed: boolean }> = [];
     private readonly MAX_SEGMENTS_FOR_VISUALIZATION = 50;
 
+    // Cached objects for zero-allocation state queries
+    private readonly cachedStatsOut = {
+        silence: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
+        speech: { avgDuration: 0, avgEnergy: 0, avgEnergyIntegral: 0 },
+        noiseFloor: 0.005,
+        snr: 0,
+        snrThreshold: 3.0,
+        minSnrThreshold: 1.0,
+        energyRiseThreshold: 0.1
+    };
+    private readonly cachedStateInfoOut = {
+        inSpeech: false,
+        noiseFloor: 0.005,
+        snr: 0,
+        speechStartTime: <number | null>null
+    };
+
     constructor(config: Partial<AudioEngineConfig> = {}) {
         this.config = {
             sampleRate: 16000,
@@ -422,7 +439,7 @@ export class AudioEngine implements IAudioEngine {
     }
 
     getSignalMetrics(): { noiseFloor: number; snr: number; threshold: number; snrThreshold: number } {
-        const stats = this.audioProcessor.getStats();
+        const stats = this.audioProcessor.getStats(this.cachedStatsOut as any);
         return {
             noiseFloor: stats.noiseFloor ?? 0.0001,
             snr: stats.snr ?? 0,
@@ -432,7 +449,7 @@ export class AudioEngine implements IAudioEngine {
     }
 
     isSpeechActive(): boolean {
-        return this.audioProcessor.getStateInfo().inSpeech;
+        return this.audioProcessor.getStateInfo(this.cachedStateInfoOut).inSpeech;
     }
 
     getRingBuffer(): IRingBuffer {
@@ -598,8 +615,8 @@ export class AudioEngine implements IAudioEngine {
         this.updateVisualizationBuffer(chunk);
 
         // 2.6 Update metrics
-        const stats = this.audioProcessor.getStats();
-        const stateInfo = this.audioProcessor.getStateInfo();
+        const stats = this.audioProcessor.getStats(this.cachedStatsOut as any);
+        const stateInfo = this.audioProcessor.getStateInfo(this.cachedStateInfoOut);
 
         this.metrics.currentEnergy = energy;
         this.metrics.averageEnergy = this.metrics.averageEnergy * 0.95 + energy * 0.05;
@@ -784,7 +801,7 @@ export class AudioEngine implements IAudioEngine {
         const segments = [...this.recentSegments];
 
         // Add pending segment if speech is currently active
-        const vadState = this.audioProcessor.getStateInfo();
+        const vadState = this.audioProcessor.getStateInfo(this.cachedStateInfoOut);
         if (vadState.inSpeech && vadState.speechStartTime !== null) {
             segments.push({
                 startTime: vadState.speechStartTime,
