@@ -57,6 +57,7 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
   let startY = 0;
   let startHeight = 0;
   let activePointerId: number | null = null;
+  const resizeStep = 24;
   const handlePointerDown = (e: PointerEvent) => {
     e.preventDefault();
     setIsResizing(true);
@@ -87,6 +88,33 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
     window.removeEventListener('pointerup', handlePointerUp);
     window.removeEventListener('pointercancel', handlePointerUp);
   };
+  const handleResizeKeyDown = (e: KeyboardEvent) => {
+    let nextHeight: number | null = null;
+    switch (e.key) {
+      case 'ArrowUp':
+        nextHeight = panelHeight() + resizeStep;
+        break;
+      case 'ArrowDown':
+        nextHeight = panelHeight() - resizeStep;
+        break;
+      case 'PageUp':
+        nextHeight = panelHeight() + resizeStep * 2;
+        break;
+      case 'PageDown':
+        nextHeight = panelHeight() - resizeStep * 2;
+        break;
+      case 'Home':
+        nextHeight = MIN_DEBUG_PANEL_HEIGHT;
+        break;
+      case 'End':
+        nextHeight = getMaxHeight();
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    setPanelHeight(nextHeight);
+  };
 
   onCleanup(() => {
     activePointerId = null;
@@ -101,7 +129,7 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
     const rtfx = appStore.rtfxAverage();
     if (rtfx === 0) return 'text-[var(--color-earthy-soft-brown)]';
     if (rtfx >= 2) return 'text-[var(--color-earthy-muted-green)] font-bold';
-    if (rtfx >= 1) return 'text-[var(--color-earthy-coral)] font-bold';
+    if (rtfx >= 1) return 'text-[var(--color-earthy-dark-brown)] font-bold';
     return 'text-[var(--color-earthy-coral)] font-bold';
   });
   return (
@@ -113,9 +141,14 @@ export const DebugPanel: Component<DebugPanelProps> = (props) => {
       <div
         class="h-3 shrink-0 cursor-row-resize group touch-none select-none flex items-center justify-center relative"
         onPointerDown={handlePointerDown}
+        onKeyDown={handleResizeKeyDown}
         role="separator"
         aria-orientation="horizontal"
         aria-label="Resize debug panel"
+        aria-valuemin={MIN_DEBUG_PANEL_HEIGHT}
+        aria-valuemax={getMaxHeight()}
+        aria-valuenow={panelHeight()}
+        tabIndex={0}
       >
         <div class={`relative z-10 h-2.5 w-10 rounded-full border shadow-sm transition-colors ${isResizing() ? 'bg-[var(--color-earthy-sage)] border-[var(--color-earthy-muted-green)]/80' : 'bg-[var(--color-earthy-bg)] border-[var(--color-earthy-sage)]/60 group-hover:border-[var(--color-earthy-soft-brown)]/80'}`} />
       </div>

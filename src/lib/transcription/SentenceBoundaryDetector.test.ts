@@ -2,6 +2,14 @@ import { describe, expect, test } from 'vitest';
 import { SentenceBoundaryDetector, type DetectorWord } from './SentenceBoundaryDetector';
 
 describe('SentenceBoundaryDetector', () => {
+    test('cache key preserves distinct texts without hash collisions', () => {
+        const detector = new SentenceBoundaryDetector({ useNLP: false, debug: false }) as any;
+
+        expect(detector.generateCacheKey('hello world')).toBe('hello world');
+        expect(detector.generateCacheKey('hello  world')).toBe('hello  world');
+        expect(detector.generateCacheKey('hello world')).not.toBe(detector.generateCacheKey('hello  world'));
+    });
+
     test('heuristic detection assigns stable wordIndex values by position', () => {
         const detector = new SentenceBoundaryDetector({ useNLP: false, debug: false });
         const repeated: DetectorWord = { text: 'repeat.', start: 0, end: 0.4 };

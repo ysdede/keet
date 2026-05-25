@@ -53,34 +53,6 @@ export interface VADConfig {
   minSilenceDuration: number;
 }
 
-// ============================================
-// Transcription Types
-// ============================================
-
-/** Transcript payload emitted by transcription pipeline stages. */
-export interface TranscriptionResult {
-  /** Transcript text for this result. */
-  text: string;
-  /** Token-level details. */
-  tokens: Token[];
-  /** Whether the result is finalized. */
-  isFinal: boolean;
-  /** Emission timestamp in ms. */
-  timestamp: number;
-}
-
-/** Token span with timing and confidence metadata. */
-export interface Token {
-  /** Token text as emitted by decoder/tokenizer. */
-  text: string;
-  /** Start timestamp in seconds. */
-  startTime: number;
-  /** End timestamp in seconds. */
-  endTime: number;
-  /** Confidence score in the range 0-1. */
-  confidence: number;
-}
-
 /** Opaque decoder runtime state for stateful streaming. */
 export interface DecoderState {
   // Opaque state from parakeet.js
