@@ -277,7 +277,13 @@ export class UtteranceBasedMerger {
 
         const heuristic = trimmed.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [trimmed];
         return {
-            sentences: heuristic.map((s) => s.trim()).filter((s) => s.length > 0),
+            sentences: heuristic.reduce((acc: string[], s: string) => {
+                const cleaned = s.trim();
+                if (cleaned.length > 0) {
+                    acc.push(cleaned);
+                }
+                return acc;
+            }, []),
             detectionMethod: 'heuristic',
         };
     }
