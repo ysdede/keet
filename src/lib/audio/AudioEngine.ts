@@ -1,6 +1,6 @@
 import { AudioEngine as IAudioEngine, AudioEngineConfig, AudioSegment, IRingBuffer, AudioMetrics } from './types';
 import { RingBuffer } from './RingBuffer';
-import { AudioSegmentProcessor, ProcessedSegment } from './AudioSegmentProcessor';
+import { AudioSegmentProcessor } from './AudioSegmentProcessor';
 import { resampleLinear } from './utils';
 
 /** Duration of the visualization buffer in seconds */
