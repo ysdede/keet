@@ -172,13 +172,11 @@ export const TranscriptionDisplay: Component<TranscriptionDisplayProps> = (props
         if (props.isV4Mode && activeTab() !== 'merged') {
             return '';
         }
-        return finalizedEntries().reduce((acc, entry) => {
-            const text = entry.text.trim();
-            if (text.length > 0) {
-                return acc ? `${acc} ${text}` : text;
-            }
-            return acc;
-        }, '');
+        return finalizedEntries()
+            .map((entry) => entry.text.trim())
+            .filter((text) => text.length > 0)
+            .join(' ')
+            .trim();
     });
     const fullTextBody = createMemo(() => {
         const finalized = finalizedMergedText();
