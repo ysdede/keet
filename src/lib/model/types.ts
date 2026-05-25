@@ -8,10 +8,8 @@ export type ModelLoadingStatus =
     | 'ready'
     | 'error';
 
-/**
- * Backend type
- */
-export type BackendType = 'webgpu' | 'wasm';
+// Re-export canonical BackendType from central types module
+export type { BackendType } from '../../types';
 
 /**
  * Progress event for model download/loading

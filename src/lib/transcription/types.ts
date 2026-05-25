@@ -2,10 +2,8 @@
  * Keet v1.1 - Transcription Types
  */
 
-/** Model loading lifecycle state. */
-export type ModelState = 'unloaded' | 'loading' | 'ready' | 'error';
-/** Inference backend name. */
-export type BackendType = 'webgpu' | 'wasm';
+// Re-export canonical types from central types module
+export type { ModelState, BackendType } from '../../types';
 /** User-selectable model backend mode. */
 export type ModelBackendMode = 'webgpu-hybrid' | 'wasm';
 /** ONNX quantization option for encoder/decoder assets. */
