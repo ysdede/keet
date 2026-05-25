@@ -1,7 +1,7 @@
 /**
  * Unit tests for the VAD energy calculation: Peak Amplitude + 6-sample SMA.
  *
- * Matches the logic in AudioEngine (vad-correction-peak-energy fix).
+ * Matches the logic in AudioEngine.
  * legacy UI project uses peak + 6-sample SMA; RMS was causing all-audio-marked-as-silence.
  *
  * Run: npm test
