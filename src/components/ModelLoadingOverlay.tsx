@@ -1,4 +1,5 @@
-import { Component, Show, For, createEffect } from 'solid-js';
+import { Component, Show, For, createEffect, onCleanup } from 'solid-js';
+import type { BackendType, ModelState } from '../types';
 
 interface ModelLoadingOverlayProps {
     /** Whether the overlay dialog is rendered. */
@@ -10,9 +11,9 @@ interface ModelLoadingOverlayProps {
     /** Current file being downloaded/processed. */
     file?: string;
     /** Active inference backend. */
-    backend: 'webgpu' | 'wasm';
+    backend: BackendType;
     /** Model loading lifecycle state. */
-    state: 'unloaded' | 'loading' | 'ready' | 'error';
+    state: ModelState;
     /** Currently selected model identifier. */
     selectedModelId: string;
     /** Updates the selected model identifier. */
@@ -95,7 +96,7 @@ export const ModelLoadingOverlay: Component<ModelLoadingOverlayProps> = (props) 
             }
         };
         document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
+        onCleanup(() => document.removeEventListener('keydown', handler));
     });
 
     return (
