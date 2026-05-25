@@ -7,7 +7,7 @@
  * Run: npm test
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { WindowBuilder } from './WindowBuilder';
 import type { IRingBuffer } from '../audio/types';
 import { VADRingBuffer } from '../vad/VADRingBuffer';
