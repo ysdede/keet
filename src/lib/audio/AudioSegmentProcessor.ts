@@ -54,8 +54,8 @@ interface ProcessorState {
     silenceStartTime: number | null;
     silenceCounter: number;
     recentChunks: ChunkInfo[];
-    speechEnergies: number[];
-    silenceEnergies: number[];
+    speechEnergySum: number;
+    speechEnergyCount: number;
     speechStats: SegmentStats[];
     silenceStats: SegmentStats[];
     cachedSpeechSummary: StatsSummary | null;
@@ -145,6 +145,11 @@ export class AudioSegmentProcessor {
         });
 
         this.reset();
+    }
+
+    private addSpeechEnergy(energy: number): void {
+        this.state.speechEnergySum += energy;
+        this.state.speechEnergyCount++;
     }
 
     private log(message: string, data?: unknown): void {
@@ -249,13 +254,13 @@ export class AudioSegmentProcessor {
             // Check if we should allow some silence within speech
             if (silenceDuration < this.options.maxSilenceWithinSpeech) {
                 // Not yet enough silence to consider it a break
-                this.state.speechEnergies.push(energy);
+                this.addSpeechEnergy(energy);
             } else if (isConfirmedSilence) {
                 // Confirmed silence - end speech segment
                 if (this.state.speechStartTime !== null) {
                     const speechDuration = currentTime - this.state.speechStartTime;
-                    const avgEnergy = this.state.speechEnergies.length > 0
-                        ? this.state.speechEnergies.reduce((a, b) => a + b, 0) / this.state.speechEnergies.length
+                    const avgEnergy = this.state.speechEnergyCount > 0
+                        ? this.state.speechEnergySum / this.state.speechEnergyCount
                         : 0;
 
                     this.recordSpeechStat({
@@ -273,16 +278,11 @@ export class AudioSegmentProcessor {
                 }
 
                 this.startSilence(currentTime);
-            } else {
-                // Accumulate silence energies while deciding
-                this.state.silenceEnergies.push(energy);
             }
         } else {
             // Continue in current state
             if (this.state.inSpeech) {
-                this.state.speechEnergies.push(energy);
-            } else {
-                this.state.silenceEnergies.push(energy);
+                this.addSpeechEnergy(energy);
             }
         }
 
@@ -332,7 +332,8 @@ export class AudioSegmentProcessor {
         this.state.inSpeech = true;
         this.state.speechStartTime = time;
         this.state.silenceCounter = 0;
-        this.state.speechEnergies = [energy];
+        this.state.speechEnergySum = energy;
+        this.state.speechEnergyCount = 1;
         this.state.silenceStartTime = null;
         this.state.silenceDuration = 0;
 
@@ -353,7 +354,8 @@ export class AudioSegmentProcessor {
         this.state.silenceStartTime = time;
         this.state.speechStartTime = null;
         this.state.silenceCounter = 0;
-        this.state.silenceEnergies = [];
+        this.state.speechEnergySum = 0;
+        this.state.speechEnergyCount = 0;
         this.state.silenceDuration = 0.001; // Avoid division by zero
 
         this.log('Silence state started', {
@@ -556,8 +558,8 @@ export class AudioSegmentProcessor {
             silenceStartTime: null,
             silenceCounter: 0,
             recentChunks: [],
-            speechEnergies: [],
-            silenceEnergies: [],
+            speechEnergySum: 0,
+            speechEnergyCount: 0,
             speechStats: [],
             silenceStats: [],
             cachedSpeechSummary: null,

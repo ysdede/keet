@@ -57,6 +57,7 @@ export class AudioEngine implements IAudioEngine {
     // Last N energy values for bar visualizer (oldest first when read)
     private energyBarHistory: number[] = [];
     private readonly BAR_LEVELS_SIZE = 64;
+    private barLevelsFallbackOut: Float32Array;
 
     // Visualization Summary Buffer (Low-Res Min/Max pairs)
     private visualizationSummary: Float32Array | null = null;
@@ -114,6 +115,7 @@ export class AudioEngine implements IAudioEngine {
 
         // RingBuffer operates at TARGET sample rate (16kHz)
         this.ringBuffer = new RingBuffer(this.targetSampleRate, this.config.bufferDuration);
+        this.barLevelsFallbackOut = new Float32Array(this.BAR_LEVELS_SIZE);
 
         // Initialize AudioSegmentProcessor
         this.audioProcessor = new AudioSegmentProcessor({
@@ -400,8 +402,10 @@ export class AudioEngine implements IAudioEngine {
 
     /**
      * Oscilloscope waveform from AnalyserNode.getByteTimeDomainData (native, fast).
-     * Falls back to a fresh bar-level snapshot only when the analyser path is unavailable.
-     * Values are in the `[-1, 1]` range.
+     * Falls back to a reused bar-level snapshot only when the analyser path is unavailable.
+     * Native analyser values are in the `[-1, 1]` range; fallback energy bars are clamped to `[0, 1]`.
+     * The returned buffer is shared and overwritten on subsequent calls, so callers must copy it if
+     * they need a stable snapshot.
      */
     getBarLevels(): Float32Array {
         if (this.analyserNode && this.analyserTimeBuffer && this.waveformOut) {
@@ -411,7 +415,7 @@ export class AudioEngine implements IAudioEngine {
             }
             return this.waveformOut;
         }
-        const out = new Float32Array(this.BAR_LEVELS_SIZE);
+        const out = this.barLevelsFallbackOut;
         const h = this.energyBarHistory;
         const start = h.length <= this.BAR_LEVELS_SIZE ? 0 : h.length - this.BAR_LEVELS_SIZE;
         for (let i = 0; i < this.BAR_LEVELS_SIZE; i++) {
@@ -868,26 +872,23 @@ export class AudioEngine implements IAudioEngine {
             ? outBuffer
             : new Float32Array(outSize);
         const samplesPerTarget = this.VIS_SUMMARY_SIZE / width;
+        const startPos = this.visualizationSummaryPosition;
+        const summary = this.visualizationSummary;
 
         for (let i = 0; i < width; i++) {
-            const rangeStart = i * samplesPerTarget;
-            const rangeEnd = (i + 1) * samplesPerTarget;
+            const startSample = Math.floor(i * samplesPerTarget);
+            const endSample = Math.floor((i + 1) * samplesPerTarget);
 
             let minVal = 0;
             let maxVal = 0;
-            let first = true;
-
-            for (let s = Math.floor(rangeStart); s < Math.floor(rangeEnd); s++) {
-                // Use shadow buffer property to read linearly without modulo
-                const idx = (this.visualizationSummaryPosition + s) * 2;
-                const vMin = this.visualizationSummary[idx];
-                const vMax = this.visualizationSummary[idx + 1];
-
-                if (first) {
-                    minVal = vMin;
-                    maxVal = vMax;
-                    first = false;
-                } else {
+            if (startSample < endSample) {
+                let idx = (startPos + startSample) * 2;
+                minVal = summary[idx];
+                maxVal = summary[idx + 1];
+                idx += 2;
+                for (let s = startSample + 1; s < endSample; s++, idx += 2) {
+                    const vMin = summary[idx];
+                    const vMax = summary[idx + 1];
                     if (vMin < minVal) minVal = vMin;
                     if (vMax > maxVal) maxVal = vMax;
                 }

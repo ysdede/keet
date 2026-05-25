@@ -159,6 +159,8 @@ describe('AudioSegmentProcessor', () => {
     it('should update speech statistics after a completed segment', () => {
         const processor = createProcessor({
             energyThreshold: 0.01,
+            snrThreshold: 0,
+            minSnrThreshold: 0,
             silenceThreshold: CHUNK_DURATION_SEC,
             maxSilenceWithinSpeech: 0,
         });
@@ -171,6 +173,24 @@ describe('AudioSegmentProcessor', () => {
         const stats = processor.getStats();
         expect(stats.speech.avgDuration).toBeGreaterThan(0);
         expect(stats.speech.avgEnergy).toBeGreaterThan(0);
+    });
+
+    it('should compute exact average speech energy from the running sum path', () => {
+        const processor = createProcessor({
+            energyThreshold: 0.01,
+            snrThreshold: 0,
+            minSnrThreshold: 0,
+            silenceThreshold: CHUNK_DURATION_SEC,
+            maxSilenceWithinSpeech: 0,
+        });
+        const speechChunk = new Float32Array(CHUNK_SIZE).fill(1);
+        const silenceChunk = new Float32Array(CHUNK_SIZE).fill(0);
+
+        processor.processAudioData(speechChunk, 0.0, 0.2);
+        processor.processAudioData(speechChunk, CHUNK_DURATION_SEC, 0.6);
+        processor.processAudioData(silenceChunk, 2 * CHUNK_DURATION_SEC, SILENCE_ENERGY);
+
+        expect(processor.getStats().speech.avgEnergy).toBeCloseTo(0.4, 6);
     });
 
     it('should proactively split segments exceeding maxDuration', () => {
