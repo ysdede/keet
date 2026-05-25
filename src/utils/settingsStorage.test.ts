@@ -51,7 +51,7 @@ describe('settingsStorage', () => {
     expect(loaded.general?.frameStride).toBe(4);
     expect(loaded.general?.wasmThreads).toBe(64);
     expect(loaded.model?.selectedModelId).toBe('parakeet-tdt-0.6b-v2');
-    expect(loaded.model?.revision).toBe('feat/fp16-canonical-v3');
+    expect(loaded.model?.revision).toBe('main');
     expect(loaded.model?.backend).toBeUndefined();
     expect(loaded.model?.encoderQuant).toBe('fp16');
     expect(loaded.model?.decoderQuant).toBe('int8');

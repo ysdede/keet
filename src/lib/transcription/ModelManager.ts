@@ -18,10 +18,6 @@ import type {
 // Default model configuration (Parakeet TDT 0.6B)
 const DEFAULT_MODEL_ID = 'parakeet-tdt-0.6b-v2';
 const DEFAULT_MODEL_REVISION = 'main';
-const PREFERRED_MODEL_REVISIONS: Record<string, string> = {
-  'parakeet-tdt-0.6b-v2': 'feat/fp16-canonical-v2',
-  'parakeet-tdt-0.6b-v3': 'feat/fp16-canonical-v3',
-};
 
 const CACHE_NAME = 'keet-model-cache-v1';
 const PARAKEET_DB_NAME = 'parakeet-cache-db';
@@ -387,7 +383,8 @@ export class ModelManager {
   private _normalizeRevision(value: string | undefined, modelId: string): string {
     const trimmed = typeof value === 'string' ? value.trim() : '';
     if (trimmed.length > 0) return trimmed;
-    return PREFERRED_MODEL_REVISIONS[modelId] || DEFAULT_MODEL_REVISION;
+    void modelId;
+    return DEFAULT_MODEL_REVISION;
   }
 
   private async _resolveBackend(requestedBackend: ModelBackendMode): Promise<{ effectiveBackend: ModelBackendMode; runtimeBackend: BackendType }> {
@@ -478,7 +475,8 @@ export class ModelManager {
       : decoderQuant === 'fp16'
         ? 'decoder_joint-model.fp16.onnx'
         : 'decoder_joint-model.onnx';
-    const baseUrl = `https://huggingface.co/${repoId}/resolve/${revision}`;
+    const encodedRevision = encodeURIComponent(revision);
+    const baseUrl = `https://huggingface.co/${repoId}/resolve/${encodedRevision}`;
 
     return {
       urls: {

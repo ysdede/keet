@@ -83,6 +83,16 @@ const readBoolean = (value: unknown): boolean | undefined => {
   return value;
 };
 
+const LEGACY_MODEL_REVISIONS: Record<string, string> = {
+  'feat/fp16-canonical-v2': 'main',
+  'feat/fp16-canonical-v3': 'main',
+};
+
+const normalizeModelRevision = (value: string | undefined): string | undefined => {
+  if (!value) return value;
+  return LEGACY_MODEL_REVISIONS[value] ?? value;
+};
+
 export const clampDebugPanelHeight = (height: number): number =>
   clamp(height, MIN_DEBUG_PANEL_HEIGHT, MAX_DEBUG_PANEL_HEIGHT);
 
@@ -135,7 +145,7 @@ const sanitizeSettings = (value: unknown): PersistedSettings => {
   const model = isRecord(value.model) ? value.model : null;
   if (model) {
     const selectedModelId = readString(model.selectedModelId);
-    const revision = readString(model.revision);
+    const revision = normalizeModelRevision(readString(model.revision));
     const backend = readModelBackend(model.backend);
     const encoderQuant = readQuantization(model.encoderQuant);
     const decoderQuant = readQuantization(model.decoderQuant);
