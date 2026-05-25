@@ -1,7 +1,7 @@
 import { Component, onMount, onCleanup, createSignal } from 'solid-js';
 import type { AudioEngine } from '../lib/audio/types';
 import type { MelWorkerClient } from '../lib/audio/MelWorkerClient';
-import { normalizeMelForDisplay } from '../lib/audio/mel-display';
+import { MEL_DISPLAY_DB_RANGE, MEL_DISPLAY_MIN_DB } from '../lib/audio/mel-display';
 import { appStore } from '../stores/appStore';
 
 interface LayeredBufferVisualizerProps {
@@ -116,6 +116,12 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
     let cachedSpecImgData: ImageData | null = null;
     let cachedSpecImgWidth = 0;
     let cachedSpecImgHeight = 0;
+    let cachedXToT: Int32Array | null = null;
+    let cachedYToM: Int32Array | null = null;
+    let cacheW = 0;
+    let cacheH = 0;
+    let cacheTimeSteps = 0;
+    let cacheMelBins = 0;
 
     // --- Pre-allocated waveform read buffer ---
     // Avoids allocating a new Float32Array(~128000) every animation frame.
@@ -332,7 +338,7 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         // features layout: [melBins, T] (mel-major, flattened from [mel, time])
         // So features[m * timeSteps + t].
 
-        if (timeSteps === 0) return;
+        if (timeSteps === 0 || width === 0 || height === 0) return;
 
         // Reuse cached ImageData if dimensions match; allocate only on size change
         if (!cachedSpecImgData || cachedSpecImgWidth !== width || cachedSpecImgHeight !== height) {
@@ -343,29 +349,48 @@ export const LayeredBufferVisualizer: Component<LayeredBufferVisualizerProps> = 
         const imgData = cachedSpecImgData;
         const data = imgData.data;
 
-        // Scaling factors
-        const timeScale = timeSteps / width;
-        const freqScale = melBins / height;
+        if (!cachedXToT || cacheW !== width || cacheTimeSteps !== timeSteps) {
+            cachedXToT = new Int32Array(width);
+            const timeScale = timeSteps / width;
+            for (let x = 0; x < width; x++) {
+                let t = (x * timeScale) | 0;
+                if (t >= timeSteps) t = timeSteps - 1;
+                cachedXToT[x] = t;
+            }
+            cacheW = width;
+            cacheTimeSteps = timeSteps;
+        }
 
-        for (let x = 0; x < width; x++) {
-            const t = Math.floor(x * timeScale);
-            if (t >= timeSteps) break;
-
+        if (!cachedYToM || cacheH !== height || cacheMelBins !== melBins) {
+            cachedYToM = new Int32Array(height);
+            const freqScale = melBins / height;
             for (let y = 0; y < height; y++) {
-                // y=0 is top (high freq), y=height is bottom (low freq).
-                const m = Math.floor((height - 1 - y) * freqScale);
-                if (m >= melBins) continue;
+                let m = ((height - 1 - y) * freqScale) | 0;
+                if (m >= melBins) m = melBins - 1;
+                cachedYToM[y] = m;
+            }
+            cacheH = height;
+            cacheMelBins = melBins;
+        }
 
-                const val = features[m * timeSteps + t];
-                const clamped = normalizeMelForDisplay(val);
-                const lutIdx = (clamped * 255) | 0;
+        const tMap = cachedXToT;
+        const mMap = cachedYToM;
+        const lutScale = 255 / MEL_DISPLAY_DB_RANGE;
+        let idx = 0;
+
+        for (let y = 0; y < height; y++) {
+            const rowOffset = mMap[y] * timeSteps;
+            for (let x = 0; x < width; x++) {
+                const val = features[rowOffset + tMap[x]];
+                let lutIdx = ((val - MEL_DISPLAY_MIN_DB) * lutScale) | 0;
+                if (lutIdx < 0) lutIdx = 0;
+                else if (lutIdx > 255) lutIdx = 255;
                 const lutBase = lutIdx * 3;
 
-                const idx = (y * width + x) * 4;
-                data[idx] = COLORMAP_LUT[lutBase];
-                data[idx + 1] = COLORMAP_LUT[lutBase + 1];
-                data[idx + 2] = COLORMAP_LUT[lutBase + 2];
-                data[idx + 3] = 255;
+                data[idx++] = COLORMAP_LUT[lutBase];
+                data[idx++] = COLORMAP_LUT[lutBase + 1];
+                data[idx++] = COLORMAP_LUT[lutBase + 2];
+                data[idx++] = 255;
             }
         }
         ctx.putImageData(imgData, 0, 0);
