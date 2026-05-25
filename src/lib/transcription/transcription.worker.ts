@@ -9,7 +9,6 @@
  * - pipeline v4 utterance mode (UtteranceBasedMerger, cursor-based windowing)
  */
 
-import { ParakeetModel, getParakeetModel } from 'parakeet.js';
 import { TranscriptionService } from './TranscriptionService';
 import { TokenStreamTranscriber } from './TokenStreamTranscriber';
 import { ModelManager } from './ModelManager';
