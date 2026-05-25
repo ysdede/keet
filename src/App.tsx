@@ -1432,9 +1432,7 @@ const App: Component = () => {
                 class={`w-10 h-10 rounded-full flex items-center justify-center transition-colors border ${isRecording() ? 'bg-[var(--color-earthy-coral)] text-white border-[var(--color-earthy-coral)]' : 'text-[var(--color-earthy-dark-brown)] hover:bg-[var(--color-earthy-bg)] border-transparent hover:border-[var(--color-earthy-sage)]/30'}`}
                 title={isRecording() ? 'Stop recording' : 'Start recording'}
               >
-                <Show when={isRecording()} fallback={<span class="material-symbols-outlined">mic</span>}>
-                  <span class="material-symbols-outlined">stop</span>
-                </Show>
+                <span class="material-symbols-outlined">mic</span>
               </button>
               <button
                 type="button"
@@ -1456,15 +1454,6 @@ const App: Component = () => {
                 title="Settings"
               >
                 <span class="material-symbols-outlined">tune</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => isRecording() && toggleRecording()}
-                disabled={!isRecording()}
-                class="w-10 h-10 rounded-full flex items-center justify-center text-[var(--color-earthy-coral)] hover:bg-[var(--color-earthy-coral)]/10 transition-colors border border-transparent hover:border-[var(--color-earthy-coral)]/30 disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Stop"
-              >
-                <span class="material-symbols-outlined">stop</span>
               </button>
               <button
                 type="button"
