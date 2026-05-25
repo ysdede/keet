@@ -141,8 +141,8 @@ Mode behavior:
 
 | Package | Version |
 |---|---|
-| `keet` | `1.3.2` |
-| `parakeet.js` | `1.4.0` |
+| `keet` | `1.3.3` |
+| `parakeet.js` | `1.4.4` |
 | `onnxruntime-web` | `1.24.1` |
 
 ## Deployment
