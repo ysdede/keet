@@ -1,5 +1,6 @@
-import { Component, onCleanup, onMount } from 'solid-js';
+import { Component, createEffect, onCleanup, onMount } from 'solid-js';
 import type { WaveformProps } from '../types';
+import { usePageVisible } from '../utils/usePageVisible';
 
 /**
  * Oscilloscope-style waveform using AnalyserNode.getByteTimeDomainData (native, fast).
@@ -8,15 +9,13 @@ export const Waveform: Component<WaveformProps> = (props) => {
   let canvasRef: HTMLCanvasElement | undefined;
   let ctx: CanvasRenderingContext2D | null = null;
   let animationId: number | undefined;
-  let timeoutId: number | undefined;
   let resizeObserver: ResizeObserver | null = null;
   let themeObserver: MutationObserver | null = null;
   let lastDrawTs = 0;
   let bgColor = '#faf8f5';
   let strokeColor = '#14b8a6';
   const FOREGROUND_FRAME_MS = 33;
-  const IDLE_FRAME_MS = 120;
-  const HIDDEN_FRAME_MS = 250;
+  const pageVisible = usePageVisible();
 
   const updateCanvasSize = () => {
     if (!canvasRef?.parentElement) return;
@@ -37,47 +36,21 @@ export const Waveform: Component<WaveformProps> = (props) => {
     strokeColor = computed.getPropertyValue('--color-primary').trim() || '#14b8a6';
   };
 
-  const scheduleNextFrame = (hidden: boolean, recording: boolean) => {
-    if (!hidden && recording) {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-        timeoutId = undefined;
-      }
-      animationId = requestAnimationFrame(animate);
-      return;
-    }
+  const cancelFrame = () => {
     if (animationId !== undefined) {
       cancelAnimationFrame(animationId);
       animationId = undefined;
     }
-    const nextDelay = hidden ? HIDDEN_FRAME_MS : IDLE_FRAME_MS;
-    timeoutId = window.setTimeout(() => animate(performance.now()), nextDelay);
   };
 
-  const animate = (ts: number) => {
-    if (!ctx || !canvasRef) {
-      scheduleNextFrame(false, props.isRecording);
-      return;
-    }
+  const isActive = () => props.isRecording && pageVisible();
 
-    const hidden = typeof document !== 'undefined' && document.visibilityState !== 'visible';
-    const minFrameInterval = hidden
-      ? HIDDEN_FRAME_MS
-      : props.isRecording
-        ? FOREGROUND_FRAME_MS
-        : IDLE_FRAME_MS;
-    if (ts - lastDrawTs < minFrameInterval) {
-      scheduleNextFrame(hidden, props.isRecording);
-      return;
-    }
-    lastDrawTs = ts;
+  const drawFrame = () => {
+    if (!ctx || !canvasRef) return;
 
     const w = canvasRef.width;
     const h = canvasRef.height;
-    if (w === 0 || h === 0) {
-      scheduleNextFrame(hidden, props.isRecording);
-      return;
-    }
+    if (w === 0 || h === 0) return;
 
     const samples = props.barLevels;
     const n = samples && samples.length > 0 ? samples.length : 0;
@@ -100,8 +73,39 @@ export const Waveform: Component<WaveformProps> = (props) => {
       }
       ctx.stroke();
     }
+  };
 
-    scheduleNextFrame(hidden, props.isRecording);
+  const requestDraw = () => {
+    if (isActive()) {
+      if (animationId === undefined) {
+        animationId = requestAnimationFrame(animate);
+      }
+      return;
+    }
+    cancelFrame();
+    drawFrame();
+  };
+
+  const animate = (ts: number) => {
+    if (!ctx || !canvasRef) {
+      cancelFrame();
+      return;
+    }
+
+    if (!isActive()) {
+      cancelFrame();
+      drawFrame();
+      return;
+    }
+
+    if (ts - lastDrawTs < FOREGROUND_FRAME_MS) {
+      animationId = requestAnimationFrame(animate);
+      return;
+    }
+    lastDrawTs = ts;
+
+    drawFrame();
+    animationId = requestAnimationFrame(animate);
   };
 
   onMount(() => {
@@ -114,22 +118,27 @@ export const Waveform: Component<WaveformProps> = (props) => {
       }
     }
     if (typeof document !== 'undefined') {
-      themeObserver = new MutationObserver(() => refreshThemeColors());
+      themeObserver = new MutationObserver(() => {
+        refreshThemeColors();
+        requestDraw();
+      });
       themeObserver.observe(document.documentElement, {
         attributes: true,
         attributeFilter: ['class'],
       });
     }
-    animate(performance.now());
+    requestDraw();
+  });
+
+  createEffect(() => {
+    pageVisible();
+    props.isRecording;
+    lastDrawTs = 0;
+    requestDraw();
   });
 
   onCleanup(() => {
-    if (animationId !== undefined) {
-      cancelAnimationFrame(animationId);
-    }
-    if (timeoutId !== undefined) {
-      clearTimeout(timeoutId);
-    }
+    cancelFrame();
     resizeObserver?.disconnect();
     themeObserver?.disconnect();
   });

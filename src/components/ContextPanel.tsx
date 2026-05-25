@@ -41,6 +41,7 @@ export const ContextPanel: Component<ContextPanelProps> = (props) => {
         <div
           class="w-full max-w-md mx-4 bg-[var(--color-earthy-bg)] rounded-2xl border border-[var(--color-earthy-sage)] shadow-xl overflow-hidden"
           onClick={(e) => e.stopPropagation()}
+          role="presentation"
         >
           <div class="px-6 py-4 border-b border-[var(--color-earthy-sage)]/30 flex items-center justify-between">
             <h2 class="text-lg font-semibold tracking-tight text-[var(--color-earthy-dark-brown)]">Context</h2>

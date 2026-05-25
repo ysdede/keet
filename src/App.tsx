@@ -209,6 +209,7 @@ const Header: Component<{
 const WIDGET_MAX_W = 672;
 const WIDGET_MIN_H = 80;
 const SETTINGS_SAVE_DEBOUNCE_MS = 150;
+const PREVIEW_UPDATE_INTERVAL_MS = 50;
 
 const getDefaultWidgetPosition = (): { x: number; y: number } => {
   const width = typeof window !== 'undefined' ? window.innerWidth : 800;
@@ -315,6 +316,7 @@ const App: Component = () => {
   let removeWarmupGestureListeners: (() => void) | null = null;
   let warmupCancelled = false;
   let warmupStarted = false;
+  let lastPreviewUpdateAt = 0;
 
   const isRecording = () => appStore.recordingState() === 'recording';
   const isModelReady = () => appStore.modelState() === 'ready';
@@ -424,7 +426,7 @@ const App: Component = () => {
       }
     };
     document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    onCleanup(() => document.removeEventListener('keydown', handler));
   });
 
   createEffect(() => {
@@ -913,6 +915,7 @@ const App: Component = () => {
       appStore.stopRecording();
       appStore.setAudioLevel(0);
       appStore.setBarLevels(new Float32Array(0));
+      lastPreviewUpdateAt = 0;
 
       try {
         audioEngine?.stop();
@@ -1204,7 +1207,12 @@ const App: Component = () => {
           if (appStore.transcriptionMode() !== 'v4-utterance') {
             appStore.setIsSpeechDetected(audioEngine?.isSpeechActive() ?? false);
           }
-          appStore.setBarLevels(audioEngine!.getBarLevels());
+          const pageVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
+          const now = performance.now();
+          if (pageVisible && now - lastPreviewUpdateAt >= PREVIEW_UPDATE_INTERVAL_MS) {
+            lastPreviewUpdateAt = now;
+            appStore.setBarLevels(audioEngine!.getBarLevels());
+          }
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1350,6 +1358,9 @@ const App: Component = () => {
             }}
             onMouseEnter={cancelPanelClose}
             onMouseLeave={panelMouseLeave}
+            role="region"
+            aria-label="Quick settings panel"
+            aria-hidden={!showContextPanel()}
           >
             <div class="max-h-[70vh] min-h-0 flex flex-col overflow-y-auto custom-scrollbar">
               <SettingsContent
@@ -1384,6 +1395,23 @@ const App: Component = () => {
             <div class="flex-1 min-w-0 flex flex-col justify-center gap-1">
               <div class="h-8 flex items-center justify-center gap-1 overflow-hidden opacity-80 abstract-wave">
                 <CompactWaveform audioLevel={appStore.audioLevel()} barLevels={appStore.barLevels()} isRecording={isRecording()} />
+              </div>
+              <div class="flex items-center gap-2 px-1">
+                <span class="text-[10px] uppercase tracking-wider text-[var(--color-earthy-soft-brown)] font-bold">Input</span>
+                <div class="relative flex-1 h-1.5 rounded-full overflow-hidden bg-[var(--color-earthy-sage)]/25">
+                  <div
+                    class="absolute top-0 bottom-0 w-px bg-[var(--color-earthy-coral)] z-10"
+                    style={{ left: `${Math.min(100, appStore.energyThreshold() * 100)}%` }}
+                    title="Energy threshold"
+                  />
+                  <div
+                    class={`h-full transition-all duration-75 ${appStore.audioLevel() > appStore.energyThreshold() ? 'bg-[var(--color-earthy-coral)]' : 'bg-[var(--color-earthy-muted-green)]'}`}
+                    style={{ width: `${Math.min(100, appStore.audioLevel() * 100)}%` }}
+                  />
+                </div>
+                <span class={`text-[10px] font-mono tabular-nums ${appStore.audioLevel() > appStore.energyThreshold() ? 'text-[var(--color-earthy-coral)]' : 'text-[var(--color-earthy-soft-brown)]'}`}>
+                  {(appStore.audioLevel() * 100).toFixed(0)}%
+                </span>
               </div>
               <Show when={appStore.modelState() === 'loading'}>
                 <div class="flex items-center gap-2 px-1">
