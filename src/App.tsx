@@ -1,4 +1,4 @@
-import { Component, Show, For, batch, createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
+import { Component, Show, batch, createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
 import { appStore } from './stores/appStore';
 import { CompactWaveform, ModelLoadingOverlay, DebugPanel, TranscriptionDisplay, SettingsContent } from './components';
 import { getModelDisplayName, MODELS } from './components/ModelLoadingOverlay';
