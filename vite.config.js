@@ -133,6 +133,7 @@ export default defineConfig({
     pool: 'forks',
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: [...configDefaults.exclude],
+    setupFiles: ['src/test/vitest.setup.ts'],
     deps: {
       optimizer: {
         web: {
