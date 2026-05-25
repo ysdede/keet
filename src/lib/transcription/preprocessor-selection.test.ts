@@ -26,7 +26,10 @@ function simulateHubFileSelection(preprocessorBackend: string | undefined) {
         { key: 'tokenizerUrl', name: 'vocab.txt' },
     ];
 
-    // This replicates the hub.js logic which conditionally pushes the preprocessorUrl if the backend is not 'js'.
+    // This replicates the hub.js logic:
+    //   if (preprocessorBackend !== 'js') {
+    //     filesToGet.push({ key: 'preprocessorUrl', name: `${preprocessor}.onnx` });
+    //   }
     if (preprocessorBackend !== 'js') {
         filesToGet.push({ key: 'preprocessorUrl', name: `${preprocessor}.onnx` });
     }
@@ -36,7 +39,9 @@ function simulateHubFileSelection(preprocessorBackend: string | undefined) {
 
 /**
  * Simulate the fromUrls preprocessor selection logic from parakeet.js/src/parakeet.js.
- * This replicates the exact branching logic to determine if the JS or ONNX preprocessor should be used based on backend selection and URL availability.
+ * This replicates the exact branching:
+ *   const useJsPreprocessor = preprocessorBackend === 'js' || !preprocessorUrl;
+ *   const shouldCreateOnnxPreprocessor = !useJsPreprocessor && preprocessorUrl;
  */
 function simulateFromUrlsSelection(preprocessorBackend: string | undefined, preprocessorUrl: string | undefined) {
     const useJsPreprocessor = preprocessorBackend === 'js' || !preprocessorUrl;
