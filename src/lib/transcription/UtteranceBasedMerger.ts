@@ -193,23 +193,40 @@ export class UtteranceBasedMerger {
     private normalizeWords(words?: ASRWord[]): InternalWord[] {
         if (!Array.isArray(words)) return [];
 
+        const len = words.length;
         const result: InternalWord[] = [];
-        for (let i = 0; i < words.length; i++) {
+        for (let i = 0; i < len; i++) {
             const word = words[i];
-            const text = String(word?.text ?? '').trim();
+            if (!word) continue;
+
+            let text = word.text;
+            if (text === undefined || text === null) text = '';
+            else text = String(text);
+            text = text.trim();
+
             if (text.length === 0) continue;
 
-            const start_time = Math.max(0, Number(word?.start_time ?? 0));
-            const rawEndTime = Number(word?.end_time ?? 0);
-            const confidenceRaw = Number(word?.confidence);
+            let st = word.start_time;
+            st = st === undefined || st === null ? 0 : Number(st);
+            const start_time = st < 0 ? 0 : st;
+
+            let et = word.end_time;
+            et = et === undefined || et === null ? 0 : Number(et);
+
+            let conf = word.confidence;
+            let confidence = 1.0;
+            if (conf !== undefined && conf !== null) {
+                conf = Number(conf);
+                if (Number.isFinite(conf)) {
+                    confidence = conf < 0 ? 0 : conf > 1 ? 1 : conf;
+                }
+            }
 
             result.push({
                 text,
                 start_time,
-                end_time: Math.max(start_time, rawEndTime),
-                confidence: Number.isFinite(confidenceRaw)
-                    ? Math.max(0, Math.min(1, confidenceRaw))
-                    : 1.0,
+                end_time: start_time > et ? start_time : et,
+                confidence,
                 finalized: false,
                 stability_counter: 0,
             });
