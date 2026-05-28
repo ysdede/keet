@@ -64,6 +64,11 @@ let pendingVadState: {
 let vadUpdateScheduled = false;
 const V4_TRACE_LOGS = false;
 const V4_CACHE_TELEMETRY_LOG_EVERY = 40;
+const GITHUB_REPO_URL = 'https://github.com/ysdede/keet';
+const GITHUB_REPO_API_URL = 'https://api.github.com/repos/ysdede/keet';
+const GITHUB_STARS_CACHE_KEY = 'keet.githubStars.v1';
+const GITHUB_STARS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
 const v4CacheTelemetry = {
   enabled: 0,
   bypassNonPositivePrefix: 0,
@@ -133,6 +138,103 @@ const scheduleVadStateUpdate = (next: {
   });
 };
 
+function formatGitHubStars(count: number | null): string | null {
+  if (!Number.isFinite(count) || count === null || count < 0) return null;
+  if (count < 1000) return String(count);
+  if (count < 1_000_000) {
+    const value = count / 1000;
+    return `${value >= 10 ? Math.round(value) : value.toFixed(1).replace(/\.0$/, '')}k`;
+  }
+  const value = count / 1_000_000;
+  return `${value >= 10 ? Math.round(value) : value.toFixed(1).replace(/\.0$/, '')}m`;
+}
+
+function readCachedGitHubStars(): { count: number; fetchedAt: number } | null {
+  try {
+    const raw = window.localStorage?.getItem(GITHUB_STARS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { count?: unknown; fetchedAt?: unknown };
+    if (typeof parsed.count !== 'number' || !Number.isFinite(parsed.count)) return null;
+    if (typeof parsed.fetchedAt !== 'number' || !Number.isFinite(parsed.fetchedAt)) return null;
+    return { count: parsed.count, fetchedAt: parsed.fetchedAt };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedGitHubStars(count: number): void {
+  try {
+    window.localStorage?.setItem(
+      GITHUB_STARS_CACHE_KEY,
+      JSON.stringify({ count, fetchedAt: Date.now() })
+    );
+  } catch {
+    // localStorage can be unavailable in embedded/private browser contexts.
+  }
+}
+
+const GitHubStarsBadge: Component = () => {
+  const cached = readCachedGitHubStars();
+  const [starCount, setStarCount] = createSignal<number | null>(cached?.count ?? null);
+
+  createEffect(() => {
+    let cancelled = false;
+    const currentCache = readCachedGitHubStars();
+    const hasFreshCache = currentCache && Date.now() - currentCache.fetchedAt < GITHUB_STARS_CACHE_TTL_MS;
+
+    if (currentCache?.count !== undefined) {
+      setStarCount(currentCache.count);
+    }
+    if (hasFreshCache) return;
+
+    fetch(GITHUB_REPO_API_URL, {
+      headers: { Accept: 'application/vnd.github+json' },
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error('GitHub API request failed');
+        return response.json();
+      })
+      .then((data: { stargazers_count?: unknown }) => {
+        const count = Number(data?.stargazers_count);
+        if (!Number.isFinite(count)) return;
+        writeCachedGitHubStars(count);
+        if (!cancelled) setStarCount(count);
+      })
+      .catch(() => {
+        if (!cancelled && currentCache?.count !== undefined) setStarCount(currentCache.count);
+      });
+
+    onCleanup(() => {
+      cancelled = true;
+    });
+  });
+
+  const formattedStars = createMemo(() => formatGitHubStars(starCount()));
+
+  return (
+    <a
+      href={GITHUB_REPO_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="inline-flex items-center overflow-hidden rounded-xl border border-[var(--color-earthy-sage)]/60 bg-[var(--color-earthy-bg)] text-[11px] font-semibold uppercase tracking-wide text-[var(--color-earthy-soft-brown)] transition-colors hover:border-[var(--color-earthy-muted-green)] hover:text-[var(--color-earthy-muted-green)]"
+      title="View keet on GitHub"
+      aria-label={formattedStars() ? `View keet on GitHub, ${formattedStars()} stars` : 'View keet on GitHub'}
+    >
+      <span class="inline-flex items-center gap-1.5 px-3 py-1.5">
+        <span class="material-symbols-outlined text-sm leading-none">star</span>
+        Stars
+      </span>
+      <Show when={formattedStars()}>
+        {(stars) => (
+          <span class="border-l border-[var(--color-earthy-sage)]/60 px-3 py-1.5 tabular-nums">
+            {stars()}
+          </span>
+        )}
+      </Show>
+    </a>
+  );
+};
+
 const Header: Component<{
   onToggleDebug: () => void;
   isV4Mode: boolean;
@@ -162,6 +264,7 @@ const Header: Component<{
         </div>
       </div>
       <div class="flex items-center gap-4">
+        <GitHubStarsBadge />
         <Show when={props.isV4Mode}>
           <div class="flex items-center gap-2">
             <button
